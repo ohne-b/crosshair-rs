@@ -19,32 +19,39 @@ release yet. The logo is a placeholder.
 
 ## Planned experience
 
-- Pixel-perfect crosshairs with lines, a center dot, outlines, colors and presets.
-- Instant preset switching through global keyboard bindings. Gameplay keys such
+- Layered static crosshairs with shapes, text, images, freehand drawing, outlines
+  and blur, using one shared renderer for the editor and overlay.
+- Instant preset switching through global keyboard and mouse bindings. Keys such
   as `E`, `1` and `2` continue reaching the game normally. Bindings intentionally
   work in every foreground application.
-- A Tauri + React editor with immediate feedback and the same Rust renderer as
-  the overlay. Closing the editor leaves the crosshair running.
-- Local settings, a system tray menu and one Windows installer. No accounts,
+- A native Slint editor with immediate feedback, manual profiles and a custom
+  title bar. Closing the editor leaves the crosshair running.
+- Local settings, a system tray menu, one signed Windows package and updates
+  through Settings. No accounts,
   telemetry, background service or administrator requirement for normal use.
 
 Near-zero idle CPU and low memory use are design targets, not measured claims.
-The first milestone is a native overlay proof of concept, tested for click-through
-behavior, physical-pixel placement, DPI and real-game compatibility.
+The first milestone proves desktop and Game Bar presentation, click-through,
+physical-pixel placement, DPI, real-game compatibility and package/update lifetime.
 
 ## Compatibility
 
-Desktop and windowed use are the initial targets; borderless-fullscreen games
-need testing. Exclusive fullscreen is not guaranteed. Games and anti-cheat systems
-may restrict overlays or input observation. This project will not inject into
-games or bypass those restrictions.
+The plan targets desktop, windowed and borderless use through a native overlay,
+plus fullscreen applications supported by Xbox Game Bar through a small widget.
+This does not guarantee every exclusive-fullscreen game: Microsoft documents
+[Game Bar limitations](https://learn.microsoft.com/en-us/xbox/game-bar/known-issues),
+including Vulkan/OpenGL fullscreen cases. Actual widget visibility, placement
+and input require testing. Games and anti-cheat systems may restrict overlays or
+input observation. This project will not inject into games or bypass restrictions.
 
 ## Development
 
 Read [CONTRIBUTING.md](CONTRIBUTING.md) for the PR, validation and release workflow,
-and [docs/architecture.md](docs/architecture.md) for the agreed technical baseline
-and implementation order. Build commands will be added with the first runnable
-milestone. Agents start with [AGENTS.md](AGENTS.md).
+and [docs/architecture.md](docs/architecture.md) for the complete application plan,
+screen behavior, technical contracts and acceptance tests. The
+[design preview](docs/design-preview.html) illustrates the proposed interface.
+Build commands will be added with the first runnable milestone. Agents start
+with [AGENTS.md](AGENTS.md).
 
 ## License and credits
 

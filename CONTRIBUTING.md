@@ -61,7 +61,8 @@ default merge subject, squash or rebase instead of the merge commit.
 ## Validation
 
 The repository currently contains documentation and artwork only. There is no
-Cargo workspace or frontend build yet. Do not invent passing application checks.
+Cargo workspace, Slint build or Game Bar host yet. Do not invent passing
+application checks.
 
 For groundwork changes, run `git diff --check` (and `git diff --cached --check`
 for newly staged files), inspect the complete diff, verify relative links and
@@ -72,10 +73,10 @@ application behavior, external links or native compatibility.
 
 Introduce build/test checks alongside each runnable component. The intended
 baseline is Rust formatting, Clippy and tests with the committed Cargo lockfile,
-plus frontend type/build checks and meaningful behavior tests once the dashboard
-exists. Add the actual commands here when their manifests are introduced. Use
-Windows runners for native engine checks; browser tests cannot verify Win32 input,
-DPI, tray behavior or installers.
+plus Slint compile/UI checks, Game Bar host/package builds and meaningful behavior
+tests once those components exist. Add actual commands here with their manifests.
+Use Windows runners for native checks; browser tests of a design preview cannot
+verify Win32 input, DPI, tray behavior, Slint accessibility or package deployment.
 
 Run focused local checks during development. Successful CI on the final revision
 supplies its full baseline; do not repeat the entire suite locally without reason.
@@ -110,7 +111,8 @@ packaging automation with the packaging milestone, following these contracts:
 
 1. Prepare a version change on `feat/release-VERSION` through a draft PR. Once
    Cargo exists, `[workspace.package].version` owns the product version; product
-   crates inherit it and Cargo.lock agrees. Keep Tauri/package metadata aligned.
+   crates inherit it and Cargo.lock agrees. Derive and validate widget/MSIX
+   metadata using the version mapping in the architecture plan.
 2. Add concise, reviewed notes to `CHANGELOG.md`, with relevant PR links in
    parentheses. Stable notes cover changes since the previous stable version.
    Use `vMAJOR.MINOR.PATCH` tags; prereleases use a SemVer suffix such as `-rc.1`.
@@ -118,7 +120,8 @@ packaging automation with the packaging milestone, following these contracts:
    Publication needs separate explicit authorization and a manual workflow from
    validated canonical main. Require successful validation on the exact commit.
 4. Create a draft release titled `crosshair-rs vVERSION`. Attach the validated
-   Windows installer containing both executables and SHA-256 checksums. Verify
+   signed Windows package containing engine, editor and Game Bar widget, its
+   updater signature, `latest.json` and SHA-256 checksums. Verify
    downloaded assets and clean-install/upgrade behavior before publication.
    Never promote PR artifacts or silently rebuild a different revision.
 5. Generate exactly one `Changelog:` comparison link and one issue-report link
@@ -126,7 +129,9 @@ packaging automation with the packaging milestone, following these contracts:
    Only stable releases advance latest. Never overwrite published versions/tags.
 
 Keep credentials out of PR jobs. Configure scoped publication secrets through the
-platform, never by copying a local login token. Updater signing, if introduced,
-is distinct from Windows code signing; do not claim either until configured and
-verified. Automatic updates are not part of the initial scope. Document actual
+platform, never by copying a local login token. Updater signing is distinct from
+Windows package signing; do not claim either until configured and verified.
+Settings-driven checks/downloads and explicit Install and restart are part of the
+complete plan; unattended installation is not. Follow the architecture's signed
+version, artifact provenance, deployment and recovery contracts. Document actual
 artifact names, signing and recovery commands when implemented.
