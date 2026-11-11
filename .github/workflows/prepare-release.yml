@@ -1,0 +1,72 @@
+name: Prepare release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Stable MAJOR.MINOR.PATCH version
+        required: true
+        type: string
+      notes:
+        description: Reviewed Markdown bullets, with relevant PR links
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: prepare-release
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    if: github.repository == 'ohne-b/crosshair-rs' && github.ref == 'refs/heads/main'
+    runs-on: windows-2025
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: main
+          fetch-depth: 0
+          token: ${{ secrets.PUBLISHER_TOKEN }}
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: 24
+      - name: Prepare focused version and notes change
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+          RELEASE_NOTES: ${{ inputs.notes }}
+          GH_TOKEN: ${{ secrets.PUBLISHER_TOKEN }}
+        run: |
+          if (!$env:GH_TOKEN) { throw 'PUBLISHER_TOKEN is required so the draft PR receives normal validation.' }
+          npm --prefix scripts ci --ignore-scripts
+          if ($LASTEXITCODE) { throw 'Maintenance dependency restore failed.' }
+          cargo fetch --locked
+          if ($LASTEXITCODE) { throw 'Cargo dependency restore failed.' }
+          New-Item -ItemType Directory -Force target | Out-Null
+          [IO.File]::WriteAllText((Join-Path $PWD 'target/release-notes.md'), $env:RELEASE_NOTES)
+          node scripts/release.mjs prepare $env:RELEASE_VERSION target/release-notes.md
+          if ($LASTEXITCODE) { throw 'Release preparation failed.' }
+          $branch = "feat/release-$env:RELEASE_VERSION"
+          git switch -c $branch
+          if ($LASTEXITCODE) { throw 'Release branch already exists.' }
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -- Cargo.toml Cargo.lock CHANGELOG.md
+          git diff --cached --check
+          if ($LASTEXITCODE) { throw 'Release diff failed validation.' }
+          git commit -m "chore(release): prepare v$env:RELEASE_VERSION"
+          if ($LASTEXITCODE) { throw 'Release commit failed.' }
+          gh auth setup-git
+          if ($LASTEXITCODE) { throw 'Scoped publication credential setup failed.' }
+          git push --set-upstream origin $branch
+          if ($LASTEXITCODE) { throw 'Release branch push failed.' }
+          $body = "Prepares crosshair-rs v$env:RELEASE_VERSION with reviewed release notes.`n`nValidation: the normal Windows workflow must pass on the final revision. Independent review and maintainer merge approval are still required. Publication is a separate manual action."
+          [IO.File]::WriteAllText((Join-Path $PWD 'target/release-pr.md'), $body)
+          gh pr create --draft --base main --head $branch --title "chore(release): prepare v$env:RELEASE_VERSION" --body-file target/release-pr.md
+          if ($LASTEXITCODE) { throw 'Draft release PR creation failed.' }

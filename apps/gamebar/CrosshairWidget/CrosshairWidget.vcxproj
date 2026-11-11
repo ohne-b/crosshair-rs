@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" ToolsVersion="Current" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|x64"><Configuration>Debug</Configuration><Platform>x64</Platform></ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64"><Configuration>Release</Configuration><Platform>x64</Platform></ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals"><ProjectGuid>{D6B1E34C-C3E7-4F42-9D62-C082DB48D887}</ProjectGuid><Keyword>MakeFileProj</Keyword><ProjectName>CrosshairWidget</ProjectName></PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Label="Configuration"><ConfigurationType>Makefile</ConfigurationType><PlatformToolset>v143</PlatformToolset></PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <PropertyGroup>
+    <IntDir>$(ProjectDir)..\..\..\target\gamebar\msbuild\$(Configuration)\</IntDir>
+    <OutDir>$(ProjectDir)..\..\..\target\gamebar\$(Configuration)\</OutDir>
+    <NMakeBuildCommandLine>powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$(ProjectDir)..\..\..\scripts\build-gamebar.ps1" -Configuration $(Configuration) -Test</NMakeBuildCommandLine>
+    <NMakeReBuildCommandLine>$(NMakeBuildCommandLine)</NMakeReBuildCommandLine>
+    <NMakeOutput>$(ProjectDir)..\..\..\target\gamebar\$(Configuration)\crosshair-gamebar.exe</NMakeOutput>
+  </PropertyGroup>
+  <ItemGroup><ClCompile Include="app.cpp" /><ClCompile Include="pipe.cpp" /><ClInclude Include="pipe.h" /><ClInclude Include="wire.h" /><ClInclude Include="presentation.h" /></ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+</Project>

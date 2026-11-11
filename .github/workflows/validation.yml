@@ -14,15 +14,64 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  validation:
-    name: Validation
-    runs-on: ubuntu-latest
+  windows:
+    name: Windows application and package
+    runs-on: windows-2025
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      CARGO_TERM_COLOR: always
+      # Public build configuration only. PR code receives no signing secrets.
+      CROSSHAIR_UPDATE_PUBLIC_KEY: ${{ github.event_name != 'pull_request' && vars.CROSSHAIR_UPDATE_PUBLIC_KEY || '' }}
+      CROSSHAIR_PACKAGE_PUBLISHER: ${{ github.event_name != 'pull_request' && vars.CROSSHAIR_PACKAGE_PUBLISHER || '' }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
-      - name: Check tracked-file whitespace
-        shell: bash
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: scripts/package-lock.json
+      - name: Validate sources and maintenance tooling
         run: |
-          empty_tree=$(git hash-object -t tree --stdin < /dev/null)
-          git diff --check "$empty_tree" HEAD
+          git diff --check 4b825dc642cb6eb9a060e54bf8d69288fbee4904 HEAD
+          if ($LASTEXITCODE) { throw 'Tracked-file whitespace errors.' }
+          npm --prefix scripts ci --ignore-scripts
+          if ($LASTEXITCODE) { throw 'Maintenance dependency restore failed.' }
+          npm --prefix scripts test
+          if ($LASTEXITCODE) { throw 'Release tests failed.' }
+          npm --prefix scripts run validate-workflows
+          if ($LASTEXITCODE) { throw 'Workflow validation failed.' }
+          ./scripts/validate-sources.ps1
+      - name: Install pinned Rust components
+        run: |
+          rustup show
+          if ($LASTEXITCODE) { throw 'Pinned Rust toolchain unavailable.' }
+          rustup component add rustfmt clippy
+          if ($LASTEXITCODE) { throw 'Rust component installation failed.' }
+      - name: Check formatting, lints and behavior
+        run: |
+          cargo fmt --all -- --check
+          if ($LASTEXITCODE) { throw 'Rust formatting failed.' }
+          cargo clippy --locked --workspace --all-targets -- -D warnings
+          if ($LASTEXITCODE) { throw 'Rust lints failed.' }
+          cargo test --locked --workspace
+          if ($LASTEXITCODE) { throw 'Rust tests failed.' }
+      - name: Build real application and validated MSIX
+        run: |
+          $configured = !!$env:CROSSHAIR_UPDATE_PUBLIC_KEY -and !!$env:CROSSHAIR_PACKAGE_PUBLISHER
+          if (!!$env:CROSSHAIR_UPDATE_PUBLIC_KEY -ne !!$env:CROSSHAIR_PACKAGE_PUBLISHER) { throw 'Configure both public release variables, or neither.' }
+          ./scripts/package-windows.ps1 -OutputDirectory target/validated -ReleaseCandidate:$configured
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: windows-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            target/validated/*.unsigned.msix
+            target/validated/build.json
+            target/validated/Microsoft.VCLibs.x64.14.00.appx
+            target/validated/Install.ps1
+          if-no-files-found: error
+          retention-days: 14
