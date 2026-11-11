@@ -1,7 +1,8 @@
 # Application design and implementation plan
 
-This defines the complete intended application. It is a plan, not a claim that
-the application, compatibility or performance has been implemented or verified.
+This defines the application architecture and its complete acceptance contract.
+Source implementation does not establish compatibility or performance: native
+acceptance, signed installation and update qualification remain separate gates.
 Contributor and release policy lives in [CONTRIBUTING.md](../CONTRIBUTING.md).
 The [design preview](design-preview.html) illustrates the proposed interface;
 its interactions are illustrative, not an implementation of the application.
@@ -26,7 +27,7 @@ its interactions are illustrative, not an implementation of the application.
 | License | PolyForm Noncommercial 1.0.0; third-party components retain their licenses. |
 
 The complete scope includes layered static editing, crosshair arms, primitive
-shapes, text, images, freehand drawing, outlines, blur, local presets, manual
+shapes, images, freehand drawing, outlines, blur, local presets, manual
 profiles, global visibility, keybindings, tray lifecycle, fullscreen integration,
 import/export, updates, recovery, accessibility and packaging. The milestones
 sequence this work; they do not make required features optional.
@@ -83,31 +84,38 @@ popovers and update states; adapt its backend to the native architecture.
 
 ### Shell and styling
 
-- Default 1280 x 800 logical pixels; minimum 960 x 640. On smaller available work
-  areas, collapse navigation to a labeled-on-focus icon rail, collapse the layer
-  list and scroll the inspector. Never force a window beyond the work area.
-- 48 px custom title bar: logo/name left; manual profile picker, active-preset
-  thumbnail, On/Off switch and standard minimize/maximize/close controls right.
+- Default 1280 x 800 logical pixels; minimum 960 x 640. Use a fixed 56 px left
+  icon rail, with labels on hover/focus. On smaller available work areas, collapse
+  the layer list and scroll the inspector. Never force a window beyond the work area.
+- 48 px custom title bar: logo alone above the left rail; manual profile picker, active-preset
+  thumbnail, a 64px visibility switch with the configured chord in its tooltip,
+  and native Windows minimize/maximize/close buttons right. DWM owns their drawing,
+  hit testing and Snap behavior inside the custom frame. No On/Off text or profile
+  overflow button; profile management lives in Settings. The rail has no logo separator.
 - Navigation: Crosshairs, Designer, Keybinds. Bottom left: **only** Settings and
   GitHub linking to `https://github.com/ohne-b/crosshair-rs`. No sidebar updater
   banner, social links, news or promotional tiles.
-- Designer: 44 px document toolbar, 176 px layer column, flexible canvas, 272 px
-  inspector. The canvas gets the largest share; narrow mode retains layer access.
-- Colors: canvas `#181818`, panels `#202020`, fields `#242424`, raised `#292929`,
-  hover `#333333`, divider `#363636`, text `#F4F4F5`, muted `#A1A1AA`, orange
+- Designer: 44 px document toolbar, 210 px floating layer list, flexible canvas,
+  288 px inspector. The layer list sizes to its contents and scrolls when needed;
+  narrow mode retains layer access. Pair related numeric fields and keep section
+  headings left aligned. Inspector and preview use the same document model.
+- Colors: canvas `#171717`, preview `#141414`, panels `#1E1E1E`, fields `#252525`, raised `#292929`,
+  hover `#333333`, divider `#303030`, text `#F4F4F5`, muted `#A1A1AA`, orange
   `#F97316`. Orange-filled controls use dark text for contrast.
 - Manrope: 13 px controls, 12 px secondary values, 16 px section titles;
-  400/500/600 weights. Tabular numeric values. Spacing 4/8/12/16/24 px, 6 px control
-  corners, 32-36 px controls, 16-18 px Tabler icons. No gradients, glow, giant
+  400/500/600 weights. Tabular numeric values. Spacing 4/8/12/16/24 px, 8 px control
+  corners, 10-12 px panel corners, 32-36 px controls, 16-18 px Tabler icons. No gradients, glow, giant
   cards, decorative statistics or welcome copy.
 - One quiet selected state. Organize sections with spacing/dividers rather than
   nested cards. No descriptive paragraphs in Designer, library or Keybinds.
   Settings may have necessary short descriptions; long help uses a focusable
   `i` popover with keyboard activation, Escape/outside dismissal and focus return.
+- Settings has Display, General, Data, Updates and About categories, with compact
+  aligned rows. The library uses the same narrow category column for All/Favorites.
 - Retain native drag/resize, double-click maximize, system menu, Alt+F4, Win+arrow
   and Windows 11 Snap. Use Slint public native-window handle access and one small
   Win32 frame adapter; no Slint fork. Test maximize hit-testing and DPI changes.
-- Keyboard navigation, focus rings, screen-reader roles/names/values, high
+- Keyboard navigation, visible focus through control backgrounds (outlines only in text fields), screen-reader roles/names/values, high
   contrast and Windows text scaling are required. Icons have accessible names
   and focus/hover tooltips. Color is never the only signal. Honor reduced motion;
   no perpetual decorative animation.
@@ -154,20 +162,25 @@ Edits apply immediately and autosave; no Apply button. `Ctrl+S` flushes pending
 state and reports failures rather than gating preview. File offers New, Import,
 Export preset, Export PNG and Duplicate preset.
 
-The layer list has New layer, ordered type thumbnails/names, visibility and lock.
-Rename inline; reorder by drag or commands. Context menu: Copy/Cut/Paste,
+The layer list has New layer, ordered names, visibility and per-row trash.
+Rename from the row; reorder by drag with an insertion marker. No footer menus
+or move-up/down buttons. Legacy locks remain accessible from the context menu. Context menu: Copy/Cut/Paste,
 Duplicate, Move up/down, Bring to front, Send to back, Delete. Locked layers stay
 selectable from the list but immutable. Multi-selection transforms/duplication
 do not require a nested group model.
 
-Canvas: pan, zoom, Fit, 100%, optional pixel grid and physical-pixel scale.
-Integer zoom enlarges the actual raster with nearest-neighbor sampling. Background
-choices are dark/light/checkerboard/local reference image; never export that
-background as crosshair pixels. Bounds/handles are editor adornments only.
+Canvas: middle-button pan, pointer-anchored zoom, Fit and 100%. The dark background
+is fixed and the design-pixel grid appears automatically from 800% zoom.
+Panning uses screen-space deltas independent of the changing design transform.
+The shared renderer rasterizes previews at display/zoom resolution, capped at a
+1024px bitmap dimension; the engine still rasterizes at physical output scale.
+Bounds/handles and the grid are editor adornments only.
 Drag moves; handles resize/rotate; Shift constrains proportions/angles. Arrow
 keys nudge one design pixel, Shift+arrow ten. Exact fields cover every transform.
 
-Bottom tools: Crosshair, Shape (Rectangle/Ellipse/Triangle), Image, Draw, Text.
+Bottom tools: Crosshair, Shape (Rectangle/Ellipse/Triangle), Image and Draw.
+Text creation is removed. Existing/imported text remains readable, renderable
+and editable so the simplification never destroys saved documents.
 No Design/Animate split. Inspector contains only the selected type's controls.
 Lines/Dot/Outline collapse independently; remember expansion during the session.
 
@@ -175,13 +188,13 @@ Lines/Dot/Outline collapse independently; remember expansion during the session.
 | --- | --- |
 | Common | Name, visible/locked, X/Y, uniform scale, rotation, opacity, nine-point transform anchor. Changing anchor preserves visual position. |
 | Crosshair arms | 1-32 equally spaced arms, individual arm enable toggles, length, thickness, gap, rotation, fill/opacity and line blur. Four-arm default can omit any arm. |
-| Arm shape | Rectangle, triangle, inward/outward chevron, arc, T-shape, text or image. Reuse text/asset controls and show only relevant geometry. |
+| Arm shape | Rectangle, triangle, inward/outward chevron, arc, T-shape or image. Existing text arms retain their controls. Reuse asset controls and show only relevant geometry. |
 | Center dot | Enable, square/circle, diameter, fill/opacity and blur. |
 | Crosshair outline | Enable, color/opacity, thickness and blur. Include arms/dot without accidentally filling the gap. |
 | Rectangle | Width/height, corner radius, fill, outline, blur, common transform. |
 | Ellipse | Width/height, fill, outline, blur, common transform; transparent fill makes a ring. |
 | Triangle | Width/height, fill, outline, blur, common transform. |
-| Text | Content, installed family, available weight/style, size, spacing, fill, outline, blur; straight/circular layout, radius, Repeat to fill. |
+| Legacy text (existing/imported only) | Content, installed family, available weight/style, size, spacing, fill, outline, blur; straight/circular layout, radius, Repeat to fill. |
 | Image | Import, crop, dimensions/aspect lock, opacity, rotation, blur, alpha-silhouette outline; nondestructive crop retains source. |
 | Freehand | Color/opacity, brush size; left-button draw, right-button erase, Escape exits. Each stroke is one history step; layer transforms/outline/blur apply. |
 
@@ -213,15 +226,18 @@ acknowledged autosaved work needs no save prompt.
 
 ### Keybinds
 
-Two simple tables: Actions and Preset shortcuts. Rows have enabled state,
-action/target, key chip and remove control. No controller columns, dead animation
-Fire/Reload rows or explanation block. New action offers Toggle visibility
-(press), Hide (hold), Show (hold), Toggle preset (press), Show preset (hold).
+Two compact tables: Crosshair shortcuts and Press & hold actions, with New rows
+at the top, target thumbnails, key chips and trash controls. No enabled switches,
+repeated Select crosshair labels, controller columns or animation rows.
+One dedicated application row owns Toggle visibility; new profile actions offer
+Hide (hold), Show (hold), Toggle preset (press) and Show preset (hold).
+Recording an existing disabled shortcut enables it.
 Preset shortcuts select a target on press. All rows belong to the active profile
 except the clearly identified application-wide visibility chord.
 
-Click a chip to listen: `Press a key`, orange outline. Escape cancels, Backspace
-clears, outside click cancels. Wait for already-held keys/buttons to release so
+Click a chip to listen: `Press a key`, highlighted background. Escape cancels, Backspace
+clears, outside click cancels. Each capture has a unique token; delayed results
+from a cancelled capture cannot finish a newer one. Wait for already-held keys/buttons to release so
 the click opening capture is not assigned as Mouse 1. Support keyboard chords,
 mouse buttons 1-5 and wheel up/down (wheel is press-only).
 
@@ -252,7 +268,7 @@ ambiguous minimize-on-close option. Use Windows minimize to minimize.
 
 ## Ownership and folders
 
-One Cargo workspace, two product Rust binaries, two shared crates and a small
+One Cargo workspace, two product Rust binaries, three shared crates and a small
 SDK host. Create directories with working code, never empty future scaffolding.
 Separate domain, platform and presentation like TDM without its web/Python stack.
 
@@ -262,7 +278,10 @@ Cargo.lock
 apps/
   engine/src/
     main.rs                     # normal, startup and update-helper modes
-    app.rs                      # authoritative state/dispatch/shutdown
+    app.rs                      # authoritative state/history/input model
+    commands.rs                 # validated domain mutations
+    runtime/                    # native orchestration and worker completions
+    work.rs                     # bounded serialized storage/validation worker
     input/                      # Raw Input, device/key state
     overlay/                    # native output and widget connection
     ipc/                        # endpoints, framing, authentication
@@ -286,12 +305,13 @@ apps/
 crates/
   core/src/                     # IDs/documents/bindings/validation/protocol
   renderer/src/                 # geometry/text/assets/effects/raster/cache
+  platform/src/                 # shared Windows identity and authenticated pipes
 assets/
   logo.svg
   icons/                        # selected Tabler icons and license
   fonts/                        # Manrope and license
 packaging/windows/              # MSIX identity/manifest/artwork
-tests/fixtures/                 # synthetic render/import/protocol data
+crates/renderer/tests/           # deterministic synthetic rendering fixtures
 scripts/                        # actual build/QA/package entry points only
 .github/workflows/              # validation, manual prepare/publish
 docs/architecture.md            # canonical plan/contracts
@@ -302,6 +322,8 @@ No plugin system, DI container, event-bus framework, generic service/repository
 stack or crate per feature. Core has no Slint/window/filesystem dependency.
 Renderer owns no input/persistence. Rust feature controllers adapt domain state;
 Slint describes layout/interaction, not duplicate business validation.
+The platform crate shares the same identity and pipe implementation between the
+engine and editor; it contains no application state or rendering code.
 
 Pin dependency versions when introduced and commit the lockfile. Baseline:
 `windows`, `serde`/`serde_json`, `tiny-skia`, `slint`/`slint-build`, `image` with
@@ -319,7 +341,7 @@ editable labels, never identity or filesystem paths.
 | --- | --- |
 | App state | Schema version, settings, profiles/active ID, preset library, asset index, base selection/visibility, revisions. |
 | Profile | ID/name, selected preset, bindings, scale/offset, saved positions. |
-| Preset | ID/name, ordered layers, favorite, manual order, document revision. |
+| Preset | ID/name, ordered layers, favorite, manual order, document revision and engine-owned global edit order for recency. |
 | Layer | ID/name, visible/locked, transform, opacity, typed content/effects. |
 | Content | Crosshair, rectangle, ellipse, triangle, text, image or freehand strokes. |
 | Binding | ID, chord, press/hold action, target if needed, enabled. |
@@ -400,7 +422,7 @@ bounded mask/effect operations; blur and alpha-silhouette outlines need golden
 tests. [DirectWrite exposes glyph outlines through geometry sinks][directwrite].
 
 Render only on relevant state/display changes. Prewarm shortcut targets that fit
-the cache before input-ready status. Evicted complex targets render on demand
+the cache while keeping input dispatch responsive. Evicted complex targets render on demand
 with newest-request-wins cancellation; never present an obsolete result. Benchmark
 warm and cold switching. Integer-aligned edges stay crisp; fractional/rotated
 geometry is antialiased intentionally. For odd thickness/even monitor centers,
@@ -441,6 +463,20 @@ with bounded backoff only while requested/pinned, without fabricated activity to
 defeat UWP lifecycle. Report disconnected/unpinned status. Editor close never
 closes the widget. Desktop mode remains usable without Game Bar.
 
+Output changes use a bounded native-owner transition. A hidden preparation frame
+and a visible activation frame have different generations; acknowledgments must
+match both generation and actual bitmap state. Shell visibility alone is not an
+acknowledgment. Prepare the desktop bitmap while hidden before requesting a widget
+blank. Settings, all-data import and reset/recovery use the same boundary, and
+durable publication stays on the storage worker. Continue observing global input
+while work runs; changes made during the operation survive its publication.
+Queued timeout messages cannot cancel an already committing state change.
+
+If a failed activation cannot acknowledge blanking, leave the desktop hidden and
+report that the widget must reconnect to confirm it has cleared. A broken pipe
+alone does not prove stale pixels disappeared. The blank request remains the
+latest frame across reconnection. Normal transitions never draw both outputs.
+
 ## Global input
 
 Keyboard Raw Input: `RegisterRawInputDevices` with `RIDEV_INPUTSINK`, engine
@@ -478,16 +514,21 @@ discard motion without allocation; never compensate by polling or dropping ups.
 
 ### Execution and IPC
 
-One engine state/message thread handles mutation and fast input dispatch. Use
-bounded render/decode work and blocking/overlapped IPC as needed. Updates create
-a worker only while active. Workers post results to the owner. No thread per
-preset/client, unbounded queues or background scheduler. Slint's thread never
-blocks on I/O/large renders; post newest results to its event loop.
+One engine state/message thread handles mutation and fast input dispatch. A
+bounded storage/validation queue and a cancellable latest-render worker keep
+decoding and files off that thread. Native tray menus and save-error dialogs use
+one separate UI thread so their modal message pumps cannot stall Raw Input.
+The control server admits at most two clients, each with bounded reader/writer
+transport work; the widget has one connection. Updates create a worker only while
+active. Workers post results to the owner. No thread per preset, unbounded queue
+or background scheduler. Slint's thread never blocks on I/O/large renders; post
+newest results to its event loop.
 
 Desktop pipe: current-user logon-session ACL, remote rejection, authenticated
 peer identity. Names include user/session but are not the security boundary.
 Prevent first-instance squatting; verify expected packaged executable identity.
-Handshake verifies build/protocol before accepting commands.
+Handshake verifies build/protocol before accepting commands. Control protocol v2
+adds capture tokens to Begin/Cancel/Captured; both executables must be rebuilt together.
 
 Length-prefixed UTF-8 JSON, 1 MiB control frames, incomplete-frame deadlines and
 bounded requests. IDs/event revisions prevent stale responses replacing newer
@@ -497,7 +538,7 @@ Expire abandoned snapshots; cap retained snapshots and assemble at most one
 document up to the 8 MiB configuration bound. Apply later revision events only
 after snapshot completion. Test valid state larger than one control frame and
 mutation during transfer. No periodic GetState. Commands cover library/profiles,
-capture/bindings, visibility/settings, imports/exports, updates, Open editor/Quit.
+capture/bindings, visibility/settings, imports/exports, updates, Open menu/Quit.
 No generic filesystem/executable command endpoint. Large imports use engine-issued
 staging tokens and bounded files; validate/open/copy before adopting managed assets.
 
@@ -547,7 +588,7 @@ connects/starts engine, then opens/focuses one editor. Concurrent launches conve
 Editor close fully exits its process; engine/presentation continue. Editor crash
 does not stop the crosshair.
 
-Tray: Open editor, On/Off, compact active-profile preset submenu, Quit. Quit closes
+Tray: Open menu, Show crosshair, compact active-profile preset submenu, Quit. Quit closes
 editor, blanks/releases widget, unregisters input/tray, flushes and exits. No
 orphan helper or respawn after deliberate Quit. An open editor offers Restart on
 engine failure while preserving local edits; headless failures do not spawn a
@@ -555,6 +596,9 @@ surprise editor or a restart loop.
 
 One packaged StartupTask, off by default, starts only engine mode. Honor Windows
 DisabledByUser. Activation uses stable app IDs, not versioned WindowsApps paths.
+Settings/recovery publication captures the actual Windows startup state, verifies
+the requested state and compensates if reconciliation or durable publication
+fails. No WinRT startup wait runs on the input thread.
 Handle lock/unlock, sleep/wake, display change and Windows shutdown deliberately.
 Normal use needs no administrator rights.
 
@@ -617,7 +661,12 @@ streaming cryptographic verification without its support.
 
 Minisign and Windows publisher trust are separate. Never install trust certificates
 silently or reuse another project's private key. Rotate keys through a reviewed
-trust transition, not a manifest-provided key.
+trust transition, not a manifest-provided key. The implementation uses streaming
+prehashed Minisign verification and native WinHTTP on a short-lived worker, with
+an absolute request watchdog and cancellation. It has no idle networking thread.
+Before handoff, WinVerifyTrust checks cached chain/revocation evidence without
+starting background network requests. Missing trust evidence blocks installation
+while the existing app remains usable; the release link provides manual recovery.
 
 ### Install and restart
 
@@ -635,8 +684,10 @@ just for deployment.
    Prove desktop process policy/identity; copying an EXE is insufficient. It must
    work without old versioned install paths or loading writable adjacent DLLs.
 4. After takeover acknowledgement, close editor, blank/release widget, unregister
-   input/tray, exit engine. Bound shutdown waits. Targeted forced package shutdown
-   is a last resort after durable save, never for unrelated dependencies.
+   input/tray, exit engine. The helper then snapshots matching editor/widget
+   processes once, verifies their user/session/exact installed package identity
+   and waits on their handles for at most 15 seconds. It never kills them or uses
+   forced package shutdown; failure preserves the installed version.
 5. Deploy local package and observe result. No downgrade flags. Query actually
    installed version, activate stable app identity and restore selection,
    visibility/output. Reopen Settings if editor initiated the update.
@@ -659,7 +710,18 @@ dependencies on clean machines: C++ widget may need Microsoft VCLibs. Supply
 trusted dependencies for offline distribution or state online acquisition
 requirements. One application package does not imply zero runtime dependencies.
 No separate Store-widget installation in the standard path. Game Bar itself is a
-prerequisite only for its output mode.
+prerequisite only for its output mode. The package identity is
+`OhneB.crosshair-rs`, with `Editor`, `Engine` and `Widget` app IDs and
+`CrosshairOverlay` widget extension. Publisher is compiled from the production
+certificate subject; `CN=ohne-b` is the unsigned development default, not a claim
+of certificate ownership. The three executables are package-root siblings.
+
+`scripts/package-windows.ps1` validates a real build and supplies an offline
+`Microsoft.VCLibs.140.00` x64 **14.0.33519.0** dependency beside the MSIX. The
+framework is extracted from Microsoft's hash-pinned VS2022 CRT redistributable
+CAB and checked for exact hash, identity and Microsoft signature. `Install.ps1`
+passes it to Windows as a dependency; it does not import certificates or change
+Developer Mode. This is the UWP VCLibs framework, not `UWPDesktop`.
 
 Freeze the Microsoft framework minimum versions for the first stable release
 line. Before stopping the app, validate that installed dependencies satisfy the
@@ -670,10 +732,11 @@ in-app installation with an actionable manual-install link while the old app
 continues running. Never discover missing dependencies only after shutdown.
 
 Workspace version owns product version; derive/check Rust, widget and MSIX
-metadata. Stable `A.B.C` maps to `A.B.C.0`. Previews use a separate package identity
-and update channel with an explicitly monotonic fourth-component build number;
-never leave stable unable to upgrade an installed higher preview. Stable latest
-never references a prerelease.
+metadata. Stable `A.B.C` maps to `A.B.C.0`. Local previews use the separate
+`OhneB.crosshair-rs.Preview` identity and an explicitly monotonic fourth-component
+`-PreviewBuild` number. They do not consume the stable update channel; in-app
+updates are disabled. Release automation accepts stable versions only. Stable
+latest never references a prerelease or becomes blocked by a higher preview.
 
 Follow existing OhneGuessr/TDM conventions:
 
@@ -691,6 +754,16 @@ Follow existing OhneGuessr/TDM conventions:
 - Title `crosshair-rs vVERSION`, one Changelog comparison footer, one issue link.
   Never overwrite published tags/assets. Broken releases get a new corrected
   version; preserve old config until recovery succeeds.
+
+`validation.yml` retains immutable `windows-SHA-RUN-ATTEMPT` artifacts for 14
+days. `prepare-release.yml` creates the version/notes draft PR;
+`publish-release.yml` signs the selected exact-main artifact, verifies downloaded
+assets and stops at a draft. Production public build variables and protected
+signing secrets, local commands and the final manual acceptance boundary are
+specified in [CONTRIBUTING.md](../CONTRIBUTING.md#maintainer-commands-and-signing-configuration).
+Missing keys fail closed before any update request. Package signing, helper
+breakaway survival, two-version deployment and clean-install behavior require
+actual signed runtime evidence; source checks alone do not prove those gates.
 
 ## Performance and validation
 
@@ -774,7 +847,8 @@ All steps are required for the complete release and end with reviewed evidence.
 The first step has empirical gates, not undecided product scope. Slint native
 frame integration, Game Bar pixel placement, package trust/dependencies, helper
 lifetime and resource costs cannot be established from documentation alone.
-The repository remains non-runnable until implementation starts.
+The source tree contains the implementation; release readiness requires the
+automated and native evidence above, including the signed update handoff.
 
 [slint-renderers]: https://docs.slint.dev/latest/docs/slint/guide/backends-and-renderers/backend_winit/
 [slint-license]: https://slint.dev/agreements/slint-royalty-free-license.pdf

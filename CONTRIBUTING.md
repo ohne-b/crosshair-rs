@@ -60,23 +60,47 @@ default merge subject, squash or rebase instead of the merge commit.
 
 ## Validation
 
-The repository currently contains documentation and artwork only. There is no
-Cargo workspace, Slint build or Game Bar host yet. Do not invent passing
-application checks.
+Use x64 Windows, the Rust toolchain in `rust-toolchain.toml`, Node 24, Visual
+Studio 2022 C++ build tools and Windows SDK 10.0.26100. The Game Bar build restores
+hash-pinned SDK/C++WinRT packages into ignored `target/`; it does not need the
+Visual Studio XAML designer workload. Run the checks relevant to the change:
 
-For groundwork changes, run `git diff --check` (and `git diff --cached --check`
-for newly staged files), inspect the complete diff, verify relative links and
-commands, parse changed workflow files and SVGs, and check factual claims against
-their sources. The [Validation workflow](.github/workflows/validation.yml) checks
-tracked-file whitespace on PRs, main pushes and manual runs. It does not validate
-application behavior, external links or native compatibility.
+```powershell
+git diff --check
+npm --prefix scripts ci --ignore-scripts
+npm --prefix scripts test
+npm --prefix scripts run validate-workflows
+./scripts/validate-sources.ps1
+cargo fmt --all -- --check
+cargo clippy --locked --workspace --all-targets -- -D warnings
+cargo test --locked --workspace
+./scripts/build-gamebar.ps1 -Test
+./scripts/package-windows.ps1 -OutputDirectory target/local-package
+```
 
-Introduce build/test checks alongside each runnable component. The intended
-baseline is Rust formatting, Clippy and tests with the committed Cargo lockfile,
-plus Slint compile/UI checks, Game Bar host/package builds and meaningful behavior
-tests once those components exist. Add actual commands here with their manifests.
-Use Windows runners for native checks; browser tests of a design preview cannot
-verify Win32 input, DPI, tray behavior, Slint accessibility or package deployment.
+The [Validation workflow](.github/workflows/validation.yml) runs this baseline on
+Windows for PRs, main pushes and manual runs. Packaging builds the real engine,
+Slint editor and Game Bar host, validates the MSIX manifest and includes the
+Microsoft-signed x64 VCLibs dependency. It never installs the result. A PR package
+is unsigned, has its updater disabled and cannot be promoted to a release.
+`-Offline` on build/package scripts uses previously verified cached dependencies.
+Choose a fresh package output directory rather than overwriting an artifact.
+
+Packaging also runs `node scripts/generate-notices.mjs OUTPUT` against the locked
+Windows normal/build dependency graph and bundles complete upstream license
+material. Do not suppress missing-material failures. If a published crate omitted
+its license, retain the exact original upstream text in a reviewed repository
+file and add an exact `crate@version` entry in `scripts/license-overrides.json`:
+`{"files":["repository/relative/license.txt"],"source":"https://upstream/version/LICENSE","reason":"Why this exact override is required"}`.
+The collector rejects stale overrides, escaping paths and missing files; it
+never invents copyright statements or emits local cache paths. Review the
+selected license and redistribution conditions separately from file collection.
+
+Inspect complete diffs, relative links and factual claims; run
+`git diff --cached --check` for newly staged files. Automated checks do not prove
+native click-through, DPI, real-game compatibility, Slint accessibility or signed
+installation. Record deliberate manual acceptance separately. Do not run overlays,
+capture gameplay input or launch heavy builds during the user's active gameplay.
 
 Run focused local checks during development. Successful CI on the final revision
 supplies its full baseline; do not repeat the entire suite locally without reason.
@@ -106,11 +130,10 @@ requirements before an authorized merge.
 Use the same deliberate PR/manual-release conventions as OhneGuessr and Twitch
 Drops Miner. No ordinary merge, push or tag should publish a release.
 
-There is no release workflow yet because no executable or installer exists. Add
-packaging automation with the packaging milestone, following these contracts:
+The manual workflows implement these boundaries:
 
-1. Prepare a version change on `feat/release-VERSION` through a draft PR. Once
-   Cargo exists, `[workspace.package].version` owns the product version; product
+1. Prepare a version change on `feat/release-VERSION` through a draft PR.
+   `[workspace.package].version` owns the product version; product
    crates inherit it and Cargo.lock agrees. Derive and validate widget/MSIX
    metadata using the version mapping in the architecture plan.
 2. Add concise, reviewed notes to `CHANGELOG.md`, with relevant PR links in
@@ -133,5 +156,48 @@ platform, never by copying a local login token. Updater signing is distinct from
 Windows package signing; do not claim either until configured and verified.
 Settings-driven checks/downloads and explicit Install and restart are part of the
 complete plan; unattended installation is not. Follow the architecture's signed
-version, artifact provenance, deployment and recovery contracts. Document actual
-artifact names, signing and recovery commands when implemented.
+version, artifact provenance, deployment and recovery contracts.
+
+### Maintainer commands and signing configuration
+
+Use **Prepare release** with a stable `MAJOR.MINOR.PATCH` and reviewed Markdown
+bullets. It updates Cargo.toml/Cargo.lock and CHANGELOG.md and opens a draft
+`feat/release-VERSION` PR. Its scoped `PUBLISHER_TOKEN` needs repository contents
+and pull-request write permission so normal PR validation runs; do not substitute
+a local login credential. Notes omit the generated comparison and issue footers.
+
+Configure repository variables `CROSSHAIR_UPDATE_PUBLIC_KEY` (the project's
+Minisign base64 public key) and `CROSSHAIR_PACKAGE_PUBLISHER` (the exact Windows
+signing-certificate subject) before validating a release candidate on main.
+Both values are compiled into the engine and checked by packaging through
+`crosshair-engine.exe --build-info`. They are public configuration, not secrets.
+Changing either requires a newly validated artifact. Without them, validation
+produces only an updater-disabled development package. Local release-candidate
+builds explicitly use `./scripts/package-windows.ps1 -ReleaseCandidate` with both
+variables set; no signing key is needed to build or validate that candidate.
+
+The protected `release` environment supplies `WINDOWS_CERTIFICATE_PFX_BASE64`,
+`WINDOWS_CERTIFICATE_PASSWORD` and the complete, unencrypted project-specific
+`MINISIGN_PRIVATE_KEY` file as secrets. Provision and back up signing keys outside
+this repository. **Prepare signed draft release** accepts the stable version and
+the latest successful Validation run ID for exact current main. It rejects old,
+failed, cancelled, superseded, expired, dirty or PR artifacts. The workflow copies
+and signs that immutable MSIX without rebuilding its contents. The signing
+certificate is imported only into the ephemeral runner's personal store and
+removed afterward; nothing adds a root/trust certificate or enables Developer
+Mode. Windows must already trust the production certificate chain.
+
+The draft contains `crosshair-rs-VERSION-windows-x64.msix`, its `.minisig`,
+`latest.json`, `SHA256SUMS`, `Microsoft.VCLibs.x64.14.00.appx` and `Install.ps1`.
+The workflow downloads and verifies all six assets. It does not publish the
+draft. Complete clean-machine installation, signed N-to-N+1 update, cancellation,
+interrupted deployment and restart checks before a separately authorized GitHub
+publication. The updater consumes stable releases only; local preview packages
+use `.Preview` identity plus explicit `-PreviewBuild` and have updates disabled.
+
+For a downloaded signed release, place its assets together and run
+`powershell -NoProfile -File .\Install.ps1`. Windows verifies package signatures
+and trust and installs the pinned x64 framework as a dependency. This command
+does not elevate, change trust or install a service. An unsigned local package
+requires a separately authorized development registration or trusted test signing;
+the build scripts deliberately perform neither.
