@@ -1,0 +1,169 @@
+use super::*;
+
+impl App {
+    pub(super) fn confirm_modal(&mut self, value: &str, alternate: bool) -> Result<()> {
+        let modal = std::mem::replace(&mut self.modal, Modal::None);
+        self.hide_modal();
+        match modal {
+            Modal::RenamePreset(id) => {
+                self.open_document(id)?;
+                self.layer_action("rename-document", value)?;
+            }
+            Modal::RenameLayer(id) => {
+                self.document.select(id, false);
+                self.property_edit("/name", value, 2)?;
+            }
+            Modal::NewProfile => {
+                let selected = self
+                    .state
+                    .selected_preset()
+                    .context("Select a crosshair")?
+                    .id;
+                self.profile_edit(Profile::new(value.trim(), selected))?;
+            }
+            Modal::RenameProfile(id) => {
+                let mut profile = self
+                    .state
+                    .profiles
+                    .iter()
+                    .find(|profile| profile.id == id)
+                    .context("This profile was deleted")?
+                    .clone();
+                profile.name = value.trim().into();
+                self.profile_edit(profile)?;
+            }
+            Modal::SavePosition => {
+                let mut profile = self.active_profile()?;
+                profile.positions.push(SavedPosition {
+                    id: Id::new_v4(),
+                    name: value.trim().into(),
+                    offset: profile.offset,
+                    scale: profile.scale,
+                });
+                self.profile_edit(profile)?;
+            }
+            Modal::DeletePreset(preset, replacement) => self.send(
+                "delete",
+                Command::DeletePreset {
+                    preset,
+                    replacement,
+                },
+            )?,
+            Modal::DeleteProfile(profile, replacement) => self.send(
+                "delete",
+                Command::DeleteProfile {
+                    profile,
+                    replacement,
+                },
+            )?,
+            Modal::ReplaceData(path) => {
+                self.client
+                    .stage_file(path, StagingPurpose::Import { replace: true }, "import")?;
+            }
+            Modal::Reset => self.send("reset", Command::ResetSettings)?,
+            Modal::Recovery => self.send(
+                "recover",
+                if alternate {
+                    Command::ResetSettings
+                } else {
+                    Command::RecoverBackup
+                },
+            )?,
+            Modal::Close => {
+                if alternate {
+                    self.document.cancel_gesture();
+                    self.document.dirty = false;
+                    self.document.conflict = false;
+                    self.preview_pending = false;
+                    self.drag = None;
+                    self.draw_base = None;
+                    self.deferred_ui.clear();
+                    self.pending_command = None;
+                    self.cancel_group = true;
+                    self.finish_group = true;
+                    self.closing = true;
+                    if !self.window()?.global::<Store>().get_connected() {
+                        self.close_now()?;
+                    } else if self.group_open {
+                        self.finish_edit()?;
+                    }
+                } else if !self.window()?.global::<Store>().get_connected() {
+                    self.client.reconnect()?;
+                    self.modal = Modal::Close;
+                    self.show_modal(1, "Keep unsent changes?", "Reconnecting to the engine. Retry saving when connected, or keep this editor open.", "Retry", "Discard", "");
+                } else {
+                    self.closing = true;
+                    if self.document.conflict {
+                        self.action("retry-edit", "")?;
+                    } else {
+                        self.begin_edit()?;
+                        self.finish_group = true;
+                        self.send_document()?;
+                        self.finish_edit()?;
+                    }
+                }
+            }
+            Modal::Conflict(target, chord, conflict) => {
+                self.apply_capture(target, Some(chord), Some(conflict))?
+            }
+            Modal::DraftConflict => {
+                if alternate {
+                    self.closing = false;
+                    if self.shutdown_requested.take().is_some() {
+                        self.send("cancel-quit", Command::CancelQuit)?;
+                    }
+                    self.export_draft(false)?;
+                } else {
+                    if self.group_open {
+                        self.cancel_group = true;
+                        self.group_ending = true;
+                        self.send("recover-cancel", Command::CancelEdit)?;
+                    } else {
+                        self.reapply_draft()?;
+                    }
+                }
+            }
+            Modal::None | Modal::Menu(_) => {}
+        }
+        Ok(())
+    }
+    pub(super) fn reapply_draft(&self) -> Result<()> {
+        self.preview.recover(
+            self.document
+                .draft
+                .clone()
+                .context("The draft is unavailable")?,
+            preview::RecoveryAction::Reapply,
+        )
+    }
+    pub(super) fn export_draft(&self, png: bool) -> Result<()> {
+        let document = self
+            .document
+            .draft
+            .clone()
+            .context("Open a crosshair first")?;
+        if let Some(path) = dialogs::choose(
+            self.hwnd()?,
+            true,
+            if png {
+                dialogs::FileKind::Png
+            } else {
+                dialogs::FileKind::Document
+            },
+            if png {
+                "crosshair.png"
+            } else {
+                "crosshair-rs.json"
+            },
+        )? {
+            self.preview.recover(
+                document,
+                preview::RecoveryAction::Export {
+                    destination: path,
+                    png,
+                },
+            )?;
+        }
+        Ok(())
+    }
+}

@@ -1,0 +1,162 @@
+import { Theme } from "tokens.slint";
+import { Store } from "models.slint";
+
+export component ActionButton inherits Rectangle {
+    in property <string> text;
+    in property <image> icon;
+    in property <image> thumbnail;
+    in property <bool> accent-icon: false;
+    in property <string> label: root.text;
+    in property <bool> primary: false;
+    in property <bool> quiet: false;
+    in property <bool> selected: false;
+    in property <bool> enabled: Store.modal-kind == 0 && !Store.read-only;
+    in property <bool> danger: false;
+    in property <bool> align-left: false;
+    callback clicked;
+    height: root.text == "" ? 32px : max(32px, 12px * Theme.text-scale + 16px);
+    preferred-width: root.text == "" ? 32px : content.preferred-width;
+    horizontal-stretch: 0;
+    vertical-stretch: 0;
+    border-radius: Theme.radius;
+    background: !root.enabled ? transparent : root.danger && touch.has-hover ? #B4232A : root.primary ? (focus.has-focus || touch.has-hover ? Theme.orange.brighter(0.18) : Theme.orange) : touch.has-hover || focus.has-focus ? Theme.hover : root.selected ? Theme.raised : root.quiet ? transparent : Theme.raised;
+    border-width: 0px;
+    opacity: root.enabled ? 1 : 0.4;
+    accessible-role: button;
+    accessible-label: root.label;
+    accessible-enabled: root.enabled;
+    accessible-action-default => { if root.enabled { root.clicked(); } }
+    forward-focus: focus;
+    content := HorizontalLayout {
+        padding-left: root.text == "" ? 7px : 10px; padding-right: root.text == "" ? 7px : 10px; spacing: 8px; alignment: root.align-left ? start : center;
+        if root.thumbnail.width > 0: Rectangle { width: 26px; Image { y: (parent.height - 26px) / 2; source: root.thumbnail; width: 26px; height: 26px; image-fit: contain; } }
+        if root.icon.width > 0: Rectangle { width: 18px; Image { y: (parent.height - 18px) / 2; source: root.icon; width: 18px; height: 18px; colorize: root.primary ? Theme.on-accent : root.selected || root.accent-icon ? Theme.orange : Theme.muted; } }
+        if root.text != "": Text { text: root.text; color: root.primary ? Theme.on-accent : Theme.text; font-size: 12px * Theme.text-scale; font-weight: root.primary ? 600 : 500; vertical-alignment: center; overflow: elide; }
+    }
+    focus := FocusScope {
+        enabled: root.enabled;
+        key-pressed(event) => {
+            if event.text == "\n" || event.text == " " { root.clicked(); return accept; }
+            return reject;
+        }
+    }
+    touch := TouchArea {
+        enabled: root.enabled;
+        clicked => { focus.focus(); root.clicked(); }
+    }
+    Tooltip {
+        Rectangle {
+            background: Theme.raised; border-radius: 8px; border-width: 1px; border-color: Theme.border;
+            HorizontalLayout { padding-left: 8px; padding-right: 8px; padding-top: 6px; padding-bottom: 6px; Text { text: root.label; color: Theme.text; font-size: 11px * Theme.text-scale; } }
+        }
+    }
+}
+
+export component EditField inherits Rectangle {
+    in property <string> identity;
+    changed identity => { root.modified = false; }
+    in-out property <string> text;
+    in property <string> placeholder;
+    in property <string> label: root.placeholder;
+    in property <bool> enabled: Store.modal-kind == 0 && !Store.read-only;
+    in property <bool> numeric: false;
+    callback edited(string);
+    callback committed(string);
+    callback accepted(string);
+    property <bool> focused: input.has-focus;
+    property <bool> modified: false;
+    changed focused => { if !root.focused && root.modified { root.modified = false; root.committed(root.text); } }
+    height: max(32px, 12px * Theme.text-scale + 16px);
+    vertical-stretch: 0;
+    min-width: 0px;
+    border-radius: Theme.radius;
+    background: Theme.field;
+    border-width: 1px;
+    border-color: input.has-focus ? Theme.orange : transparent;
+    forward-focus: input;
+    input := TextInput {
+        x: 9px; y: 6px; width: parent.width - 18px; height: parent.height - 12px;
+        text <=> root.text;
+        enabled: root.enabled;
+        single-line: true;
+        vertical-alignment: center;
+        color: Theme.text;
+        selection-background-color: Theme.orange;
+        selection-foreground-color: Theme.canvas;
+        font-size: 12px * Theme.text-scale;
+        horizontal-alignment: root.numeric ? right : left;
+        accessible-label: root.label;
+        edited => { root.modified = true; root.edited(self.text); }
+        accepted => { root.modified = false; root.committed(self.text); root.accepted(self.text); }
+        key-pressed(event) => {
+            if event.text == Key.Tab && root.modified { root.modified = false; root.committed(self.text); }
+            return reject;
+        }
+    }
+    if input.text == "" && !input.has-focus: Text { x: 9px; text: root.placeholder; color: Theme.muted; font-size: 12px * Theme.text-scale; vertical-alignment: center; }
+}
+
+export component Switch inherits Rectangle {
+    in property <bool> checked;
+    in property <string> label;
+    in property <bool> enabled: Store.modal-kind == 0 && !Store.read-only;
+    callback toggled;
+    width: 34px; height: 32px; vertical-stretch: 0; horizontal-stretch: 0;
+    background: focus.has-focus ? Theme.hover : transparent; border-radius: 8px;
+    accessible-role: switch;
+    accessible-label: root.label;
+    accessible-checked: root.checked;
+    accessible-enabled: root.enabled;
+    accessible-action-default => { if root.enabled { root.toggled(); } }
+    forward-focus: focus;
+    Rectangle { y: 6px; width: 34px; height: 20px; border-radius: 10px;
+        background: root.checked ? Theme.orange : Theme.border;
+        Rectangle { x: root.checked ? 17px : 3px; y: 3px; width: 14px; height: 14px; border-radius: 7px; background: root.checked ? Theme.canvas : Theme.muted; }
+    }
+    focus := FocusScope { enabled: root.enabled; key-pressed(event) => { if event.text == " " { root.toggled(); return accept; } return reject; } }
+    TouchArea { enabled: root.enabled; clicked => { focus.focus(); root.toggled(); } }
+}
+
+export component Divider inherits Rectangle { height: 1px; vertical-stretch: 0; background: Theme.border; horizontal-stretch: 1; }
+export component SectionTitle inherits Text { color: Theme.muted; font-size: 11px * Theme.text-scale; font-weight: 600; height: 36px; vertical-stretch: 0; vertical-alignment: center; }
+
+export component NumericSlider inherits Rectangle {
+    in property <bool> enabled: Store.modal-kind == 0 && !Store.read-only;
+    in property <float> minimum: 0;
+    in property <float> maximum: 100;
+    in-out property <float> value: 0;
+    in property <string> label;
+    callback changed(float);
+    callback released;
+    height: 20px;
+    property <float> fraction: (root.value - root.minimum) / max(0.00001, root.maximum - root.minimum);
+    property <float> step: root.maximum - root.minimum <= 1 ? 0.01 : root.maximum - root.minimum <= 10 ? 0.1 : 1;
+    accessible-role: slider; accessible-label: root.label;
+    accessible-enabled: root.enabled;
+    accessible-value: root.value; accessible-value-minimum: root.minimum; accessible-value-maximum: root.maximum; accessible-value-step: root.step;
+    accessible-action-set-value(value) => { if root.enabled && value.is-float() { root.value = clamp(value.to-float(), root.minimum, root.maximum); root.changed(root.value); root.released(); } }
+    accessible-action-increment => { if root.enabled { root.value = min(root.maximum, root.value + root.step); root.changed(root.value); root.released(); } }
+    accessible-action-decrement => { if root.enabled { root.value = max(root.minimum, root.value - root.step); root.changed(root.value); root.released(); } }
+    Rectangle { visible: touch.has-hover || touch.pressed || focus.has-focus; x: 5px; y: parent.height / 2 - 1px; width: parent.width - 10px; height: 2px; background: Theme.border; }
+    Rectangle { visible: touch.has-hover || touch.pressed || focus.has-focus; x: 5px; y: parent.height / 2 - 1px; width: root.fraction * (parent.width - 10px); height: 2px; background: Theme.orange; }
+    Rectangle { visible: touch.has-hover || touch.pressed || focus.has-focus; x: root.fraction * (parent.width - 10px); y: parent.height / 2 - 4px; width: 8px; height: 8px; border-radius: 4px; background: Theme.orange; }
+    forward-focus: focus;
+    focus := FocusScope { enabled: root.enabled; key-pressed(event) => {
+        if event.text == Key.LeftArrow || event.text == Key.RightArrow {
+            root.value = clamp(root.value + (event.text == Key.RightArrow ? root.step : -root.step), root.minimum, root.maximum);
+            root.changed(root.value); root.released(); return accept;
+        }
+        return reject;
+    } }
+    touch := TouchArea {
+        enabled: root.enabled;
+        pointer-event(event) => {
+            if event.kind == PointerEventKind.cancel { root.released(); }
+            if event.button == PointerEventButton.left {
+                if event.kind == PointerEventKind.down { focus.focus(); root.value = clamp(round((root.minimum + clamp((self.mouse-x - 5px) / max(1px, self.width - 10px), 0, 1) * (root.maximum - root.minimum)) / root.step) * root.step, root.minimum, root.maximum); root.changed(root.value); }
+                if event.kind == PointerEventKind.up { root.released(); }
+            }
+        }
+        moved => { if self.pressed { root.value = clamp(round((root.minimum + clamp((self.mouse-x - 5px) / max(1px, self.width - 10px), 0, 1) * (root.maximum - root.minimum)) / root.step) * root.step, root.minimum, root.maximum); root.changed(root.value); } }
+    }
+}

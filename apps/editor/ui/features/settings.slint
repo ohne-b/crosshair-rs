@@ -1,0 +1,141 @@
+import { ScrollView, ProgressIndicator } from "std-widgets.slint";
+import { Store } from "../shared/models.slint";
+import { Theme } from "../shared/tokens.slint";
+import { DropDown } from "../shared/dropdown.slint";
+import { ActionButton, EditField, Switch, Divider, SectionTitle } from "../shared/controls.slint";
+
+component Setting inherits Rectangle {
+    in property <string> label;
+    in property <bool> last: false;
+    height: max(54px, 24px + 16px * Theme.text-scale); vertical-stretch: 0;
+    HorizontalLayout { y: (parent.height - self.height) / 2; height: max(32px, 12px * Theme.text-scale + 16px); spacing: 10px;
+        Text { text: root.label; color: Theme.text; font-size: 12px * Theme.text-scale; vertical-alignment: center; horizontal-stretch: 1; wrap: word-wrap; }
+        @children
+    }
+    if !root.last: Divider { y: parent.height - 1px; }
+}
+
+component Group inherits Rectangle {
+    background: Theme.panel; border-radius: 10px; border-width: 1px; border-color: Theme.border;
+    height: rows.preferred-height; vertical-stretch: 0;
+    rows := VerticalLayout { padding-left: 16px; padding-right: 16px; spacing: 0px; @children }
+}
+
+export component Settings inherits Rectangle {
+    property <int> category: 0;
+    background: Theme.canvas; border-top-left-radius: 12px;
+    VerticalLayout { spacing: 0px;
+        Rectangle { height: 48px; background: Theme.panel; border-top-left-radius: 12px;
+            Text { x: 20px; text: "Settings"; color: Theme.text; font-size: 14px * Theme.text-scale; font-weight: 600; vertical-alignment: center; }
+            Divider { y: parent.height - 1px; }
+        }
+        HorizontalLayout { spacing: 0px;
+            Rectangle { width: 180px; background: Theme.panel;
+                VerticalLayout { padding: 12px; spacing: 4px; alignment: start;
+                    for category[index] in ["Display", "General", "Data", "Updates", "About"]: ActionButton {
+                        text: category; height: 38px; align-left: true; quiet: true; selected: root.category == index; horizontal-stretch: 1;
+                        clicked => { root.category = index; }
+                    }
+                }
+                Rectangle { x: parent.width - 1px; width: 1px; height: parent.height; background: Theme.border; }
+            }
+            ScrollView {
+                VerticalLayout { padding: 24px; spacing: 12px; alignment: start;
+                    if root.category == 0: VerticalLayout { spacing: 12px; alignment: start;
+                        SectionTitle { text: "DISPLAY"; }
+                        Group {
+                            Setting { label: "Display mode";
+                                DropDown { width: 180px; model: ["Desktop", "Game Bar"]; current-index: Store.output-mode; accessible-label: "Output mode"; selected(value) => { Store.action("output-mode", self.current-index); } }
+                                ActionButton { icon: @image-url("../../../../assets/icons/info-circle.svg"); label: "Display compatibility"; quiet: true; clicked => { Store.action("gamebar-help", ""); } }
+                            }
+                            Setting { label: "Monitor"; last: true;
+                                DropDown { width: 220px; model: Store.monitors; current-index: Store.monitor-index; accessible-label: "Monitor"; selected(value) => { Store.action("monitor", self.current-index); } }
+                            }
+                        }
+                        SectionTitle { text: "POSITION & SIZE"; }
+                        Group {
+                            Setting { label: "Scale"; EditField { width: 90px; text: Store.output-scale; numeric: true; label: "Output scale"; committed(value) => { Store.action("output-scale", value); } } }
+                            Setting { label: "Position";
+                                Text { text: "X"; color: Theme.muted; vertical-alignment: center; }
+                                EditField { width: 72px; text: Store.output-x; numeric: true; label: "Horizontal offset"; committed(value) => { Store.action("output-x", value); } }
+                                Text { text: "Y"; color: Theme.muted; vertical-alignment: center; }
+                                EditField { width: 72px; text: Store.output-y; numeric: true; label: "Vertical offset"; committed(value) => { Store.action("output-y", value); } }
+                                ActionButton { icon: @image-url("../../../../assets/icons/refresh.svg"); label: "Reset position"; quiet: true; clicked => { Store.action("reset-position", ""); } }
+                            }
+                            Setting { label: "Saved positions"; last: true;
+                                DropDown { width: 152px; model: Store.positions; current-index <=> Store.position-index; accessible-label: "Saved position"; }
+                                ActionButton { text: "Use"; clicked => { Store.action("position-use", Store.position-index); } }
+                                ActionButton { icon: @image-url("../../../../assets/icons/plus.svg"); label: "Save position"; quiet: true; clicked => { Store.action("position-save", ""); } }
+                                ActionButton { icon: @image-url("../../../../assets/icons/trash.svg"); label: "Remove saved position"; quiet: true; clicked => { Store.action("position-delete", Store.position-index); } }
+                            }
+                        }
+                        if Store.output-mode == 1: VerticalLayout { spacing: 12px;
+                            SectionTitle { text: "GAME BAR"; }
+                            Group { Setting { label: Store.widget-status; last: true;
+                                ActionButton { text: "Open Game Bar"; clicked => { Store.action("open-gamebar", ""); } }
+                                ActionButton { icon: @image-url("../../../../assets/icons/info-circle.svg"); label: "Game Bar setup"; quiet: true; clicked => { Store.action("gamebar-help", ""); } }
+                            } }
+                        }
+                    }
+                    if root.category == 1: VerticalLayout { spacing: 12px; alignment: start;
+                        SectionTitle { text: "STARTUP"; }
+                        Group {
+                            Setting { label: "Launch at sign-in"; Switch { checked: Store.startup; label: "Launch engine at sign-in"; toggled => { Store.action("startup", Store.startup ? "false" : "true"); } } }
+                            Setting { label: "Show crosshair on launch"; last: true; Switch { checked: Store.show-on-launch; label: "Show crosshair on launch"; toggled => { Store.action("show-on-launch", Store.show-on-launch ? "false" : "true"); } } }
+                        }
+                        SectionTitle { text: "INTERFACE"; }
+                        Group {
+                            Setting { label: "Accessibility"; ActionButton { icon: @image-url("../../../../assets/icons/info-circle.svg"); label: "Windows text scaling and reduced motion"; quiet: true; clicked => { Store.action("interface-help", ""); } } }
+                            Setting { label: "Editor layout"; last: true; ActionButton { text: "Reset layout"; clicked => { Store.action("reset-layout", ""); } } }
+                        }
+                    }
+                    if root.category == 2: VerticalLayout { spacing: 12px; alignment: start;
+                        SectionTitle { text: "PROFILES & CROSSHAIRS"; }
+                        Setting { label: "Profiles"; ActionButton { text: "Manage profiles"; clicked => { Store.action("profiles", ""); } } }
+                        Group {
+                            Setting { label: "Import and export";
+                                ActionButton { text: "Import"; clicked => { Store.action("import", ""); } }
+                                ActionButton { text: "Export all"; clicked => { Store.action("export-all", ""); } }
+                            }
+                            Setting { label: "Local files"; last: true; ActionButton { text: "Open folder"; clicked => { Store.action("open-data", ""); } } }
+                        }
+                        SectionTitle { text: "RESTORE & RESET"; }
+                        Group {
+                            Setting { label: "Restore an all-data export"; ActionButton { text: "Replace all…"; clicked => { Store.action("replace-data", ""); } } }
+                            Setting { label: "Reset settings"; last: true; ActionButton { text: "Reset…"; danger: true; clicked => { Store.action("reset-settings", ""); } } }
+                        }
+                    }
+                    if root.category == 3: VerticalLayout { spacing: 12px; alignment: start;
+                        SectionTitle { text: "UPDATES"; }
+                        Group {
+                            Setting { label: "Check for updates on launch"; last: true; Switch { checked: Store.check-updates; label: "Check for updates on launch"; toggled => { Store.action("check-updates-setting", Store.check-updates ? "false" : "true"); } } }
+                        }
+                        Rectangle { height: update-content.preferred-height; vertical-stretch: 0; background: Theme.panel; border-radius: 10px; border-width: 1px; border-color: Theme.border;
+                            update-content := VerticalLayout { padding: 16px; spacing: 12px;
+                                HorizontalLayout { spacing: 8px;
+                                    Rectangle { width: 76px; height: 32px; border-radius: 8px; background: Theme.raised; Text { text: "v" + Store.version; color: Theme.text; font-size: 12px * Theme.text-scale; font-weight: 600; horizontal-alignment: center; vertical-alignment: center; } }
+                                    ActionButton { text: "Release notes"; quiet: true; clicked => { Store.action("release-notes", ""); } }
+                                    Rectangle { horizontal-stretch: 1; }
+                                    ActionButton { text: Store.update-phase == 7 ? "Retry" : "Check for updates"; enabled: Store.modal-kind == 0 && !Store.read-only && Store.update-phase != 1 && Store.update-phase != 4 && Store.update-phase != 6; clicked => { Store.action("check-update", ""); } }
+                                    if Store.update-phase == 3: ActionButton { text: "Download"; primary: true; clicked => { Store.action("download-update", ""); } }
+                                    if Store.update-phase == 4: ActionButton { text: "Cancel"; clicked => { Store.action("cancel-update", ""); } }
+                                    if Store.update-phase == 5: ActionButton { text: "Install and restart"; primary: true; clicked => { Store.action("install-update", ""); } }
+                                }
+                                if Store.update-phase == 4 && Store.update-total: Rectangle { height: 6px; border-radius: 3px; background: Theme.border; Rectangle { width: parent.width * clamp(Store.update-progress, 0, 1); height: 6px; border-radius: 3px; background: Theme.orange; } }
+                                if Store.update-status != "": Text { text: Store.update-status; color: Store.update-phase == 7 ? #FCA5A5 : Theme.muted; font-size: 12px * Theme.text-scale; wrap: word-wrap; }
+                            }
+                        }
+                    }
+                    if root.category == 4: VerticalLayout { spacing: 12px; alignment: start;
+                        SectionTitle { text: "ABOUT"; }
+                        Group {
+                            Setting { label: "crosshair-rs · " + Store.version; ActionButton { text: "Source"; quiet: true; clicked => { Store.action("github", ""); } } }
+                            Setting { label: "PolyForm Noncommercial 1.0.0"; ActionButton { text: "License"; quiet: true; clicked => { Store.action("license", ""); } } }
+                            Setting { label: "Built with Slint"; last: true; ActionButton { text: "Third-party notices"; quiet: true; clicked => { Store.action("notices", ""); } } }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

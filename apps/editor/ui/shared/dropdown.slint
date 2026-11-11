@@ -1,0 +1,85 @@
+import { ListView } from "std-widgets.slint";
+import { Theme } from "tokens.slint";
+import { Store } from "models.slint";
+import { ActionButton } from "controls.slint";
+
+export component DropDown inherits Rectangle {
+    in property <[string]> model;
+    in property <[image]> thumbnails;
+    in property <bool> enabled: Store.modal-kind == 0 && !Store.read-only;
+    in-out property <int> current-index: 0;
+    callback selected(string);
+    property <int> highlighted: root.current-index;
+    property <bool> expanded: false;
+    property <length> item-height: max(32px, 12px * Theme.text-scale + 16px);
+    min-width: 0px; preferred-width: 150px;
+    height: root.item-height; vertical-stretch: 0;
+    background: touch.has-hover || focus.has-focus || root.expanded ? Theme.hover : Theme.field;
+    border-radius: Theme.radius;
+    border-width: 1px; border-color: Theme.border;
+    opacity: root.enabled ? 1 : 0.4;
+    accessible-role: combobox;
+    accessible-enabled: root.enabled;
+    accessible-expandable: true;
+    accessible-expanded: root.expanded;
+    accessible-value: root.model[root.current-index];
+    accessible-action-expand => { root.open(); }
+    forward-focus: focus;
+
+    function open() {
+        if root.enabled && root.model.length > 0 { root.highlighted = root.current-index; popup.show(); root.expanded = true; }
+    }
+    function close() { popup.close(); root.expanded = false; focus.focus(); }
+    function choose(index: int) {
+        if root.enabled && index >= 0 && index < root.model.length {
+            root.current-index = index; root.selected(root.model[index]);
+        }
+    }
+    HorizontalLayout { padding-left: 10px; padding-right: 10px; spacing: 8px;
+        if root.thumbnails.length > 0: Rectangle { width: 24px; Image { y: (parent.height - 24px) / 2; width: 24px; height: 24px; source: root.thumbnails[root.current-index]; image-fit: contain; } }
+        Text { text: root.model[root.current-index]; color: Theme.text; font-size: 12px * Theme.text-scale; overflow: elide; vertical-alignment: center; horizontal-stretch: 1; }
+        Rectangle { width: 12px; Image { y: (parent.height - 12px) / 2; width: 12px; height: 12px; source: @image-url("../../../../assets/icons/chevron-down.svg"); colorize: Theme.muted; } }
+    }
+    focus := FocusScope { enabled: root.enabled;
+        key-pressed(event) => {
+            if event.text == Key.Return || event.text == Key.Space || event.text == Key.F4 { root.open(); return accept; }
+            if event.text == Key.DownArrow || event.text == Key.UpArrow {
+                root.choose(clamp(root.current-index + (event.text == Key.DownArrow ? 1 : -1), 0, root.model.length - 1)); return accept;
+            }
+            return reject;
+        }
+    }
+    touch := TouchArea { enabled: root.enabled; clicked => { focus.focus(); root.open(); } }
+    popup := PopupWindow {
+        x: 0; y: root.height + 4px; width: max(root.width, 180px);
+        height: min(8, root.model.length) * root.item-height + 8px;
+        close-policy: close-on-click-outside;
+        forward-focus: popup-focus;
+        Rectangle {
+            background: Theme.panel; border-width: 1px; border-color: Theme.border; border-radius: 10px;
+            ListView {
+                x: 4px; y: 4px; width: parent.width - 8px; height: parent.height - 8px;
+                content-y: -max(0, root.highlighted - 7) * root.item-height;
+                for value[index] in root.model: ActionButton {
+                    thumbnail: root.thumbnails[index];
+                    text: value; height: root.item-height; align-left: true; quiet: true;
+                    selected: index == root.highlighted; enabled: root.enabled;
+                    clicked => { root.choose(index); root.close(); }
+                }
+            }
+        }
+        popup-focus := FocusScope {
+            focus-on-click: false;
+            focus-changed-event => { root.expanded = self.has-focus; }
+            key-pressed(event) => {
+                if event.text == Key.Escape { root.close(); return accept; }
+                if event.text == Key.Return || event.text == Key.Space { root.choose(root.highlighted); root.close(); return accept; }
+                if event.text == Key.DownArrow || event.text == Key.UpArrow { root.highlighted = clamp(root.highlighted + (event.text == Key.DownArrow ? 1 : -1), 0, root.model.length - 1); return accept; }
+                if event.text == Key.Home { root.highlighted = 0; return accept; }
+                if event.text == Key.End { root.highlighted = root.model.length - 1; return accept; }
+                if event.text == Key.Tab { root.close(); return reject; }
+                return reject;
+            }
+        }
+    }
+}

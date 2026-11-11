@@ -1,0 +1,64 @@
+import "../../../assets/fonts/Manrope.ttf";
+import { Store } from "shared/models.slint";
+import { Theme } from "shared/tokens.slint";
+import { ActionButton } from "shared/controls.slint";
+import { TitleBar } from "shell/titlebar.slint";
+import { Navigation } from "shell/navigation.slint";
+import { Modal } from "shell/modal.slint";
+import { Library } from "features/library.slint";
+import { Designer } from "features/designer.slint";
+import { Keybinds } from "features/keybinds.slint";
+import { Settings } from "features/settings.slint";
+export { Store, PresetRow, PresetGroup, LayerRow, FieldRow, FieldGroup, BindingRow, BoundsRow } from "shared/models.slint";
+export { Theme } from "shared/tokens.slint";
+
+export component AppWindow inherits Window {
+    title: "crosshair-rs";
+    icon: @image-url("../../../assets/logo.svg");
+    preferred-width: 1280px; preferred-height: 800px;
+    min-width: min(960px, Store.work-width * 1px); min-height: min(640px, Store.work-height * 1px);
+    background: transparent;
+    default-font-family: "Manrope"; default-font-size: 13px * Theme.text-scale;
+    forward-focus: keys;
+    changed width => { Store.wide = root.width > 1056px; }
+    Rectangle { x: 0px; y: 48px; width: root.width; height: root.height - 48px; background: Theme.panel; }
+    keys := FocusScope {
+    width: root.width; height: root.height;
+    focus-on-click: false;
+    focus-on-tab-navigation: false;
+    Rectangle { width: root.width; height: root.height;
+    VerticalLayout {
+        spacing: 0px;
+        TitleBar {}
+        HorizontalLayout {
+            spacing: 0px;
+            Navigation {}
+            Rectangle { border-top-left-radius: 13px; clip: true; background: Theme.border;
+            VerticalLayout {
+                padding-left: 1px; padding-top: 1px; spacing: 0px;
+                if Store.activity != "": Rectangle { height: 28px; background: Theme.panel; Text { x: 16px; text: Store.activity; color: Theme.muted; font-size: 12px * Theme.text-scale; vertical-alignment: center; } }
+                if Store.error != "": Rectangle {
+                    min-height: 44px; background: #382821;
+                    HorizontalLayout { padding-left: 16px; padding-right: 8px; spacing: 8px;
+                        Text { text: Store.error; color: #FED7AA; font-size: 12px * Theme.text-scale; wrap: word-wrap; vertical-alignment: center; horizontal-stretch: 1; }
+                        if !Store.connected: ActionButton { text: "Reconnect"; clicked => { Store.action("reconnect", ""); } }
+                        if Store.dirty: ActionButton { text: "Retry"; clicked => { Store.action("retry-edit", ""); } }
+                        ActionButton { icon: @image-url("../../../assets/icons/x.svg"); label: "Dismiss message"; quiet: true; clicked => { Store.action("dismiss-error", ""); } }
+                    }
+                }
+                if Store.page == 0: Library {}
+                if Store.page == 1: Designer {}
+                if Store.page == 2: Keybinds {}
+                if Store.page == 3: Settings {}
+            }
+            }
+        }
+    }
+    }
+        key-pressed(event) => {
+            if Store.shortcut(event.text, event.modifiers.control, event.modifiers.shift, event.modifiers.alt) { return accept; }
+            return reject;
+        }
+    if Store.modal-kind != 0: Modal {}
+    }
+}

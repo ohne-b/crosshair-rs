@@ -1,0 +1,92 @@
+export struct PresetRow { id: string, name: string, thumbnail: image, selected: bool, favorite: bool }
+export struct PresetGroup { items: [PresetRow] }
+export struct LayerRow { id: string, name: string, kind: string, selected: bool, shown: bool, locked: bool }
+export struct FieldRow { selection: string, key: string, label: string, value: string, kind: int, minimum: float, maximum: float, numeric: float, checked: bool, choices: [string], selected: int, swatch: color }
+export struct FieldGroup { first: FieldRow, second: FieldRow, paired: bool }
+export struct BindingRow { id: string, action: string, target: string, target-index: int, chord: string, enabled: bool, shortcut: bool, global: bool }
+export struct BoundsRow { id: string, x: float, y: float, width: float, height: float, selected: bool }
+
+export global Store {
+    in-out property <float> work-width: 1280;
+    in-out property <float> work-height: 800;
+    in-out property <bool> wide: true;
+    in-out property <int> page: 0;
+    in-out property <bool> connected: false;
+    in-out property <bool> read-only: false;
+    in-out property <string> error;
+    in-out property <string> activity;
+    in-out property <bool> request-shortcut: false;
+    in-out property <bool> dirty: false;
+    in-out property <bool> can-undo: false;
+    in-out property <bool> can-redo: false;
+    in-out property <bool> visible: false;
+    in-out property <string> visibility-shortcut;
+    in-out property <[string]> profiles;
+    in-out property <int> profile-index: 0;
+    in-out property <image> active-thumbnail;
+    in-out property <string> active-name;
+    in-out property <[PresetRow]> presets;
+    in-out property <[PresetGroup]> preset-groups;
+    in-out property <int> library-columns: 4;
+    in-out property <string> dragged-preset;
+    in-out property <int> preset-drop-index: -1;
+    in-out property <string> search;
+    in-out property <bool> favorites: false;
+    in-out property <int> sort: 0;
+    in-out property <string> document-name;
+    in-out property <string> document-id;
+    in-out property <bool> document-active: true;
+    in-out property <bool> document-open: false;
+    in-out property <bool> selection-editable: false;
+    in-out property <[LayerRow]> layers;
+    in-out property <[FieldGroup]> fields;
+    in-out property <image> preview;
+    in-out property <float> preview-x;
+    in-out property <float> preview-y;
+    in-out property <float> preview-width: 1;
+    in-out property <float> preview-height: 1;
+    in-out property <[BoundsRow]> bounds;
+    in-out property <float> zoom: 8;
+    in-out property <float> pan-x;
+    in-out property <float> pan-y;
+    in-out property <bool> drawing: false;
+    in-out property <float> brush-size: 2;
+    in-out property <string> brush-color: "#F97316FF";
+    in-out property <[BindingRow]> bindings;
+    in-out property <string> capture-id;
+    in-out property <int> action-type: 0;
+    in-out property <[string]> preset-names;
+    in-out property <[image]> preset-thumbnails;
+    in-out property <int> target-index: 0;
+    in-out property <[string]> monitors;
+    in-out property <int> monitor-index: 0;
+    in-out property <int> output-mode: 0;
+    in-out property <float> output-scale: 1;
+    in-out property <float> output-x: 0;
+    in-out property <float> output-y: 0;
+    in-out property <[string]> positions;
+    in-out property <int> position-index: 0;
+    in-out property <bool> startup: false;
+    in-out property <bool> show-on-launch: true;
+    in-out property <bool> check-updates: true;
+    in-out property <string> widget-status;
+    in-out property <string> version;
+    in-out property <int> update-phase: 0;
+    in-out property <float> update-progress: 0;
+    in-out property <bool> update-total: false;
+    in-out property <string> update-status;
+    in-out property <int> modal-kind: 0;
+    in-out property <string> modal-title;
+    in-out property <string> modal-message;
+    in-out property <string> modal-text;
+    in-out property <string> modal-confirm: "Confirm";
+    in-out property <string> modal-alternate;
+    in-out property <[string]> modal-options;
+    in-out property <int> modal-index: 0;
+    callback action(string, string);
+    callback property-edit(string, string, string, int);
+    callback select-layer(string, bool);
+    callback canvas-event(int, float, float, int, bool);
+    callback capture-region(float, float, float, float);
+    callback shortcut(string, bool, bool, bool) -> bool;
+}
