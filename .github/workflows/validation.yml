@@ -1,0 +1,28 @@
+name: Validation
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: validation-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validation:
+    name: Validation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Check tracked-file whitespace
+        shell: bash
+        run: |
+          empty_tree=$(git hash-object -t tree --stdin < /dev/null)
+          git diff --check "$empty_tree" HEAD
