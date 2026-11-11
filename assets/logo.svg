@@ -1,11 +1,11 @@
 <svg version="1.1" height="1024" width="1024" viewBox="0 0 106 106" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
-<title>Rust Crosshair</title>
-<desc>Original Rust gear, mounting tabs, and five screw holes preserved. The R is replaced by a centered crosshair. Rust Project artwork, CC BY 4.0; source: https://github.com/rust-lang/rust-artwork/blob/main/logo/rust-logo-gear-only.svg</desc>
+<title>Rust Crosshair — Orange</title>
+<desc>Original Rust gear, mounting-tab and screw-hole geometry preserved, colored charcoal #3F454D. The R is replaced by four slim crosshair bars in orange #F97316. Rust Project artwork, CC BY 4.0; source: https://github.com/rust-lang/rust-artwork/blob/main/logo/rust-logo-gear-only.svg</desc>
 <g id="logo" transform="translate(53, 53)">
-  <g id="gear" mask="url(#holes)">
-    <circle r="43" fill="none" stroke="black" stroke-width="9" />
+  <g id="gear" fill="#3F454D" mask="url(#holes)">
+    <circle r="43" fill="none" stroke="#3F454D" stroke-width="9" />
     <g id="cogs">
-      <polygon id="cog" stroke="black" stroke-width="3" stroke-linejoin="round" points="46,3 51,0 46,-3" />
+      <polygon id="cog" stroke="#3F454D" stroke-width="3" stroke-linejoin="round" points="46,3 51,0 46,-3" />
       <use xlink:href="#cog" transform="rotate(11.25)" />
       <use xlink:href="#cog" transform="rotate(22.50)" />
       <use xlink:href="#cog" transform="rotate(33.75)" />
@@ -39,7 +39,7 @@
       <use xlink:href="#cog" transform="rotate(348.75)" />
     </g>
     <g id="mounts">
-      <polygon id="mount" stroke="black" stroke-width="6" stroke-linejoin="round" points="-7,-42 0,-35 7,-42" />
+      <polygon id="mount" stroke="#3F454D" stroke-width="6" stroke-linejoin="round" points="-7,-42 0,-35 7,-42" />
       <use xlink:href="#mount" transform="rotate(72)" />
       <use xlink:href="#mount" transform="rotate(144)" />
       <use xlink:href="#mount" transform="rotate(216)" />
@@ -54,13 +54,11 @@
     <use xlink:href="#hole" transform="rotate(216)" />
     <use xlink:href="#hole" transform="rotate(288)" />
   </mask>
-  <g id="crosshair" fill="black" stroke="none">
-    <circle id="target-ring" r="17.5" fill="none" stroke="black" stroke-width="4.5"/>
-    <rect id="crosshair-top" x="-2.25" y="-29" width="4.5" height="13.75"/>
-    <rect id="crosshair-right" x="15.25" y="-2.25" width="13.75" height="4.5"/>
-    <rect id="crosshair-bottom" x="-2.25" y="15.25" width="4.5" height="13.75"/>
-    <rect id="crosshair-left" x="-29" y="-2.25" width="13.75" height="4.5"/>
-    <circle id="center-dot" r="2.5"/>
+  <g id="crosshair" fill="#F97316" stroke="none">
+    <rect id="crosshair-top" x="-1.75" y="-26" width="3.5" height="19.5" rx="0.5"/>
+    <rect id="crosshair-right" x="6.5" y="-1.75" width="19.5" height="3.5" rx="0.5"/>
+    <rect id="crosshair-bottom" x="-1.75" y="6.5" width="3.5" height="19.5" rx="0.5"/>
+    <rect id="crosshair-left" x="-26" y="-1.75" width="19.5" height="3.5" rx="0.5"/>
   </g>
 </g>
 </svg>

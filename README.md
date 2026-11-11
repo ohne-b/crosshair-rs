@@ -1,10 +1,14 @@
 <p align="center">
-  <img src="assets/logo.svg" alt="crosshair-rs placeholder logo" width="160" height="160">
+  <img src="assets/logo.svg" alt="crosshair-rs placeholder logo" width="256" height="256">
 </p>
 
 <h1 align="center">crosshair-rs</h1>
 
 <p align="center">A lightweight, customizable crosshair overlay for Windows.</p>
+
+<p align="center">
+  <a href="LICENSE.md"><img src="https://img.shields.io/badge/license-PolyForm_Noncommercial_1.0.0-F97316" alt="License: PolyForm Noncommercial 1.0.0"></a>
+</p>
 
 crosshair-rs aims to be a free, polished alternative to Crosshair X for Windows
 10 and 11. A native Rust engine keeps the crosshair visible while a separate
@@ -54,8 +58,9 @@ The placeholder [logo](assets/logo.svg) is adapted from the
 [Rust Project's Rust logo artwork](https://github.com/rust-lang/rust-artwork/blob/main/logo/rust-logo-gear-only.svg).
 The Rust and Cargo logos are owned by the **Rust Foundation** and licensed under
 [Creative Commons Attribution 4.0 International (CC BY 4.0)](https://creativecommons.org/licenses/by/4.0/).
-This modified version preserves the gear, mounting tabs and five screw holes,
-and replaces the Rust logo's `R` with a centered crosshair, target ring and dot.
+This modified version preserves the gear, mounting tabs and five screw holes in
+charcoal (`#3F454D`), and replaces the Rust logo's `R` with four slim crosshair
+bars in orange (`#F97316`).
 The [Rust trademark policy](https://rustfoundation.org/policy/rust-trademark-policy/)
 also applies. crosshair-rs is not affiliated with or endorsed by the Rust Project
 or the Rust Foundation.
