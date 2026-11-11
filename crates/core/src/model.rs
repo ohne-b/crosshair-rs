@@ -440,6 +440,8 @@ pub struct Preset {
     pub id: Id,
     pub name: String,
     pub revision: u64,
+    #[serde(default)]
+    pub modified_order: u64,
     pub favorite: bool,
     pub layers: Vec<Layer>,
 }
@@ -450,6 +452,7 @@ impl Preset {
             id: Id::new_v4(),
             name: name.into(),
             revision: 0,
+            modified_order: 0,
             favorite: false,
             layers: vec![Layer::new(
                 "Crosshair",
@@ -463,6 +466,7 @@ impl Preset {
             id: Id::new_v4(),
             name: name.into(),
             revision: 0,
+            modified_order: 0,
             favorite: self.favorite,
             layers: self.layers.iter().map(Layer::duplicate).collect(),
         }

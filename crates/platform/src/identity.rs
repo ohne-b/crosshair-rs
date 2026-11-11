@@ -18,8 +18,9 @@ use windows::{
         System::{
             RemoteDesktop::ProcessIdToSessionId,
             Threading::{
-                GetCurrentProcess, GetCurrentProcessId, OpenProcess, OpenProcessToken,
-                PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION, QueryFullProcessImageNameW,
+                GetCurrentProcess, GetCurrentProcessId, GetProcessId, OpenProcess,
+                OpenProcessToken, PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION,
+                QueryFullProcessImageNameW,
             },
         },
     },
@@ -37,6 +38,12 @@ pub struct Identity {
 }
 
 impl Identity {
+    pub fn from_handle(process: HANDLE) -> Result<Self> {
+        let pid = unsafe { GetProcessId(process) };
+        ensure!(pid != 0, "Process handle is unavailable");
+        unsafe { Self::from_process(process, pid) }
+    }
+
     pub fn current() -> Result<Self> {
         unsafe { Self::from_process(GetCurrentProcess(), GetCurrentProcessId()) }
     }

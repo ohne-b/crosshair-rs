@@ -1,6 +1,6 @@
 use std::collections::{BTreeSet, VecDeque};
 
-use crate::{AppState, Id, Preset, ValidationError, validate_preset, validate_state};
+use crate::{AppState, Asset, Id, Preset, ValidationError, validate_preset, validate_state};
 
 pub const HISTORY_BYTES: usize = 32 * 1024 * 1024;
 
@@ -26,18 +26,21 @@ pub enum HistoryError {
     Encoding(#[from] serde_json::Error),
 }
 
+#[derive(Clone)]
 struct Entry {
     before: AppState,
     after: AppState,
     bytes: usize,
 }
 
+#[derive(Clone)]
 struct Transaction {
     target: Id,
     before: AppState,
 }
 
 /// History stores configuration only; imported binary assets remain immutable references.
+#[derive(Clone)]
 pub struct History {
     undo: VecDeque<Entry>,
     redo: Vec<Entry>,
@@ -103,6 +106,63 @@ impl History {
         self.redo.clear();
         self.bytes = 0;
         self.transaction = None;
+    }
+
+    /// Immutable source adoption is not a document edit. Keep it available to
+    /// clipboard/drafts across undo, without adding an invisible history step.
+    pub fn adopt_asset(
+        &mut self,
+        state: &mut AppState,
+        id: Id,
+        asset: Asset,
+    ) -> Result<(), HistoryError> {
+        let mut candidate = state.clone();
+        insert_asset(&mut candidate, id, &asset)?;
+        candidate.revision = next_revision(state.revision)?;
+        let mut transaction = self.transaction.clone();
+        let reserved = if let Some(transaction) = &mut transaction {
+            insert_asset(&mut transaction.before, id, &asset)?;
+            let bytes = entry_bytes(&transaction.before, &candidate)?;
+            if bytes > self.limit {
+                return Err(HistoryError::TooLarge);
+            }
+            bytes
+        } else {
+            0
+        };
+        let normalize = |entries: Vec<Entry>| -> Result<VecDeque<Entry>, HistoryError> {
+            let mut retained = VecDeque::new();
+            for mut entry in entries {
+                let result = (|| {
+                    insert_asset(&mut entry.before, id, &asset)?;
+                    insert_asset(&mut entry.after, id, &asset)?;
+                    entry.bytes = entry_bytes(&entry.before, &entry.after)?;
+                    Ok::<_, HistoryError>(())
+                })();
+                match result {
+                    Ok(()) if entry.bytes <= self.limit => retained.push_back(entry),
+                    Err(HistoryError::Conflict) => return Err(HistoryError::Conflict),
+                    _ => retained.clear(),
+                }
+            }
+            Ok(retained)
+        };
+        let undo = normalize(self.undo.iter().cloned().collect())?;
+        let redo = normalize(self.redo.clone())?
+            .into_iter()
+            .collect::<Vec<_>>();
+        let bytes = undo.iter().chain(&redo).map(|entry| entry.bytes).sum();
+        let mut next = Self {
+            undo,
+            redo,
+            bytes,
+            limit: self.limit,
+            transaction,
+        };
+        next.trim_for(reserved);
+        *self = next;
+        *state = candidate;
+        Ok(())
     }
 
     /// Called around a validated atomic library/profile mutation; input-only changes are ignored.
@@ -187,6 +247,7 @@ impl History {
             return Ok(current.revision);
         }
         replacement.revision = next_revision(current.revision)?;
+        replacement.modified_order = next_revision(state.revision)?;
         let revision = replacement.revision;
         let target = replacement.id;
         let mut candidate = state.clone();
@@ -203,7 +264,14 @@ impl History {
     }
 
     pub fn end(&mut self, state: &AppState) -> Result<bool, HistoryError> {
-        let transaction = self.transaction.take().ok_or(HistoryError::NotEditing)?;
+        let mut transaction = self.transaction.take().ok_or(HistoryError::NotEditing)?;
+        // Selection changes observed during a gesture are independent of its edit.
+        for profile in &mut transaction.before.profiles {
+            if let Some(live) = state.profiles.iter().find(|live| live.id == profile.id) {
+                profile.selected_preset = live.selected_preset;
+            }
+        }
+        transaction.before.active_profile = state.active_profile;
         match self.record(&transaction.before, state) {
             Ok(recorded) => Ok(recorded),
             Err(error) => {
@@ -291,6 +359,19 @@ fn next_revision(revision: u64) -> Result<u64, HistoryError> {
         .ok_or(HistoryError::RevisionExhausted)
 }
 
+fn insert_asset(state: &mut AppState, id: Id, asset: &Asset) -> Result<(), HistoryError> {
+    if state
+        .assets
+        .get(&id)
+        .is_some_and(|existing| existing != asset)
+    {
+        return Err(HistoryError::Conflict);
+    }
+    state.assets.insert(id, asset.clone());
+    validate_state(state)?;
+    Ok(())
+}
+
 fn entry_bytes(before: &AppState, after: &AppState) -> Result<usize, HistoryError> {
     // Serialized metadata with a conservative allowance for owned Rust containers.
     Ok((serde_json::to_vec(before)?.len() + serde_json::to_vec(after)?.len()).saturating_mul(2))
@@ -301,7 +382,8 @@ fn same_preset(a: &Preset, b: &Preset) -> bool {
 }
 
 fn same_content(a: &AppState, b: &AppState) -> bool {
-    a.assets == b.assets
+    a.settings.global_toggle == b.settings.global_toggle
+        && a.assets == b.assets
         && a.presets.len() == b.presets.len()
         && a.presets
             .iter()
@@ -325,6 +407,7 @@ fn restore(
 ) -> Result<AppState, HistoryError> {
     let mut restored = source.clone();
     restored.settings = current.settings.clone();
+    restored.settings.global_toggle = source.settings.global_toggle.clone();
     restored.base_visible = current.base_visible;
     restored.revision = next_revision(current.revision)?;
     if restored
@@ -338,7 +421,9 @@ fn restore(
         let live = current.preset(preset.id);
         if live.is_some_and(|live| same_preset(live, preset)) {
             preset.revision = live.expect("checked").revision;
+            preset.modified_order = live.expect("checked").modified_order;
         } else {
+            preset.modified_order = restored.revision;
             preset.revision = next_revision(
                 preset
                     .revision
@@ -377,6 +462,169 @@ mod tests {
         replacement
     }
 
+    fn asset() -> Asset {
+        Asset {
+            sha256: "ab".repeat(32),
+            kind: crate::AssetKind::Png,
+            source_bytes: 128,
+            width: 1,
+            height: 1,
+        }
+    }
+
+    #[test]
+    fn image_adoption_preserves_document_undo_and_redo_without_an_extra_step() {
+        let mut state = AppState::default();
+        let original = state.presets[0].clone();
+        let mut history = History::default();
+        let before = state.clone();
+        state.presets[0].name = "Renamed".into();
+        history.record(&before, &state).unwrap();
+        let id = Id::new_v4();
+        history.adopt_asset(&mut state, id, asset()).unwrap();
+        let before = state.clone();
+        state.presets[0].layers.push(crate::Layer::new(
+            "Image",
+            Content::Image(crate::Image::new(id, 1.0, 1.0)),
+        ));
+        history.record(&before, &state).unwrap();
+        assert!(history.undo(&mut state).unwrap());
+        assert_eq!(state.presets[0].name, "Renamed");
+        assert!(history.undo(&mut state).unwrap());
+        assert_eq!(state.presets[0].name, original.name);
+        assert!(!history.undo(&mut state).unwrap());
+        assert!(state.assets.contains_key(&id));
+        assert!(history.redo(&mut state).unwrap());
+        assert!(history.redo(&mut state).unwrap());
+        assert_eq!(state.presets[0].layers.len(), original.layers.len() + 1);
+        assert!(!history.redo(&mut state).unwrap());
+    }
+
+    #[test]
+    fn adopting_during_a_cancelled_gesture_preserves_redo() {
+        let mut state = AppState::default();
+        let mut history = History::default();
+        let before = state.clone();
+        state.presets[0].name = "Renamed".into();
+        history.record(&before, &state).unwrap();
+        history.undo(&mut state).unwrap();
+        history
+            .begin(&state, state.presets[0].id, state.presets[0].revision)
+            .unwrap();
+        let id = Id::new_v4();
+        history.adopt_asset(&mut state, id, asset()).unwrap();
+        history.cancel(&mut state).unwrap();
+        assert!(history.redo(&mut state).unwrap());
+        assert_eq!(state.presets[0].name, "Renamed");
+        assert!(state.assets.contains_key(&id));
+    }
+
+    #[test]
+    fn adoption_evicts_over_budget_history_but_rejects_an_over_budget_gesture_atomically() {
+        let mut state = AppState::default();
+        let before = state.clone();
+        state.presets[0].name = "Renamed".into();
+        let mut history = History::with_budget(entry_bytes(&before, &state).unwrap());
+        history.record(&before, &state).unwrap();
+        history
+            .adopt_asset(&mut state, Id::new_v4(), asset())
+            .unwrap();
+        assert!(!history.can_undo());
+        assert_eq!(history.retained_bytes(), 0);
+
+        let mut history = History::with_budget(entry_bytes(&state, &state).unwrap());
+        history
+            .begin(&state, state.presets[0].id, state.presets[0].revision)
+            .unwrap();
+        let before = state.clone();
+        assert!(matches!(
+            history.adopt_asset(
+                &mut state,
+                Id::new_v4(),
+                Asset {
+                    sha256: "cd".repeat(32),
+                    ..asset()
+                }
+            ),
+            Err(HistoryError::TooLarge)
+        ));
+        assert_eq!(state, before);
+        assert_eq!(history.editing(), Some(state.presets[0].id));
+        history.cancel(&mut state).unwrap();
+    }
+
+    #[test]
+    fn adoption_never_changes_an_existing_immutable_asset() {
+        let mut state = AppState::default();
+        let mut history = History::default();
+        let id = Id::new_v4();
+        history.adopt_asset(&mut state, id, asset()).unwrap();
+        let before = state.clone();
+        let mut replacement = asset();
+        replacement.sha256 = "cd".repeat(32);
+        assert!(matches!(
+            history.adopt_asset(&mut state, id, replacement),
+            Err(HistoryError::Conflict)
+        ));
+        assert_eq!(state, before);
+    }
+
+    #[test]
+    fn recency_is_global_and_not_controlled_by_a_document_revision_or_client_value() {
+        let mut state = AppState {
+            revision: 10,
+            ..Default::default()
+        };
+        state.presets[0].revision = 100;
+        state.presets[0].modified_order = 5;
+        let target = state.presets[1].id;
+        let mut history = History::default();
+        history.begin(&state, target, 0).unwrap();
+        let mut replacement = state.presets[1].clone();
+        replacement.name = "Recently edited".into();
+        replacement.modified_order = u64::MAX;
+        history.update(&mut state, replacement, 0).unwrap();
+        history.end(&state).unwrap();
+        assert_eq!(state.presets[1].modified_order, 11);
+        assert!(state.presets[1].modified_order > state.presets[0].modified_order);
+        history.undo(&mut state).unwrap();
+        assert_eq!(state.presets[1].modified_order, state.revision);
+        history.redo(&mut state).unwrap();
+        assert_eq!(state.presets[1].modified_order, state.revision);
+    }
+
+    #[test]
+    fn adoption_discards_history_that_cannot_remain_portable() {
+        let mut old = AppState::default();
+        for index in 0..47 {
+            old.assets.insert(
+                Id::new_v4(),
+                Asset {
+                    sha256: format!("{index:064x}"),
+                    source_bytes: crate::MAX_ASSET_BYTES,
+                    ..asset()
+                },
+            );
+        }
+        validate_state(&old).unwrap();
+        let mut state = AppState::default();
+        let mut history = History::default();
+        history.record(&old, &state).unwrap();
+        history
+            .adopt_asset(
+                &mut state,
+                Id::new_v4(),
+                Asset {
+                    sha256: "ff".repeat(32),
+                    source_bytes: crate::MAX_ASSET_BYTES,
+                    ..asset()
+                },
+            )
+            .unwrap();
+        assert!(!history.can_undo());
+        validate_state(&state).unwrap();
+    }
+
     #[test]
     fn gesture_is_one_undo_entry_and_revisions_do_not_go_backwards() {
         let mut state = AppState::default();
@@ -411,6 +659,39 @@ mod tests {
         history.undo(&mut state).unwrap();
         assert_eq!(state.profiles[0].selected_preset, selected);
         assert!(!state.base_visible);
+    }
+
+    #[test]
+    fn selection_during_a_gesture_is_not_part_of_its_undo() {
+        let mut state = AppState::default();
+        let target = state.presets[0].id;
+        let selected = state.presets[1].id;
+        let mut history = History::default();
+        history.begin(&state, target, 0).unwrap();
+        state.profiles[0].selected_preset = selected;
+        let replacement = change_length(&state, 19.0);
+        history.update(&mut state, replacement, 0).unwrap();
+        history.end(&state).unwrap();
+        history.undo(&mut state).unwrap();
+        assert_eq!(state.profiles[0].selected_preset, selected);
+    }
+
+    #[test]
+    fn replacing_global_and_profile_bindings_undoes_atomically() {
+        let before = AppState::default();
+        let mut state = before.clone();
+        state.settings.global_toggle = Some(crate::InputChord::key(0x12));
+        let mut history = History::default();
+        history.record(&before, &state).unwrap();
+        state.settings.show_on_launch = false;
+        history.undo(&mut state).unwrap();
+        assert_eq!(state.settings.global_toggle, before.settings.global_toggle);
+        assert!(!state.settings.show_on_launch);
+        history.redo(&mut state).unwrap();
+        assert_eq!(
+            state.settings.global_toggle,
+            Some(crate::InputChord::key(0x12))
+        );
     }
 
     #[test]

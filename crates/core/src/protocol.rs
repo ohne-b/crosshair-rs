@@ -3,7 +3,7 @@ use std::io::{self, Read, Write};
 
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
-use crate::{Id, InputChord, PROTOCOL_VERSION, Preset, Profile, Settings};
+use crate::{Binding, Id, InputChord, PROTOCOL_VERSION, Preset, Profile, Settings};
 
 pub const MAX_FRAME_BYTES: usize = 1024 * 1024;
 pub const CHUNK_BYTES: usize = 64 * 1024;
@@ -81,6 +81,11 @@ pub enum Command {
         profile: Profile,
         expected_revision: u64,
     },
+    SetBindings {
+        profiles: Vec<BindingSet>,
+        global_toggle: Option<InputChord>,
+        expected_revision: u64,
+    },
     SelectProfile {
         profile: Id,
     },
@@ -92,8 +97,12 @@ pub enum Command {
         settings: Settings,
         expected_revision: u64,
     },
-    BeginCapture,
-    CancelCapture,
+    BeginCapture {
+        token: Id,
+    },
+    CancelCapture {
+        token: Id,
+    },
     BeginStaging {
         purpose: StagingPurpose,
     },
@@ -121,9 +130,18 @@ pub enum Command {
     CancelUpdate,
     InstallUpdate,
     OpenEditor,
+    ConfirmQuit,
+    CancelQuit,
     Quit {
         discard_unsaved: bool,
     },
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BindingSet {
+    pub profile: Id,
+    pub bindings: Vec<Binding>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -132,6 +150,7 @@ pub enum StagingPurpose {
     Image,
     Document { preset: Id, expected_revision: u64 },
     Import { replace: bool },
+    ExportDraft { destination: String, png: bool },
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -199,12 +218,18 @@ pub enum ServerMessage {
         status: EngineStatus,
     },
     Captured {
+        token: Id,
         chord: Option<InputChord>,
         cancelled: bool,
     },
     Update {
         status: UpdateStatus,
     },
+    FocusEditor,
+    PrepareClose {
+        updating: bool,
+    },
+    CloseCancelled,
     Closing,
 }
 
@@ -237,6 +262,9 @@ pub struct EngineStatus {
     pub monitors: Vec<DisplayInfo>,
     pub widget: WidgetStatus,
     pub unsaved: bool,
+    pub recovery_required: bool,
+    pub can_undo: bool,
+    pub can_redo: bool,
     pub save_error: Option<String>,
     pub render_error: Option<String>,
     pub update: UpdateStatus,

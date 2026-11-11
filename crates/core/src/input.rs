@@ -69,7 +69,9 @@ impl InputState {
             match hold.action {
                 BindingAction::HideWhileHeld => result.visible = false,
                 BindingAction::ShowWhileHeld => result.visible = true,
-                BindingAction::ShowPresetWhileHeld { preset } => result.preset = preset,
+                BindingAction::ShowPresetWhileHeld { preset } if state.preset(preset).is_some() => {
+                    result.preset = preset
+                }
                 _ => {}
             }
         }
@@ -78,6 +80,25 @@ impl InputState {
 
     pub fn capturing(&self) -> bool {
         self.capture.is_some()
+    }
+
+    pub fn mouse_buttons_held(&self) -> bool {
+        self.pressed
+            .iter()
+            .any(|(_, key)| matches!(key, InputKey::Mouse { .. }))
+    }
+
+    /// A save/update barrier disables actions, but must still consume releases.
+    pub fn observe_suspended(&mut self, event: InputEvent) {
+        let pair = (event.device, event.key);
+        if event.down && !event.key.is_pulse() {
+            self.pressed.insert(pair);
+            self.blocked.insert(pair);
+        } else if !event.down {
+            self.pressed.remove(&pair);
+            self.blocked.remove(&pair);
+            self.prune_holds();
+        }
     }
 
     pub fn begin_capture(&mut self, now_ms: u64) {
@@ -384,6 +405,105 @@ mod tests {
             },
             down,
         }
+    }
+
+    #[test]
+    fn mouse_capture_keeps_release_tracking_after_capture_ends() {
+        let mut input = InputState::default();
+        let mut state = AppState::default();
+        input.begin_capture(0);
+        let mouse = InputEvent {
+            device: 2,
+            key: InputKey::Mouse { button: 1 },
+            down: true,
+        };
+        assert!(matches!(
+            input.handle(mouse, 1, &mut state).capture,
+            Some(CaptureOutcome::Captured(_))
+        ));
+        assert!(!input.capturing());
+        assert!(input.mouse_buttons_held());
+        input.handle(
+            InputEvent {
+                down: false,
+                ..mouse
+            },
+            2,
+            &mut state,
+        );
+        assert!(!input.mouse_buttons_held());
+        input.begin_capture(3);
+        assert!(matches!(
+            input.handle(event(0x12, true), 4, &mut state).capture,
+            Some(CaptureOutcome::Captured(_))
+        ));
+    }
+
+    #[test]
+    fn profile_reset_tracks_held_mouse_until_release_or_removal() {
+        let mut input = InputState::default();
+        let mut state = AppState::default();
+        let mouse = InputEvent {
+            device: 2,
+            key: InputKey::Mouse { button: 1 },
+            down: true,
+        };
+        input.handle(mouse, 0, &mut state);
+        input.reset();
+        assert!(input.mouse_buttons_held());
+        input.handle(
+            InputEvent {
+                down: false,
+                ..mouse
+            },
+            1,
+            &mut state,
+        );
+        assert!(!input.mouse_buttons_held());
+        input.handle(mouse, 2, &mut state);
+        input.remove_device(mouse.device);
+        assert!(!input.mouse_buttons_held());
+    }
+
+    #[test]
+    fn a_failed_shutdown_does_not_leave_mouse_releases_or_keys_stuck() {
+        let mut input = InputState::default();
+        let mut state = AppState::default();
+        let mouse = InputEvent {
+            device: 2,
+            key: InputKey::Mouse { button: 1 },
+            down: true,
+        };
+        input.handle(mouse, 0, &mut state);
+        input.reset();
+        input.observe_suspended(InputEvent {
+            down: false,
+            ..mouse
+        });
+        assert!(!input.mouse_buttons_held());
+        input.begin_capture(1);
+        assert!(matches!(
+            input.handle(event(0x12, true), 2, &mut state).capture,
+            Some(CaptureOutcome::Captured(_))
+        ));
+    }
+
+    #[test]
+    fn preparing_an_import_does_not_reuse_a_held_target_from_the_old_library() {
+        let mut input = InputState::default();
+        let mut state = AppState::default();
+        let held = state.presets[1].id;
+        state.profiles[0].bindings.push(Binding::new(
+            InputChord::key(0x12),
+            BindingAction::ShowPresetWhileHeld { preset: held },
+        ));
+        input.handle(event(0x12, true), 0, &mut state);
+        let imported = AppState::default();
+        assert_eq!(
+            input.presentation(&imported).unwrap().preset,
+            imported.profiles[0].selected_preset
+        );
+        assert_eq!(input.presentation(&state).unwrap().preset, held);
     }
 
     #[test]
