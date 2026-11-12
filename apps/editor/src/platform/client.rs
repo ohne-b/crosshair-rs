@@ -1,8 +1,8 @@
 use std::{
     collections::{BTreeMap, BTreeSet},
     fs::OpenOptions,
-    io::{Read, Write},
-    path::PathBuf,
+    io::Read,
+    path::{Path, PathBuf},
     sync::{
         Arc, Mutex,
         atomic::{AtomicBool, AtomicU64, Ordering},
@@ -427,34 +427,14 @@ impl Connection {
                 }
             });
         }
-        let Reply::Staging {
-            token,
-            path,
-            max_bytes,
-        } = self.reply(Command::BeginStaging {
-            purpose: StagingPurpose::Document {
+        self.stage_bytes(
+            &bytes,
+            StagingPurpose::Document {
                 preset: preset.id,
                 expected_revision,
                 preview,
             },
-        })?
-        else {
-            bail!("The engine could not stage this document");
-        };
-        let result = (|| {
-            ensure!(
-                bytes.len() as u64 <= max_bytes,
-                "The crosshair exceeds the document limit"
-            );
-            let mut file = OpenOptions::new().write(true).truncate(true).open(path)?;
-            file.write_all(&bytes)?;
-            file.sync_all()?;
-            self.request(Command::CommitStaging { token })
-        })();
-        if result.is_err() {
-            let _ = self.reply(Command::DiscardStaging { token });
-        }
-        result
+        )
     }
     fn stage(&mut self, path: PathBuf, purpose: StagingPurpose) -> Result<Response> {
         let mut source = std::fs::File::open(path)?;
@@ -469,10 +449,7 @@ impl Connection {
         };
         let result = (|| {
             ensure!(length <= max_bytes, "This file exceeds the import limit");
-            let mut destination = OpenOptions::new().write(true).truncate(true).open(path)?;
-            let copied = std::io::copy(&mut (&mut source).take(max_bytes + 1), &mut destination)?;
-            ensure!(copied <= max_bytes, "This file exceeds the import limit");
-            destination.sync_all()?;
+            write_staged(Path::new(&path), &mut source, max_bytes)?;
             self.request(Command::CommitStaging { token })
         })();
         if result.is_err() {
@@ -500,16 +477,14 @@ impl Connection {
             max_bytes,
         } = self.reply(Command::BeginStaging { purpose })?
         else {
-            bail!("The engine could not stage the draft export");
+            bail!("The engine could not stage this transfer");
         };
         let result = (|| {
             ensure!(
                 bytes.len() as u64 <= max_bytes,
                 "The draft exceeds the document limit"
             );
-            let mut file = OpenOptions::new().write(true).truncate(true).open(path)?;
-            file.write_all(bytes)?;
-            file.sync_all()?;
+            write_staged(Path::new(&path), bytes, max_bytes)?;
             self.request(Command::CommitStaging { token })
         })();
         if result.is_err() {
@@ -796,9 +771,43 @@ fn connect(
     }
 }
 
+// Return only after closing the writer; CommitStaging opens the file exclusively.
+fn write_staged(path: &Path, source: impl Read, max_bytes: u64) -> Result<()> {
+    let mut file = OpenOptions::new().write(true).truncate(true).open(path)?;
+    let copied = std::io::copy(&mut source.take(max_bytes.saturating_add(1)), &mut file)?;
+    ensure!(copied <= max_bytes, "This transfer exceeds its size limit");
+    file.sync_all()?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn staged_writer_closes_before_commit_even_when_input_exceeds_limit() {
+        use std::os::windows::fs::OpenOptionsExt;
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("transfer");
+        std::fs::write(&path, []).unwrap();
+        write_staged(&path, &b"abc"[..], 3).unwrap();
+        assert_eq!(std::fs::read(&path).unwrap(), b"abc");
+        drop(
+            OpenOptions::new()
+                .read(true)
+                .share_mode(0)
+                .open(&path)
+                .unwrap(),
+        );
+        assert!(write_staged(&path, &b"abcd"[..], 3).is_err());
+        drop(
+            OpenOptions::new()
+                .read(true)
+                .share_mode(0)
+                .open(&path)
+                .unwrap(),
+        );
+    }
 
     #[test]
     fn closing_invalidates_queued_events_and_rejects_reconnects() {
