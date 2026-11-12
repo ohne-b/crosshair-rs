@@ -11,6 +11,30 @@ $deployment = {
     # @DEPLOY_SCRIPT@
 }
 if ($publicKey -notmatch '^[A-Za-z0-9+/]{56}$') { throw 'This development package has no release verification key.' }
+if (!('CrosshairReleaseFilePath' -as [type])) {
+    Add-Type -TypeDefinition @'
+using System;
+using System.Text;
+using System.Runtime.InteropServices;
+using Microsoft.Win32.SafeHandles;
+public static class CrosshairReleaseFilePath {
+    [DllImport("kernel32.dll", CharSet=CharSet.Unicode, SetLastError=true)]
+    public static extern uint GetFinalPathNameByHandleW(SafeFileHandle file, StringBuilder path, uint capacity, uint flags);
+}
+'@
+}
+function Lock-ReleaseFile([string]$Path) {
+    $file = [IO.File]::Open($Path, 'Open', 'Read', 'Read')
+    $locks.Add($file)
+    $size = [CrosshairReleaseFilePath]::GetFinalPathNameByHandleW($file.SafeFileHandle, $null, 0, 0)
+    if (!$size -or $size -gt 32768) { throw 'Cannot resolve the opened release file.' }
+    $buffer = [Text.StringBuilder]::new([int]$size)
+    $length = [CrosshairReleaseFilePath]::GetFinalPathNameByHandleW($file.SafeFileHandle, $buffer, $size, 0)
+    if (!$length -or $length -ge $size) { throw 'The opened release path changed.' }
+    $final = $buffer.ToString()
+    if (!$final.StartsWith('\\?\') -or $final.Length -lt 7 -or $final[5] -ne ':' -or $final[6] -ne '\') { throw 'Copy the release download to a local Windows drive before installing.' }
+    return $final.Substring(4)
+}
 if (!$Package) {
     $files = @(Get-ChildItem -LiteralPath $PSScriptRoot -Filter 'crosshair-rs-*-windows-x64.msix' -File)
     if ($files.Count -ne 1) { throw 'Place exactly one release MSIX beside this script, or pass -Package.' }
@@ -35,14 +59,16 @@ $framework = Join-Path $PSScriptRoot 'Microsoft.VCLibs.x64.14.00.appx'
 $minisign = Join-Path $PSScriptRoot 'minisign.exe'
 $locks = [Collections.Generic.List[IO.FileStream]]::new()
 try {
-    foreach ($file in @($Package, "$Package.minisig", $minisign, $framework)) {
-        $locks.Add([IO.File]::Open($file, 'Open', 'Read', 'Read'))
-    }
+    # Bind every later path-based read to its opened file, resolving junction ancestors.
+    $signaturePath = Lock-ReleaseFile "$Package.minisig"
+    $Package = Lock-ReleaseFile $Package
+    $minisign = Lock-ReleaseFile $minisign
+    $framework = Lock-ReleaseFile $framework
     if ((Get-FileHash -LiteralPath $framework -Algorithm SHA256).Hash.ToLowerInvariant() -ne '9c17b521f9d690a1f504da5108ed6eec5669eb3a8fd1331eef43e40d84e74283') { throw 'The bundled Microsoft x64 framework is damaged. Download the complete release.' }
     if ((Get-FileHash -LiteralPath $minisign -Algorithm SHA256).Hash.ToLowerInvariant() -ne '5535be9e4e123831ebe6ef324aafe9dde507015c176191f9e20c3ad60567f9e1') { throw 'The release verifier is damaged. Download the complete release.' }
-    & $minisign -V -H -P $publicKey -m $Package
+    & $minisign -V -H -P $publicKey -m $Package -x $signaturePath
     if ($LASTEXITCODE) { throw 'The package was not signed by the crosshair-rs updater key.' }
-    $signature = (Get-Content -LiteralPath "$Package.minisig" -Raw).TrimEnd() -split '\r?\n'
+    $signature = (Get-Content -LiteralPath $signaturePath -Raw).TrimEnd() -split '\r?\n'
     if ($signature.Count -ne 4 -or $signature[2] -cne "trusted comment: version:$releaseVersion") { throw 'The signed version does not match the download name.' }
     Add-Type -AssemblyName System.IO.Compression.FileSystem
     $archive = [IO.Compression.ZipFile]::OpenRead($Package)

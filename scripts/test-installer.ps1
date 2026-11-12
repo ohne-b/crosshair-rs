@@ -9,6 +9,7 @@ $minisign = Join-Path $directory 'minisign.exe'
 $package = Join-Path $directory 'crosshair-rs-0.1.0-alpha.1-windows-x64.msix'
 $key = Join-Path $directory 'test.key'
 $installer = Join-Path $directory 'Install.ps1'
+$alias = Join-Path $root ('junction-' + [Guid]::NewGuid().ToString('N'))
 $publisher = 'CN=fixture, OID.2.25.311729368913984317654407730594956997722=1'
 function Write-Package([string]$version = '0.1.0.1') {
     if (Test-Path -LiteralPath $package) { Remove-Item -LiteralPath $package }
@@ -46,7 +47,8 @@ try {
     Write-Package
     Sign-Package
     & $installer -VerifyOnly | Out-Null
-    & $installer | Out-Null
+    New-Item -ItemType Junction -Path $alias -Target $directory | Out-Null
+    & (Join-Path $alias 'Install.ps1') | Out-Null
     $invocation = $global:crosshairInstallerInvocation
     if (!$invocation -or $invocation.ArgumentList[2] -ne '-EncodedCommand' -or $invocation.WorkingDirectory -ne [Environment]::GetFolderPath('System')) { throw 'Installer did not transfer captured code with a system working directory.' }
     $command = [Text.Encoding]::Unicode.GetString([Convert]::FromBase64String($invocation.ArgumentList[3]))
@@ -75,6 +77,8 @@ try {
     Write-Output 'Installer verification and captured-code handoff passed; tampered bytes, versions, dependency and verifier were rejected. No installation or elevation occurred.'
 } finally {
     Remove-Variable -Scope Global -Name crosshairInstallerInvocation -ErrorAction SilentlyContinue
+    # Remove only the known junction, never traverse it during recursive fixture cleanup.
+    if (Test-Path -LiteralPath $alias) { [IO.Directory]::Delete($alias) }
     $resolved = [IO.Path]::GetFullPath($directory)
     if (!$resolved.StartsWith($root + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) { throw 'Unsafe fixture cleanup path.' }
     Remove-Item -LiteralPath $resolved -Recurse -Force
