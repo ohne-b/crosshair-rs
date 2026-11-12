@@ -528,6 +528,10 @@ pub struct Document {
 }
 
 impl Document {
+    pub fn reconnected(&mut self) {
+        self.save_paused = self.dirty;
+    }
+
     pub fn open(&mut self, preset: Preset) -> Result<()> {
         ensure!(
             !self.dirty,
@@ -884,6 +888,24 @@ mod tests {
         saved.revision += 1;
         document.receive(&saved);
         assert_eq!(document.draft.as_ref().unwrap().name, "Unsent name");
+        document.reconnected();
+        assert!(document.save_paused);
+    }
+
+    #[test]
+    fn reconnecting_after_cancelling_a_clean_offline_gesture_resumes_saving() {
+        let mut document = Document::default();
+        document
+            .open(AppState::default().presets.remove(0))
+            .unwrap();
+        document.save_paused = true;
+        document.begin_gesture();
+        document.draft.as_mut().unwrap().layers[0].transform.x = 20.0;
+        document.dirty = true;
+        document.cancel_gesture();
+        assert!(!document.dirty);
+        document.reconnected();
+        assert!(!document.save_paused);
     }
 
     #[test]

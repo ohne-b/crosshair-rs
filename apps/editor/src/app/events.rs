@@ -93,6 +93,7 @@ impl App {
                 .global::<Store>()
                 .set_activity(activity.unwrap_or_default().into()),
             Event::Engine(_, client::Event::Connected) => {
+                self.document.reconnected();
                 let ui = self.window()?;
                 ui.global::<Store>().set_connected(true);
                 self.new_connection = true;
