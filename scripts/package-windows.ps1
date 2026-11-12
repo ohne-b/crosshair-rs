@@ -87,7 +87,7 @@ foreach ($file in $required) { Copy-Item -LiteralPath $file -Destination $stage 
 Copy-Item -LiteralPath (Join-Path $repoRoot 'packaging/windows/Assets') -Destination $stage -Recurse
 Copy-Item -LiteralPath (Join-Path $repoRoot 'LICENSE.md') -Destination $stage
 Copy-Item -LiteralPath (Join-Path $repoRoot 'README.md') -Destination $stage
-Copy-Item -LiteralPath (Join-Path $repoRoot 'THIRD_PARTY_NOTICES.md') -Destination $stage
+Copy-Item -LiteralPath (Join-Path $repoRoot 'NOTICE.md') -Destination $stage
 $licenses = Join-Path $stage 'Licenses'
 New-Item -ItemType Directory -Path $licenses | Out-Null
 Copy-Item -LiteralPath (Join-Path $repoRoot 'assets/fonts/OFL.txt') -Destination (Join-Path $licenses 'Manrope-OFL.txt')

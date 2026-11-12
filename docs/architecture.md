@@ -3,7 +3,7 @@
 This defines the application architecture and its complete acceptance contract.
 Source implementation does not establish compatibility or performance: native
 acceptance, installation and update qualification remain separate gates.
-Contributor and release policy lives in [CONTRIBUTING.md](../CONTRIBUTING.md).
+Contributor and release policy lives in [CONTRIBUTING.md](CONTRIBUTING.md).
 The [design preview](design-preview.html) illustrates the proposed interface;
 its interactions are illustrative, not an implementation of the application.
 
@@ -779,7 +779,7 @@ days. `prepare-release.yml` creates the version draft PR; reviewed notes are add
 to that PR. `publish-release.yml` signs the selected exact-main download, verifies
 all downloaded assets and publishes the verified draft. Public build variables and protected
 signing secrets, local commands and the final manual acceptance boundary are
-specified in [CONTRIBUTING.md](../CONTRIBUTING.md#maintainer-commands-and-signing-configuration).
+specified in [CONTRIBUTING.md](CONTRIBUTING.md#maintainer-commands-and-signing-configuration).
 Missing keys fail closed before any update request. Unsigned installation, helper
 breakaway survival, two-version deployment and clean-install behavior require
 actual runtime evidence; source checks alone do not prove those gates.

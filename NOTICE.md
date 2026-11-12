@@ -1,21 +1,18 @@
 # Third-party notices
 
-crosshair-rs's own code is licensed under
-[PolyForm Noncommercial 1.0.0](LICENSE.md). That license does not replace the
-licenses of the components and artwork below. Preserve their notices when
-redistributing the application.
+crosshair-rs is copyright 2026 ohne-b (OhneB), licensed under
+[PolyForm Noncommercial 1.0.0](LICENSE.md) for noncommercial use.
+Keep the license and required notices with copies. Third-party components and
+artwork retain their own licenses.
 
 ## Rust-derived application logo
 
-The placeholder [application logo](assets/logo.svg) adapts the
-[Rust Project logo artwork](https://github.com/rust-lang/rust-artwork/blob/main/logo/rust-logo-gear-only.svg).
-The Rust and Cargo logos belong to the **Rust Foundation** and are licensed under
-[Creative Commons Attribution 4.0 International](https://creativecommons.org/licenses/by/4.0/).
-This modified version uses a charcoal gear, mounting tabs and five screw holes
-and replaces the original `R` with four orange (`#F97316`) crosshair bars.
-The [Rust trademark policy](https://rustfoundation.org/policy/rust-trademark-policy/)
-also applies. The project is not affiliated with or endorsed by the Rust Project
-or Rust Foundation.
+The [application logo](assets/logo.svg) adapts the
+[Rust logo](https://github.com/rust-lang/rust-artwork/blob/main/logo/rust-logo-gear-only.svg),
+owned by the Rust Foundation and licensed under
+[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). Colors were changed and
+the `R` was replaced with a crosshair. The [Rust trademark policy](https://rustfoundation.org/policy/rust-trademark-policy/)
+applies. This project is not affiliated with or endorsed by the Rust Foundation.
 
 ## Fonts and icons
 

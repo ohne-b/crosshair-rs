@@ -79,7 +79,7 @@ function sourceLink(value) {
 }
 
 export function renderNotices(packages, overrides = {}, overrideRoot = root) {
-  const sections = ['# Rust dependency notices\n\nGenerated from Cargo.lock for x86_64-pc-windows-msvc. Normal and build dependencies reachable from crosshair-engine and crosshair-editor are included. Upstream license expressions describe the offered terms; see THIRD_PARTY_NOTICES.md for the selected Slint desktop license.\n'];
+  const sections = ['# Rust dependency notices\n\nGenerated from Cargo.lock for x86_64-pc-windows-msvc. Normal and build dependencies reachable from crosshair-engine and crosshair-editor are included. Upstream license expressions describe the offered terms; see [NOTICE.md](../NOTICE.md) for the selected Slint desktop license.\n'];
   const missing = [];
   const used = new Set();
   const identities = new Set();

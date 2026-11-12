@@ -1,6 +1,6 @@
 ## Problem and resulting behavior
 
-<!-- Follow CONTRIBUTING.md. Describe the concrete problem and final change. -->
+<!-- Follow docs/CONTRIBUTING.md. Describe the concrete problem and final change. -->
 
 ## Validation
 

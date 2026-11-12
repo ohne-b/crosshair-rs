@@ -6,10 +6,11 @@ canonical branch. Keep changes focused and discuss substantial features or
 refactoring first unless already authorized. Favor simple, maintainable solutions
 and measured performance. English only for now.
 
-Contributor policy belongs here; `AGENTS.md` is the short agent entry point.
-Technical contracts belong in [docs/architecture.md](docs/architecture.md).
-README describes the product and its actual status. Preserve logo attribution and
-third-party licenses. Do not add contributor/PR tables or README-rewriting bots.
+Contributor policy belongs here; [AGENTS.md](../AGENTS.md) is the agent entry point.
+Technical contracts belong in [architecture.md](architecture.md).
+Keep README short, user guides in `docs/` and release changes in CHANGELOG.
+Preserve logo attribution and third-party licenses. Do not add contributor/PR
+tables or README-rewriting bots.
 
 ## Workspace and privacy
 
@@ -58,6 +59,20 @@ When merging is authorized, use a merge commit with a conventional subject and
 the PR number: `fix(input): ignore held-key repeats (#123)`. Do not use GitHub's
 default merge subject, squash or rebase instead of the merge commit.
 
+## Development
+
+Run commands from the repository root. Build both executables together:
+
+```powershell
+cargo build --locked -p crosshair-engine -p crosshair-editor
+./target/debug/crosshair-editor.exe
+```
+
+The editor starts its sibling engine. Closing the editor leaves the overlay
+running; use the tray's **Quit** action to stop both. Game Bar and launch at
+sign-in require an installed package. Unpackaged builds store their data in
+`%LOCALAPPDATA%\crosshair-rs`.
+
 ## Validation
 
 Use x64 Windows, the Rust toolchain in `rust-toolchain.toml`, Node 24, Visual
@@ -79,7 +94,7 @@ cargo test --locked --workspace
 ./scripts/test-installer.ps1 -ArtifactDirectory target/local-package
 ```
 
-The [Validation workflow](.github/workflows/validation.yml) runs this baseline on
+The [Validation workflow](../.github/workflows/validation.yml) runs this baseline on
 Windows for PRs, main pushes and manual runs. Packaging builds the real engine,
 Slint editor and Game Bar host, validates the MSIX manifest and includes the
 Microsoft-signed x64 VCLibs dependency. It never installs the result. A PR package
@@ -121,7 +136,7 @@ these instructions and actual validation evidence. Review correctness, privacy,
 failure cases, regressions, scope, coverage and documentation claims.
 
 Record the reviewer role, reviewed revision, findings and resolutions in the
-[PR template](.github/pull_request_template.md). Justify rejected findings with
+[PR template](../.github/pull_request_template.md). Justify rejected findings with
 evidence; have substantive fixes rechecked. Keep the PR in draft if review is
 unavailable or blockers/checks remain unresolved. Agent review does not replace
 required GitHub approvals. Record incorporated main and tested head SHAs and keep
