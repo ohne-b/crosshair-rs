@@ -6,7 +6,7 @@ use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use windows::{
     Win32::{
         Foundation::{
-            ERROR_ALREADY_EXISTS, GetLastError, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM,
+            ERROR_ALREADY_EXISTS, GetLastError, HANDLE, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM,
         },
         Graphics::{
             Dwm::{
@@ -23,13 +23,18 @@ use windows::{
         UI::{
             Controls::MARGINS,
             HiDpi::{GetDpiForWindow, GetSystemMetricsForDpi},
-            Input::KeyboardAndMouse::{TME_LEAVE, TME_NONCLIENT, TRACKMOUSEEVENT, TrackMouseEvent},
+            Input::KeyboardAndMouse::{
+                ReleaseCapture, SetCapture, TME_LEAVE, TME_NONCLIENT, TRACKMOUSEEVENT,
+                TrackMouseEvent,
+            },
             Shell::{DefSubclassProc, RemoveWindowSubclass, SetWindowSubclass},
             WindowsAndMessaging::*,
         },
     },
     core::{BOOL, PCWSTR},
 };
+
+const CAPTION_PRESS: PCWSTR = windows::core::w!("crosshair-rs.caption-press");
 
 pub struct Instance {
     _mutex: OwnedHandle,
@@ -277,6 +282,44 @@ unsafe extern "system" fn procedure(
     use_corner_region: usize,
 ) -> LRESULT {
     unsafe {
+        // Native hit codes retain Snap; custom bounds need their own press/release tracking.
+        if message == WM_NCLBUTTONDOWN
+            && matches!(wparam.0 as u32, HTMINBUTTON | HTMAXBUTTON | HTCLOSE)
+        {
+            if SetPropW(hwnd, CAPTION_PRESS, Some(HANDLE(wparam.0 as *mut _))).is_ok() {
+                let _ = SetCapture(hwnd);
+            }
+            return LRESULT(0);
+        }
+        if matches!(message, WM_LBUTTONUP | WM_NCLBUTTONUP) {
+            let pressed = RemovePropW(hwnd, CAPTION_PRESS).map_or(0, |value| value.0 as u32);
+            if pressed != 0 {
+                let _ = ReleaseCapture();
+                let mut cursor = POINT::default();
+                let mut client = RECT::default();
+                if GetCursorPos(&mut cursor).is_ok()
+                    && ScreenToClient(hwnd, &mut cursor).as_bool()
+                    && GetClientRect(hwnd, &mut client).is_ok()
+                {
+                    let hit = caption_hit_test(
+                        cursor.x,
+                        cursor.y,
+                        client.right,
+                        GetDpiForWindow(hwnd).max(96) as f32 / 96.0,
+                    );
+                    if let Some(action) = caption_release(pressed, hit) {
+                        let _ = caption_action(hwnd, action);
+                    }
+                }
+                return LRESULT(0);
+            }
+        }
+        if matches!(message, WM_CAPTURECHANGED | WM_CANCELMODE | WM_NCDESTROY)
+            && RemovePropW(hwnd, CAPTION_PRESS).is_ok()
+            && message == WM_CANCELMODE
+        {
+            let _ = ReleaseCapture();
+        }
         // Keep native caption hit testing, hover states, Snap and system actions.
         let mut result = LRESULT(0);
         if DwmDefWindowProc(hwnd, message, wparam, lparam, &mut result).as_bool()
@@ -384,12 +427,7 @@ unsafe extern "system" fn procedure(
                 }
             }
             // Winit injects a dummy mouse move for captions, which cancels our native drag loop.
-            WM_NCLBUTTONDOWN
-                if matches!(
-                    wparam.0 as u32,
-                    HTCAPTION | HTMINBUTTON | HTMAXBUTTON | HTCLOSE
-                ) =>
-            {
+            WM_NCLBUTTONDOWN if wparam.0 == HTCAPTION as usize => {
                 return DefWindowProcW(hwnd, message, wparam, lparam);
             }
             WM_NCDESTROY => {
@@ -464,9 +502,36 @@ fn caption_hit_test(x: i32, y: i32, width: i32, scale: f32) -> u32 {
     HTCLIENT
 }
 
+fn caption_release(pressed: u32, released: u32) -> Option<&'static str> {
+    if pressed != released {
+        return None;
+    }
+    match pressed {
+        HTMINBUTTON => Some("window-minimize"),
+        HTMAXBUTTON => Some("window-maximize"),
+        HTCLOSE => Some("window-close"),
+        _ => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn caption_click_requires_release_on_the_pressed_button() {
+        assert_eq!(
+            caption_release(HTMAXBUTTON, HTMAXBUTTON),
+            Some("window-maximize")
+        );
+        assert_eq!(caption_release(HTCLOSE, HTCLOSE), Some("window-close"));
+        assert_eq!(
+            caption_release(HTMINBUTTON, HTMINBUTTON),
+            Some("window-minimize")
+        );
+        assert_eq!(caption_release(HTMAXBUTTON, HTCLOSE), None);
+        assert_eq!(caption_release(HTCLOSE, HTCLIENT), None);
+        assert_eq!(caption_release(HTCLIENT, HTCLIENT), None);
+    }
     #[test]
     fn frame_keeps_resize_edges_and_header_controls_at_mixed_dpi() {
         assert_eq!(resize_hit_test(2, 2, 1280, 800, 8, false), HTTOPLEFT);
