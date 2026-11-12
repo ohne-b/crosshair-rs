@@ -112,19 +112,26 @@ export component Settings inherits Rectangle {
                         Group {
                             Setting { label: "Check for updates on launch"; last: true; Switch { checked: Store.check-updates; label: "Check for updates on launch"; toggled => { Store.action("check-updates-setting", Store.check-updates ? "false" : "true"); } } }
                         }
-                        Rectangle { height: update-content.preferred-height; vertical-stretch: 0; background: Theme.panel; border-radius: 10px; border-width: 1px; border-color: Theme.border;
+                        Rectangle { height: update-content.preferred-height; vertical-stretch: 0;
                             update-content := VerticalLayout { padding: 16px; spacing: 12px;
                                 HorizontalLayout { spacing: 8px;
-                                    Rectangle { width: 76px; height: 32px; border-radius: 8px; background: Theme.raised; Text { text: "v" + Store.version; color: Theme.text; font-size: 12px * Theme.text-scale; font-weight: 600; horizontal-alignment: center; vertical-alignment: center; } }
+                                    Rectangle { width: version-label.preferred-width + 16px; height: max(26px, 12px * Theme.text-scale + 12px); border-radius: 6px; background: Theme.orange.with-alpha(0.12); version-label := Text { text: "v" + Store.version; color: Theme.orange; font-size: 12px * Theme.text-scale; font-weight: 600; horizontal-alignment: center; vertical-alignment: center; } }
+                                    ActionButton { icon: @image-url("../../../../assets/icons/refresh.svg"); label: Store.update-phase == 1 ? "Checking for updates" : "Check for updates"; quiet: true; enabled: Store.interactive && Store.connected && Store.update-phase != 1 && Store.update-phase != 4 && Store.update-phase != 5 && Store.update-phase != 6; clicked => { Store.action("check-update", ""); } }
+                                    Text { text: Store.update-status; color: Store.update-error != "" ? #FCA5A5 : Theme.muted; font-size: 12px * Theme.text-scale; vertical-alignment: center; wrap: word-wrap; }
+                                    Rectangle { horizontal-stretch: 1; }
+                                    ActionButton { icon: @image-url("../../../../assets/icons/info-circle.svg"); label: Store.update-error != "" ? "Update error details" : "About application updates"; quiet: true; clicked => { Store.action("update-help", ""); } }
+                                }
+                                if Store.update-version != "": Rectangle { height: 36px * Theme.text-scale; max-width: 384px;
+                                    if Store.update-phase == 4 && Store.update-total: Rectangle { height: 6px; border-radius: 3px; background: Theme.border; Rectangle { width: parent.width * clamp(Store.update-progress, 0, 1); height: 6px; border-radius: 3px; background: Theme.orange; } }
+                                    Text { y: 12px; text: Store.update-bytes; color: Theme.muted; font-size: 11px * Theme.text-scale; }
+                                }
+                                if Store.update-version != "": HorizontalLayout { spacing: 8px;
+                                    if Store.update-phase == 3 || Store.update-phase == 7: ActionButton { text: "Download"; icon: @image-url("../../../../assets/icons/download.svg"); primary: true; enabled: Store.interactive && Store.connected; clicked => { Store.action("download-update", ""); } }
+                                    if Store.update-phase == 4: ActionButton { text: "Cancel"; enabled: Store.interactive && Store.connected; clicked => { Store.action("cancel-update", ""); } }
+                                    if Store.update-phase == 5: ActionButton { text: "Install and restart"; primary: true; enabled: Store.interactive && Store.connected; clicked => { Store.action("install-update", ""); } }
                                     ActionButton { text: "Release notes"; quiet: true; clicked => { Store.action("release-notes", ""); } }
                                     Rectangle { horizontal-stretch: 1; }
-                                    ActionButton { text: Store.update-phase == 7 ? "Retry" : "Check for updates"; enabled: Store.interactive && Store.update-phase != 1 && Store.update-phase != 4 && Store.update-phase != 6; clicked => { Store.action("check-update", ""); } }
-                                    if Store.update-phase == 3: ActionButton { text: "Download"; primary: true; clicked => { Store.action("download-update", ""); } }
-                                    if Store.update-phase == 4: ActionButton { text: "Cancel"; clicked => { Store.action("cancel-update", ""); } }
-                                    if Store.update-phase == 5: ActionButton { text: "Install and restart"; primary: true; clicked => { Store.action("install-update", ""); } }
                                 }
-                                if Store.update-phase == 4 && Store.update-total: Rectangle { height: 6px; border-radius: 3px; background: Theme.border; Rectangle { width: parent.width * clamp(Store.update-progress, 0, 1); height: 6px; border-radius: 3px; background: Theme.orange; } }
-                                if Store.update-status != "": Text { text: Store.update-status; color: Store.update-phase == 7 ? #FCA5A5 : Theme.muted; font-size: 12px * Theme.text-scale; wrap: word-wrap; }
                             }
                         }
                     }

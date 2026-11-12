@@ -54,10 +54,23 @@ impl App {
                 self.hwnd()?,
                 "https://polyformproject.org/licenses/noncommercial/1.0.0/",
             )?,
-            "release-notes" => dialogs::open_url(
-                self.hwnd()?,
-                "https://github.com/ohne-b/crosshair-rs/releases",
-            )?,
+            "release-notes" => {
+                let url = self
+                    .status
+                    .update
+                    .version
+                    .as_ref()
+                    .map(|version| {
+                        format!("https://github.com/ohne-b/crosshair-rs/releases/tag/v{version}")
+                    })
+                    .unwrap_or_else(|| "https://github.com/ohne-b/crosshair-rs/releases".into());
+                dialogs::open_url(self.hwnd()?, &url)?;
+            }
+            "update-help" => {
+                self.modal = Modal::None;
+                let message = self.status.update.error.clone().unwrap_or_else(|| "Downloads are verified with the project's updater key. Windows 11 requires administrator approval to install this unsigned package. The editor and overlay close during installation, then reopen with your settings.".into());
+                self.show_modal(5, "Application updates", &message, "", "", "");
+            }
             "notices" => {
                 self.modal = Modal::None;
                 self.show_modal(4, "Third-party notices", "Slint — Royalty-free Desktop License\nTabler Icons — MIT License\nManrope — SIL Open Font License 1.1\nRust logo — CC BY 4.0, modified for crosshair-rs. Rust Foundation trademarks belong to the Rust Foundation.\n\nRendering uses tiny-skia, resvg and Windows DirectWrite. Dependency licenses are included with the application package.", "", "", "");
@@ -605,8 +618,8 @@ impl App {
             "cancel-update" => self.send("update", Command::CancelUpdate)?,
             "install-update" => {
                 ensure!(
-                    !self.document.conflict,
-                    "Resolve this draft's conflict before installing"
+                    !self.document.conflict && !self.document.save_paused,
+                    "Save or discard the unsent draft before installing"
                 );
                 self.install_requested = true;
                 if self.group_open || self.document.dirty || self.inflight.is_some() {

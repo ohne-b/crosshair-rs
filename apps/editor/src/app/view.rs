@@ -290,6 +290,17 @@ impl App {
         );
         store.set_update_total(self.status.update.total.is_some_and(|total| total > 0));
         store.set_update_status(settings::update_label(&self.status.update).into());
+        store.set_update_version(
+            self.status
+                .update
+                .version
+                .clone()
+                .unwrap_or_default()
+                .into(),
+        );
+        store.set_update_bytes(settings::download_progress(&self.status.update).into());
+        store.set_update_error(self.status.update.error.clone().unwrap_or_default().into());
+        store.set_version(self.status.update.current_version.clone().into());
         if let Some(error) = self
             .status
             .save_error

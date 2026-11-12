@@ -1,6 +1,13 @@
 use crosshair_core::protocol::{UpdatePhase, UpdateStatus};
 
 pub fn update_label(status: &UpdateStatus) -> String {
+    if status.error.is_some() {
+        return match status.phase {
+            UpdatePhase::Ready => "Installation couldn't start",
+            _ => "Update couldn't finish",
+        }
+        .into();
+    }
     match status.phase {
         UpdatePhase::Idle => String::new(),
         UpdatePhase::Checking => "Checking for updates…".into(),
@@ -9,30 +16,30 @@ pub fn update_label(status: &UpdateStatus) -> String {
             "{} is available",
             status.version.as_deref().unwrap_or("An update")
         ),
-        UpdatePhase::Downloading => match status.total.filter(|total| *total > 0) {
-            Some(total) => format!(
-                "{} / {} · {}%",
-                bytes(status.downloaded),
-                bytes(total),
-                (status.downloaded.saturating_mul(100) / total).min(100)
-            ),
-            None => format!("{} downloaded", bytes(status.downloaded)),
-        },
+        UpdatePhase::Downloading => "Downloading update…".into(),
         UpdatePhase::Ready => "Ready to install".into(),
         UpdatePhase::Installing => "Installing…".into(),
-        UpdatePhase::Failed => status
-            .error
-            .clone()
-            .unwrap_or_else(|| "Update failed".into()),
+        UpdatePhase::Failed => "Update couldn't finish".into(),
+    }
+}
+
+pub fn download_progress(status: &UpdateStatus) -> String {
+    if status.phase != UpdatePhase::Downloading {
+        return String::new();
+    }
+    match status.total.filter(|total| *total > 0) {
+        Some(total) => format!(
+            "{} / {} · {}%",
+            bytes(status.downloaded),
+            bytes(total),
+            (status.downloaded.saturating_mul(100) / total).min(100)
+        ),
+        None => format!("{} downloaded", bytes(status.downloaded)),
     }
 }
 
 fn bytes(value: u64) -> String {
-    if value >= 1024 * 1024 {
-        format!("{:.1} MB", value as f64 / (1024.0 * 1024.0))
-    } else {
-        format!("{} KB", value / 1024)
-    }
+    format!("{:.1} MB", value as f64 / 1_000_000.0)
 }
 
 pub const GAME_BAR_HELP: &str = "Open Xbox Game Bar (Win+G), select crosshair-rs in Widgets, then pin it and enable click-through. Position the widget over the target display and keep its window visible. Fullscreen support depends on Game Bar and the game; Vulkan and OpenGL can be restricted. The app never injects into games.";
@@ -45,11 +52,15 @@ mod tests {
     fn unknown_download_length_is_not_fake_percentage() {
         let mut status = UpdateStatus {
             phase: UpdatePhase::Downloading,
-            downloaded: 4096,
+            downloaded: 4_000_000,
             ..Default::default()
         };
-        assert_eq!(update_label(&status), "4 KB downloaded");
-        status.total = Some(8192);
-        assert!(update_label(&status).ends_with("50%"));
+        assert_eq!(download_progress(&status), "4.0 MB downloaded");
+        status.total = Some(8_000_000);
+        assert!(download_progress(&status).ends_with("50%"));
+        status.phase = UpdatePhase::Ready;
+        status.error = Some("A deployment failure".into());
+        assert_eq!(update_label(&status), "Installation couldn't start");
+        assert!(download_progress(&status).is_empty());
     }
 }
