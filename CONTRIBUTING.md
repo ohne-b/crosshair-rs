@@ -86,6 +86,8 @@ Microsoft-signed x64 VCLibs dependency. It never installs the result. A PR packa
 is unsigned, has its updater disabled and cannot be promoted to a release.
 `-Offline` on build/package scripts uses previously verified cached dependencies.
 Choose a fresh package output directory rather than overwriting an artifact.
+Packaging remaps local source/cache paths and checks the resulting executables;
+`-SkipBuild` accepts only binaries already built with those privacy settings.
 
 Packaging also runs `node scripts/generate-notices.mjs OUTPUT` against the locked
 Windows normal/build dependency graph and bundles complete upstream license

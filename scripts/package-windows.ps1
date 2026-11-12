@@ -24,13 +24,25 @@ if (!$ReleaseCandidate -and ($env:CROSSHAIR_UPDATE_PUBLIC_KEY -or $env:CROSSHAIR
 if (!$BinaryDirectory) { $BinaryDirectory = Join-Path $repoRoot $(if ($Configuration -eq 'Release') { 'target/release' } else { 'target/debug' }) }
 if (!$SkipBuild) {
     Push-Location $repoRoot
+    $previousFlags = $env:CARGO_ENCODED_RUSTFLAGS
     try {
+        $flags = if ($previousFlags) { @($previousFlags.Split([char]31)) } elseif ($env:RUSTFLAGS) { @($env:RUSTFLAGS -split '\s+' | Where-Object { $_ }) } else { @() }
+        $profilePath = [Environment]::GetFolderPath('UserProfile')
+        $cargoPath = if ($env:CARGO_HOME) { $env:CARGO_HOME } else { Join-Path $profilePath '.cargo' }
+        $rustupPath = if ($env:RUSTUP_HOME) { $env:RUSTUP_HOME } else { Join-Path $profilePath '.rustup' }
+        foreach ($mapping in @(@($profilePath, '/build-user'), @($cargoPath, '/cargo'), @($rustupPath, '/rustup'), @($repoRoot, '.'))) {
+            $path = [IO.Path]::GetFullPath($mapping[0]).TrimEnd('\')
+            $flags += "--remap-path-prefix=$path=$($mapping[1])"
+            $flags += "--remap-path-prefix=$($path.Replace('\', '/'))=$($mapping[1])"
+        }
+        $flags += '-Clink-arg=/PDBALTPATH:%_PDB%'
+        $env:CARGO_ENCODED_RUSTFLAGS = $flags -join [char]31
         $cargoArgs = @('build', '--locked', '--workspace')
         if ($Configuration -eq 'Release') { $cargoArgs += '--release' }
         if ($Offline) { $cargoArgs += '--offline' }
         & cargo @cargoArgs
         if ($LASTEXITCODE -ne 0) { throw 'Rust build failed.' }
-    } finally { Pop-Location }
+    } finally { $env:CARGO_ENCODED_RUSTFLAGS = $previousFlags; Pop-Location }
     & (Join-Path $PSScriptRoot 'build-gamebar.ps1') -Configuration $Configuration -Test -Offline:$Offline
 }
 $gamebarOutput = Join-Path $repoRoot "target/gamebar/$($Configuration.ToLowerInvariant())"
@@ -41,6 +53,15 @@ $required = @(
     (Join-Path $gamebarOutput 'Microsoft.Gaming.XboxGameBar.pri'), (Join-Path $gamebarOutput 'Microsoft.GameBar.LICENSE.txt')
 )
 foreach ($file in $required) { if (!(Test-Path -LiteralPath $file -PathType Leaf)) { throw "Missing package input: $file" } }
+foreach ($file in @($required | Where-Object { [IO.Path]::GetExtension($_) -eq '.exe' })) {
+    $bytes = [IO.File]::ReadAllBytes($file)
+    foreach ($encoding in @([Text.Encoding]::UTF8, [Text.Encoding]::Unicode)) {
+        $text = $encoding.GetString($bytes)
+        foreach ($path in @($repoRoot, [Environment]::GetFolderPath('UserProfile'))) {
+            if ($text.Contains($path) -or $text.Contains($path.Replace('\', '/'))) { throw "Executable contains a local build path; rebuild through this packaging script: $([IO.Path]::GetFileName($file))" }
+        }
+    }
+}
 if (!(Test-Path -LiteralPath (Join-Path $gamebarOutput 'CppWinRT-LICENSE') -PathType Leaf)) { throw 'C++/WinRT license is missing; rebuild the Game Bar host.' }
 $start = [Diagnostics.ProcessStartInfo]::new([IO.Path]::GetFullPath((Join-Path $BinaryDirectory 'crosshair-engine.exe')), '--build-info')
 $start.UseShellExecute = $false

@@ -46,11 +46,13 @@ if (!(Test-Path -LiteralPath $metadata)) { throw "Windows SDK $sdkVersion is req
 if ($LASTEXITCODE -ne 0) { throw 'Game Bar C++/WinRT projection failed.' }
 
 $source = Join-Path $repoRoot 'apps/gamebar/CrosshairWidget'
-$compilerArgs = @('/nologo', '/std:c++20', '/EHsc', '/MT', '/W4', '/DWIN32_LEAN_AND_MEAN', '/DNOMINMAX', '/DUNICODE', '/D_UNICODE', "/I$generated")
+$compilerArgs = @('/nologo', '/std:c++20', '/EHsc', '/MT', '/W4', '/DWIN32_LEAN_AND_MEAN', '/DNOMINMAX', '/DUNICODE', '/D_UNICODE', '/I..\generated')
 if ($Configuration -eq 'Release') { $compilerArgs += @('/O2', '/DNDEBUG') } else { $compilerArgs += @('/Od', '/Zi') }
 Push-Location $output
 try {
-    & cl.exe @compilerArgs (Join-Path $source 'app.cpp') (Join-Path $source 'pipe.cpp') '/Fe:crosshair-gamebar.exe' /link /APPCONTAINER /SUBSYSTEM:WINDOWS /MANIFESTUAC:NO windowsapp.lib advapi32.lib user32.lib
+    $appSource = Resolve-Path -LiteralPath (Join-Path $source 'app.cpp') -Relative
+    $pipeSource = Resolve-Path -LiteralPath (Join-Path $source 'pipe.cpp') -Relative
+    & cl.exe @compilerArgs $appSource $pipeSource '/Fe:crosshair-gamebar.exe' /link /APPCONTAINER /SUBSYSTEM:WINDOWS /MANIFESTUAC:NO '/PDBALTPATH:%_PDB%' windowsapp.lib advapi32.lib user32.lib
     if ($LASTEXITCODE -ne 0) { throw 'Game Bar host compilation failed.' }
     if ($Test) {
         & cl.exe /nologo /std:c++20 /EHsc /MT /W4 /O2 (Join-Path $repoRoot 'apps/gamebar/tests/wire.cpp') '/Fe:widget-wire-tests.exe'
