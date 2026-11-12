@@ -17,7 +17,7 @@ pub(super) fn release() -> Manifest {
     Manifest {
         schema_version: 1,
         version: "1.2.3".into(),
-        notes: "https://github.com/ohne-b/crosshair-rs/releases/tag/v1.2.3".into(),
+        notes: "[Check release notes on GitHub](https://github.com/ohne-b/crosshair-rs/releases/tag/v1.2.3)".into(),
         pub_date: "2026-11-11T12:00:00Z".into(),
         platforms: Platforms { windows: Artifact {
             url: "https://github.com/ohne-b/crosshair-rs/releases/download/v1.2.3/crosshair-rs-1.2.3-windows-x64.msix".into(),
@@ -134,17 +134,42 @@ fn versions_use_semver_and_fit_windows_without_downgrading() {
         "v1.2.3",
         "1.2",
         "01.2.3",
-        "1.2.3-rc.1",
+        "1.2.3-preview.1",
+        "1.2.3-alpha.20000",
+        "1.2.3-rc.01",
         "1.2.3+meta",
         "65536.0.0",
     ] {
-        assert!(manifest::stable_version(invalid).is_err(), "{invalid}");
+        assert!(manifest::release_version(invalid).is_err(), "{invalid}");
     }
-    let old = manifest::stable_version("1.9.9").unwrap();
-    let new = manifest::stable_version("1.10.0").unwrap();
+    let old = manifest::release_version("1.9.9").unwrap();
+    let new = manifest::release_version("1.10.0").unwrap();
     assert!(new > old);
     assert!(manifest::mapped_version(&new) > manifest::mapped_version(&old));
-    assert_eq!(manifest::mapped_version(&new), (1 << 48) | (10 << 32));
+    assert_eq!(
+        manifest::mapped_version(&new),
+        (1 << 48) | (10 << 32) | 65535
+    );
+    let mut previous = None;
+    for text in [
+        "0.1.0-alpha.0",
+        "0.1.0-alpha.1",
+        "0.1.0-alpha.19999",
+        "0.1.0-beta.0",
+        "0.1.0-beta.19999",
+        "0.1.0-rc.0",
+        "0.1.0-rc.19999",
+        "0.1.0",
+        "0.1.1-alpha.0",
+    ] {
+        let version = manifest::release_version(text).unwrap();
+        let mapped = manifest::mapped_version(&version);
+        if let Some((old, old_mapped)) = previous {
+            assert!(version > old && mapped > old_mapped);
+        }
+        assert_eq!(manifest::product_version(mapped), text);
+        previous = Some((version, mapped));
+    }
 }
 
 #[test]
@@ -187,7 +212,9 @@ fn package_lock_prevents_replacement_and_corrupt_package_is_rejected() {
     assert!(std::fs::write(&path, b"replacement").is_err());
     assert!(std::fs::remove_file(&path).is_err());
     let _apartment = super::package::Apartment::new().unwrap();
-    assert!(super::package::validate(&path, &file, &release()).is_err());
+    assert!(super::package::validate(&path, &release()).is_err());
+    drop(file);
+    std::fs::write(&path, b"replacement after unlocking").unwrap();
 }
 
 #[test]

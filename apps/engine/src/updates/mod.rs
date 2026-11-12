@@ -90,7 +90,8 @@ impl Updates {
                 .installed_version
                 .clone()
                 .unwrap_or_else(|| PRODUCT_VERSION.into());
-            state.status.version = Some(recovery.target_version.clone());
+            // Recovery has no authenticated download manifest; check again before offering Download.
+            state.status.version = None;
             state.status.error = recovery.error.clone();
         });
     }
@@ -142,7 +143,7 @@ impl Updates {
             (ready, state.status.clone())
         };
         (self.0.notify)(status);
-        // Verification and OS trust checks can be slow. Keep the status mutex
+        // Verification can be slow. Keep the status mutex
         // available to the engine's message thread throughout preparation.
         match helper::prepare(&self.0.root, &ready, restart) {
             Ok(handoff) => Ok(handoff),
@@ -303,7 +304,7 @@ impl Updates {
             let (bytes, sha256) =
                 manifest::verify(&mut file, &manifest, &key, || cancellation.check())?;
             file.seek(SeekFrom::Start(0))?;
-            let family = package::validate(&path, &file, &manifest)?;
+            let family = package::validate(&path, &manifest)?;
             ensure!(
                 family == current.family,
                 "The update targets a different application family"

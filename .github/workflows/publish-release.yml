@@ -1,14 +1,10 @@
-name: Prepare signed draft release
+name: Publish release
 
 on:
   workflow_dispatch:
     inputs:
       version:
-        description: Stable version already merged to main
-        required: true
-        type: string
-      validation_run:
-        description: Latest successful Validation run ID for current main
+        description: Version already merged and validated on main
         required: true
         type: string
 
@@ -16,7 +12,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: signed-release
+  group: publish-release
   cancel-in-progress: false
 
 jobs:
@@ -24,25 +20,32 @@ jobs:
     if: github.repository == 'ohne-b/crosshair-rs' && github.ref == 'refs/heads/main'
     runs-on: windows-2025
     timeout-minutes: 30
-    environment: release
+    environment: prod
     permissions:
       actions: read
-      contents: write
+      contents: read
     defaults:
       run:
         shell: pwsh
     env:
       GH_TOKEN: ${{ github.token }}
       RELEASE_VERSION: ${{ inputs.version }}
-      VALIDATION_RUN: ${{ inputs.validation_run }}
       CROSSHAIR_UPDATE_PUBLIC_KEY: ${{ vars.CROSSHAIR_UPDATE_PUBLIC_KEY }}
       CROSSHAIR_PACKAGE_PUBLISHER: ${{ vars.CROSSHAIR_PACKAGE_PUBLISHER }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          ref: main
+          ref: ${{ github.sha }}
           fetch-depth: 0
           persist-credentials: false
+      - name: Verify release publisher
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          RELEASE_OWNER: ${{ github.repository_owner }}
+        run: |
+          if (!$env:GH_TOKEN) { throw 'Set RELEASE_TOKEN in the prod environment before publishing.' }
+          $publisher = gh api user --jq .login
+          if ($LASTEXITCODE -or $publisher -cne $env:RELEASE_OWNER) { throw 'RELEASE_TOKEN must belong to the repository owner.' }
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: 24
@@ -51,33 +54,31 @@ jobs:
         run: |
           npm --prefix scripts ci --ignore-scripts
           if ($LASTEXITCODE) { throw 'Maintenance dependency restore failed.' }
-          node scripts/release.mjs gate $env:VALIDATION_RUN $env:RELEASE_VERSION
+          node scripts/release.mjs gate $env:RELEASE_VERSION
           if ($LASTEXITCODE) { throw 'Release provenance gate failed.' }
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           name: ${{ steps.provenance.outputs.artifact }}
           path: target/validated
-          run-id: ${{ inputs.validation_run }}
+          run-id: ${{ steps.provenance.outputs.run }}
           github-token: ${{ github.token }}
-      - name: Sign the validated package and updater metadata
+      - name: Sign the validated download and prepare updater metadata
         env:
           RELEASE_COMMIT: ${{ steps.provenance.outputs.commit }}
-          WINDOWS_CERTIFICATE_PFX_BASE64: ${{ secrets.WINDOWS_CERTIFICATE_PFX_BASE64 }}
-          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
           MINISIGN_PRIVATE_KEY: ${{ secrets.MINISIGN_PRIVATE_KEY }}
         run: |
           ./scripts/sign-release.ps1 -ArtifactDirectory target/validated -OutputDirectory target/release-assets -Version $env:RELEASE_VERSION -Commit $env:RELEASE_COMMIT
       - name: Create draft and verify downloaded assets
         env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
           RELEASE_COMMIT: ${{ steps.provenance.outputs.commit }}
+          VALIDATION_RUN: ${{ steps.provenance.outputs.run }}
+          PRERELEASE: ${{ steps.provenance.outputs.prerelease }}
         run: |
           # Recheck after signing: another main revision or failed validation blocks promotion.
-          node scripts/release.mjs gate $env:VALIDATION_RUN $env:RELEASE_VERSION
+          node scripts/release.mjs gate $env:RELEASE_VERSION $env:VALIDATION_RUN
           if ($LASTEXITCODE) { throw 'Release source changed during signing.' }
-          $previous = gh api repos/ohne-b/crosshair-rs/releases --jq '[.[] | select(.draft == false and .prerelease == false)][0].tag_name'
-          if ($LASTEXITCODE) { throw 'Previous release lookup failed.' }
-          if (!$previous -or $previous -eq 'null') { $previous = git rev-list --max-parents=0 HEAD }
-          node scripts/release.mjs body $env:RELEASE_VERSION $previous target/release-body.md
+          node scripts/release.mjs body $env:RELEASE_VERSION target/release-body.md
           if ($LASTEXITCODE) { throw 'Release notes validation failed.' }
           $assets = @((Get-ChildItem -LiteralPath target/release-assets -File).FullName)
           gh release create "v$env:RELEASE_VERSION" @assets --draft --target $env:RELEASE_COMMIT --title "crosshair-rs v$env:RELEASE_VERSION" --notes-file target/release-body.md
@@ -86,11 +87,17 @@ jobs:
           if ($LASTEXITCODE) { throw 'Draft release download failed.' }
           node scripts/release.mjs verify-assets target/downloaded-release $env:RELEASE_VERSION
           if ($LASTEXITCODE) { throw 'Downloaded release asset verification failed.' }
+          if ((Get-FileHash target/release-assets/SHA256SUMS).Hash -ne (Get-FileHash target/downloaded-release/SHA256SUMS).Hash) { throw 'Downloaded checksums differ from the prepared release.' }
           $minisign = ./scripts/get-minisign.ps1 -Offline
           $package = "target/downloaded-release/crosshair-rs-$env:RELEASE_VERSION-windows-x64.msix"
           & $minisign -V -H -P $env:CROSSHAIR_UPDATE_PUBLIC_KEY -m $package
           if ($LASTEXITCODE) { throw 'Downloaded updater signature failed verification.' }
-          . ./scripts/windows-tools.ps1
-          & (Get-WindowsSdkTool 'signtool') verify /pa /all $package
-          if ($LASTEXITCODE) { throw 'Downloaded Windows package signature failed verification.' }
-          'Draft verified. Complete clean-install, upgrade and recovery acceptance before explicitly publishing in GitHub.' | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
+          ./target/downloaded-release/Install.ps1 -VerifyOnly
+          $main = gh api repos/ohne-b/crosshair-rs/commits/main --jq .sha
+          if ($LASTEXITCODE -or $main -cne $env:RELEASE_COMMIT) { throw 'Main advanced during verification. The release remains a draft.' }
+          if ($env:PRERELEASE -eq 'true') {
+            gh release edit "v$env:RELEASE_VERSION" --draft=false --prerelease --latest=false
+          } else {
+            gh release edit "v$env:RELEASE_VERSION" --draft=false --latest
+          }
+          if ($LASTEXITCODE) { throw 'Verified release publication failed.' }

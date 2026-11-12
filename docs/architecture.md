@@ -2,7 +2,7 @@
 
 This defines the application architecture and its complete acceptance contract.
 Source implementation does not establish compatibility or performance: native
-acceptance, signed installation and update qualification remain separate gates.
+acceptance, installation and update qualification remain separate gates.
 Contributor and release policy lives in [CONTRIBUTING.md](../CONTRIBUTING.md).
 The [design preview](design-preview.html) illustrates the proposed interface;
 its interactions are illustrative, not an implementation of the application.
@@ -11,7 +11,7 @@ its interactions are illustrative, not an implementation of the application.
 
 | Area | Decision |
 | --- | --- |
-| Platform | Windows 10 22H2 and Windows 11, x64. |
+| Platform | Windows 11, x64. |
 | Editor | Rust + compiled Slint, Winit backend, software renderer initially. No browser runtime. |
 | Engine | Independent Rust process: state, input, tray, persistence, rendering, presentation and updates. |
 | Desktop overlay | Compact, nonactivating, click-through Win32 layered window. |
@@ -20,7 +20,7 @@ its interactions are illustrative, not an implementation of the application.
 | Crosshair rendering | Shared Rust renderer: tiny-skia, Windows DirectWrite text outlines, bounded image/SVG decoding. |
 | Communication | Local authenticated named pipes; versioned JSON control and bounded binary widget frames. |
 | Storage | Engine-owned versioned JSON and managed local image assets. |
-| Installation | One signed MSIX containing editor, engine and widget. No Windows service. |
+| Installation | One unsigned MSIX containing editor, engine and widget. Administrator approval for installation/updates; no Windows service. |
 | Updates | TDM's Settings interaction and signed latest.json contract, adapted to MSIX. |
 | Input | Global keyboard and mouse bindings, press/hold actions. No controllers. |
 | Appearance | Orange placeholder logo, Tabler outline icons, Manrope interface font. |
@@ -76,7 +76,7 @@ inspectors and every font/style variant were not exercised. The controls below
 are our product contract, not claims about unseen reference behavior or its
 internal representation. Its private file format is not an import target.
 
-TDM reference revision: `736f6d20faccb6a194979928f0204a5ebec5e06c`.
+TDM reference revision: `f3f3b88e13d52108a5176b828965ac86ab457594`.
 Sources: [settings updater][tdm-ui], [update state/provider][tdm-state],
 [shared controls][tdm-controls], [styles][tdm-styles], [verification][tdm-verify]
 and [release script][tdm-release]. Match its compact settings rhythm, help
@@ -627,11 +627,11 @@ Headless engine never periodically contacts GitHub. No automatic download/instal
 | Idle | Version chip and check icon. |
 | Checking | Disabled check, concise checking status. |
 | Current | Up-to-date status. |
-| Available | Version, Update, Release notes; reserve progress space. |
+| Available | Version, Download, Release notes; reserve progress space. |
 | Downloading | Thin progress, bytes, Cancel; percentage only with reliable total. |
 | Verified | Ready-to-install status, Install and restart. |
 | Installing | Disabled actions; state that overlay is closing for installation. |
-| Check/download error | Short inline error, Retry and release link. |
+| Check/download error | Short inline error with details behind i; check again or retry Download. |
 | Install error | Recheck installed state, actionable recovery/manual release link; no blind retry loop. |
 
 Use TDM's compact rhythm, 6 px bar and tabular values, no wizard/card stack.
@@ -647,7 +647,7 @@ TDM schema, with `windows-x86_64-msix` platform:
 {
   "schemaVersion": 1,
   "version": "1.2.3",
-  "notes": "https://github.com/ohne-b/crosshair-rs/releases/tag/v1.2.3",
+  "notes": "[Check release notes on GitHub](https://github.com/ohne-b/crosshair-rs/releases/tag/v1.2.3)",
   "pub_date": "2026-11-11T12:00:00Z",
   "platforms": {
     "windows-x86_64-msix": {
@@ -671,21 +671,22 @@ Otherwise old signed bytes could be relabeled as a new version. A verifier that
 requires contiguous input may use a bounded read-only mapping; do not claim
 streaming cryptographic verification without its support.
 
-Minisign and Windows publisher trust are separate. Never install trust certificates
-silently or reuse another project's private key. Rotate keys through a reviewed
-trust transition, not a manifest-provided key. The implementation uses streaming
-prehashed Minisign verification and native WinHTTP on a short-lived worker, with
-an absolute request watchdog and cancellation. It has no idle networking thread.
-Before handoff, WinVerifyTrust checks cached chain/revocation evidence without
-starting background network requests. Missing trust evidence blocks installation
-while the existing app remains usable; the release link provides manual recovery.
+Minisign authenticates the download; the Windows package itself is unsigned by
+explicit product decision. Never install trust certificates or reuse another
+project's private key. Rotate updater keys through a reviewed trust transition,
+not a manifest-provided key. The implementation uses streaming prehashed Minisign
+verification and native WinHTTP on a short-lived worker, with an absolute request
+watchdog and cancellation. It has no idle networking thread. Signature, version,
+identity and dependency failures block installation before the app stops.
 
 ### Install and restart
 
-Direct signed MSIX with OS PackageManager, no competing `.appinstaller` automatic
-update association. [Microsoft supports code-driven non-Store updates][msix-update].
-Full-trust desktop code deploys, never the widget. No Windows App SDK dependency
-just for deployment.
+Direct unsigned MSIX with Windows `Add-AppxPackage -AllowUnsigned`, no competing
+`.appinstaller` automatic update association. [Microsoft's unsigned-package
+deployment][unsigned-msix] requires Windows 11 and administrator privileges for
+this executable package. A temporary elevated Windows PowerShell process deploys;
+the engine, editor, widget and recovery coordinator stay unelevated. No Windows
+App SDK dependency just for deployment.
 
 1. Verify before stopping anything. Install and restart acquires update lock,
    flushes state, records target/restart intent and rejects further mutations.
@@ -700,7 +701,10 @@ just for deployment.
    processes once, verifies their user/session/exact installed package identity
    and waits on their handles for at most 15 seconds. It never kills them or uses
    forced package shutdown; failure preserves the installed version.
-5. Deploy local package and observe result. No downgrade flags. Query actually
+5. Ask for administrator approval in the same Windows account. Copy the verified
+   package into an administrator/SYSTEM-only directory, lock it against writes
+   and replacement, and recheck its hash before deployment. Observe the result;
+   cancellation preserves the existing installation. No downgrade flags. Query actually
    installed version, activate stable app identity and restore selection,
    visibility/output. Reopen Settings if editor initiated the update.
 6. On failure reactivate the still-installed version with the recorded error.
@@ -717,16 +721,17 @@ untested handoff.
 ### Packaging and publication
 
 Freeze package name/publisher/app IDs/widget extension before first release.
-Production trust and timestamped signing are release prerequisites. Test framework
+Project updater-key verification is a release prerequisite. Test framework
 dependencies on clean machines: C++ widget may need Microsoft VCLibs. Supply
 trusted dependencies for offline distribution or state online acquisition
 requirements. One application package does not imply zero runtime dependencies.
 No separate Store-widget installation in the standard path. Game Bar itself is a
 prerequisite only for its output mode. The package identity is
 `OhneB.crosshair-rs`, with `Editor`, `Engine` and `Widget` app IDs and
-`CrosshairOverlay` widget extension. Publisher is compiled from the production
-certificate subject; `CN=ohne-b` is the unsigned development default, not a claim
-of certificate ownership. The three executables are package-root siblings.
+`CrosshairOverlay` widget extension. Publisher is compiled as
+`CN=ohne-b, OID.2.25.311729368913984317654407730594956997722=1`, Microsoft's
+unsigned-package namespace. This does not claim certificate ownership. The three
+executables are package-root siblings.
 
 `scripts/package-windows.ps1` validates a real build and supplies an offline
 `Microsoft.VCLibs.140.00` x64 **14.0.33519.0** dependency beside the MSIX. The
@@ -744,11 +749,13 @@ in-app installation with an actionable manual-install link while the old app
 continues running. Never discover missing dependencies only after shutdown.
 
 Workspace version owns product version; derive/check Rust, widget and MSIX
-metadata. Stable `A.B.C` maps to `A.B.C.0`. Local previews use the separate
-`OhneB.crosshair-rs.Preview` identity and an explicitly monotonic fourth-component
-`-PreviewBuild` number. They do not consume the stable update channel; in-app
-updates are disabled. Release automation accepts stable versions only. Stable
-latest never references a prerelease or becomes blocked by a higher preview.
+metadata. `A.B.C-alpha.N`, `-beta.N` and `-rc.N` map to fourth components `N`,
+`20000+N` and `40000+N`, with `0 <= N < 20000`. Stable `A.B.C` maps to
+`A.B.C.65535`; each version component fits 16 bits. This preserves SemVer order.
+Release prereleases share the production identity; local development packages use
+`OhneB.crosshair-rs.Preview` with updates disabled. Like TDM, the updater consumes
+stable Latest only: alpha-to-alpha upgrades use the release installer. Prereleases
+never advance Latest. `0.1.0-alpha.0` is the unreleased development baseline.
 
 Follow existing OhneGuessr/TDM conventions:
 
@@ -758,7 +765,7 @@ Follow existing OhneGuessr/TDM conventions:
   commit/platform/SHA-256 metadata. Publisher consumes that revision's successful
   artifacts, not an older success after a failed/cancelled newer attempt or a
   silent rebuild. Expired artifacts require revalidation.
-- Manual publication signs/verifies package, signs authenticated release version,
+- Manual publication verifies the unsigned package and signs its authenticated release version,
   generates latest.json/checksums. No signing secrets in PR jobs.
 - Draft release gets MSIX, detached signature, latest.json and SHA256SUMS.
   Download/verify assets and complete clean-install/upgrade/recovery evidence
@@ -768,14 +775,14 @@ Follow existing OhneGuessr/TDM conventions:
   version; preserve old config until recovery succeeds.
 
 `validation.yml` retains immutable `windows-SHA-RUN-ATTEMPT` artifacts for 14
-days. `prepare-release.yml` creates the version/notes draft PR;
-`publish-release.yml` signs the selected exact-main artifact, verifies downloaded
-assets and stops at a draft. Production public build variables and protected
+days. `prepare-release.yml` creates the version draft PR; reviewed notes are added
+to that PR. `publish-release.yml` signs the selected exact-main download, verifies
+all downloaded assets and publishes the verified draft. Public build variables and protected
 signing secrets, local commands and the final manual acceptance boundary are
 specified in [CONTRIBUTING.md](../CONTRIBUTING.md#maintainer-commands-and-signing-configuration).
-Missing keys fail closed before any update request. Package signing, helper
+Missing keys fail closed before any update request. Unsigned installation, helper
 breakaway survival, two-version deployment and clean-install behavior require
-actual signed runtime evidence; source checks alone do not prove those gates.
+actual runtime evidence; source checks alone do not prove those gates.
 
 ## Performance and validation
 
@@ -825,10 +832,10 @@ Manual release acceptance:
   undo after deletion/import, keyboard access/screen reader/high contrast/text scale.
 - Cold/concurrent launch, editor/engine crash, Quit with widget active, tray,
   startup disabled by Windows, repeated cycles without orphan processes.
-- Standard-user clean install, missing dependencies/Game Bar, offline use,
+- Administrator-approved clean install, missing dependencies/Game Bar, offline use,
   upgrade while active, cancel/denied deployment, kill each update boundary,
-  restart recovery, data/pin/placement preservation. Test public signing on a
-  machine that has never trusted a development certificate.
+  restart recovery, data/pin/placement preservation. Test on a machine that has
+  never trusted a development certificate, including denial of elevation.
 
 ## Dependency-ordered implementation
 
@@ -850,8 +857,8 @@ All steps are required for the complete release and end with reviewed evidence.
    transactions; compare pixels across preview and both outputs. Review against
    design/reference observations, not a generated starter template.
 5. **Updates and release automation.** TDM UX, bounded download/verification,
-   deployment recovery, production signing/package/version metadata and manual
-   workflows. Exercise signed N-to-N+1 with all components active.
+   deployment recovery, package/version metadata and manual
+   workflows. Exercise authenticated N-to-N+1 with all components active.
 6. **Release qualification.** Full matrix, stress/resources, visual/accessibility
    review and independent adversarial review. Resolve required failures before
    calling it complete; publication needs separate authorization.
@@ -860,7 +867,7 @@ The first step has empirical gates, not undecided product scope. Slint native
 frame integration, Game Bar pixel placement, package trust/dependencies, helper
 lifetime and resource costs cannot be established from documentation alone.
 The source tree contains the implementation; release readiness requires the
-automated and native evidence above, including the signed update handoff.
+automated and native evidence above, including the authenticated update handoff.
 
 [slint-renderers]: https://docs.slint.dev/latest/docs/slint/guide/backends-and-renderers/backend_winit/
 [slint-license]: https://slint.dev/agreements/slint-royalty-free-license.pdf
@@ -869,9 +876,10 @@ automated and native evidence above, including the signed update handoff.
 [gamebar-limits]: https://learn.microsoft.com/en-us/xbox/game-bar/known-issues
 [gamebar-ipc]: https://learn.microsoft.com/en-us/xbox/game-bar/guide/communicating-apps
 [msix-update]: https://learn.microsoft.com/en-us/windows/msix/non-store-developer-updates
-[tdm-ui]: https://github.com/ohne-b/twitch-drops-miner/blob/736f6d20faccb6a194979928f0204a5ebec5e06c/frontend/src/features/settings/DesktopUpdates.tsx
-[tdm-state]: https://github.com/ohne-b/twitch-drops-miner/blob/736f6d20faccb6a194979928f0204a5ebec5e06c/frontend/src/features/settings/UpdateCheck.tsx
-[tdm-controls]: https://github.com/ohne-b/twitch-drops-miner/blob/736f6d20faccb6a194979928f0204a5ebec5e06c/frontend/src/shared/ui/index.tsx
-[tdm-styles]: https://github.com/ohne-b/twitch-drops-miner/blob/736f6d20faccb6a194979928f0204a5ebec5e06c/frontend/src/styles.css
-[tdm-verify]: https://github.com/ohne-b/twitch-drops-miner/blob/736f6d20faccb6a194979928f0204a5ebec5e06c/desktop/src/updates.rs
-[tdm-release]: https://github.com/ohne-b/twitch-drops-miner/blob/736f6d20faccb6a194979928f0204a5ebec5e06c/.github/scripts/release.mjs
+[unsigned-msix]: https://learn.microsoft.com/en-us/windows/msix/package/unsigned-package
+[tdm-ui]: https://github.com/ohne-b/twitch-drops-miner/blob/f3f3b88e13d52108a5176b828965ac86ab457594/frontend/src/features/settings/DesktopUpdates.tsx
+[tdm-state]: https://github.com/ohne-b/twitch-drops-miner/blob/f3f3b88e13d52108a5176b828965ac86ab457594/frontend/src/features/settings/UpdateCheck.tsx
+[tdm-controls]: https://github.com/ohne-b/twitch-drops-miner/blob/f3f3b88e13d52108a5176b828965ac86ab457594/frontend/src/shared/ui/index.tsx
+[tdm-styles]: https://github.com/ohne-b/twitch-drops-miner/blob/f3f3b88e13d52108a5176b828965ac86ab457594/frontend/src/styles.css
+[tdm-verify]: https://github.com/ohne-b/twitch-drops-miner/blob/f3f3b88e13d52108a5176b828965ac86ab457594/desktop/src/updates.rs
+[tdm-release]: https://github.com/ohne-b/twitch-drops-miner/blob/f3f3b88e13d52108a5176b828965ac86ab457594/.github/scripts/release.mjs

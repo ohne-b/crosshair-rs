@@ -4,11 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: Stable MAJOR.MINOR.PATCH version
-        required: true
-        type: string
-      notes:
-        description: Reviewed Markdown bullets, with relevant PR links
+        description: Next version, for example 0.1.0-alpha.1 or 0.1.0
         required: true
         type: string
 
@@ -37,10 +33,9 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: 24
-      - name: Prepare focused version and notes change
+      - name: Prepare version and lockfile
         env:
           RELEASE_VERSION: ${{ inputs.version }}
-          RELEASE_NOTES: ${{ inputs.notes }}
           GH_TOKEN: ${{ secrets.PUBLISHER_TOKEN }}
         run: |
           if (!$env:GH_TOKEN) { throw 'PUBLISHER_TOKEN is required so the draft PR receives normal validation.' }
@@ -49,24 +44,23 @@ jobs:
           cargo fetch --locked
           if ($LASTEXITCODE) { throw 'Cargo dependency restore failed.' }
           New-Item -ItemType Directory -Force target | Out-Null
-          [IO.File]::WriteAllText((Join-Path $PWD 'target/release-notes.md'), $env:RELEASE_NOTES)
-          node scripts/release.mjs prepare $env:RELEASE_VERSION target/release-notes.md
+          node scripts/release.mjs bump $env:RELEASE_VERSION
           if ($LASTEXITCODE) { throw 'Release preparation failed.' }
           $branch = "feat/release-$env:RELEASE_VERSION"
           git switch -c $branch
           if ($LASTEXITCODE) { throw 'Release branch already exists.' }
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add -- Cargo.toml Cargo.lock CHANGELOG.md
+          git add -- Cargo.toml Cargo.lock
           git diff --cached --check
           if ($LASTEXITCODE) { throw 'Release diff failed validation.' }
-          git commit -m "chore(release): prepare v$env:RELEASE_VERSION"
+          git commit -m "chore(release): prepare $env:RELEASE_VERSION"
           if ($LASTEXITCODE) { throw 'Release commit failed.' }
           gh auth setup-git
           if ($LASTEXITCODE) { throw 'Scoped publication credential setup failed.' }
           git push --set-upstream origin $branch
           if ($LASTEXITCODE) { throw 'Release branch push failed.' }
-          $body = "Prepares crosshair-rs v$env:RELEASE_VERSION with reviewed release notes.`n`nValidation: the normal Windows workflow must pass on the final revision. Independent review and maintainer merge approval are still required. Publication is a separate manual action."
+          $body = "Updates the Cargo workspace and lockfile version together.`n`nAdd a concise CHANGELOG.md entry for this version. Keep this PR in draft until validation and independent adversarial review pass. After merging, run Publish release from main with this version; latest.json is generated and attached automatically."
           [IO.File]::WriteAllText((Join-Path $PWD 'target/release-pr.md'), $body)
-          gh pr create --draft --base main --head $branch --title "chore(release): prepare v$env:RELEASE_VERSION" --body-file target/release-pr.md
+          gh pr create --draft --base main --head $branch --title "chore(release): prepare $env:RELEASE_VERSION" --body-file target/release-pr.md
           if ($LASTEXITCODE) { throw 'Draft release PR creation failed.' }

@@ -11,12 +11,12 @@
 </p>
 
 crosshair-rs aims to be a free, polished alternative to Crosshair X for Windows
-10 and 11. A native Rust engine keeps the crosshair visible while a separate
+11, x64. A native Rust engine keeps the crosshair visible while a separate
 dashboard opens only when you need to edit it.
 
 **Status: application development.** The native engine, Slint editor, Game Bar
 host and packaging are implemented in this branch. Full native acceptance,
-signed installation and update testing remain in progress; there is no released
+unsigned MSIX installation and update testing remain in progress; there is no released
 installer yet. The logo is a placeholder.
 
 ## Features
@@ -31,6 +31,10 @@ installer yet. The logo is a placeholder.
 - Local settings, a system tray menu, MSIX packaging and signed updates through
   Settings. No accounts,
   telemetry, background service or administrator requirement for normal use.
+
+Windows packages are unsigned. Installation and updates require administrator
+approval on Windows 11; normal use does not. Downloads are authenticated with a
+separate project-specific Minisign updater key. No certificate trust step is required.
 
 Near-zero idle CPU and low memory use are design targets, not measured claims.
 Release acceptance includes desktop and Game Bar presentation, click-through,
@@ -62,7 +66,7 @@ cargo build --locked -p crosshair-engine -p crosshair-editor
 Build both executables together; the editor connects to its sibling engine.
 Closing the editor keeps the overlay running. Use the tray's Quit action to exit
 the whole application. Game Bar and launch at sign-in require package identity;
-production updates also require configured signing keys. Packaging and deliberate
+production updates also require the configured updater key. Packaging and deliberate
 installation instructions are in CONTRIBUTING. Agents start with [AGENTS.md](AGENTS.md).
 
 ## License and credits

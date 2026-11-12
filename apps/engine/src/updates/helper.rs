@@ -7,17 +7,15 @@ use std::{
         io::{AsRawHandle, OwnedHandle},
     },
     path::{Path, PathBuf},
-    time::{Duration, Instant},
 };
 
 use anyhow::{Context, Result, ensure};
+use base64::{Engine, engine::general_purpose::STANDARD};
 use crosshair_core::Id;
 use crosshair_platform::identity::{Identity, owned, raw, wide};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use windows::{
-    Foundation::Uri,
-    Management::Deployment::{DeploymentOptions, PackageManager},
     Win32::{
         Foundation::*,
         Security::{Authorization::*, *},
@@ -25,7 +23,7 @@ use windows::{
         System::{Com::*, Diagnostics::ToolHelp::*, LibraryLoader::SetDllDirectoryW, Threading::*},
         UI::Shell::*,
     },
-    core::{HSTRING, PCWSTR, PWSTR},
+    core::{PCWSTR, PWSTR},
 };
 
 use super::{
@@ -50,7 +48,6 @@ pub struct RestartIntent {
 
 #[derive(Debug)]
 pub struct Recovery {
-    pub target_version: String,
     pub installed_version: Option<String>,
     pub restart: RestartIntent,
     pub succeeded: bool,
@@ -123,7 +120,7 @@ pub(super) fn prepare(
         "The downloaded package changed after verification"
     );
     let job = root.join(ready.job.to_string());
-    let family = package::validate(&job.join("package.msix"), &file, &ready.manifest)?;
+    let family = package::validate(&job.join("package.msix"), &ready.manifest)?;
     ensure!(
         family == current.family && family == ready.family,
         "The update targets a different application family"
@@ -415,7 +412,7 @@ pub fn run_helper(arguments: &[String]) -> Result<()> {
             hash == journal.sha256 && bytes == journal.bytes,
             "The update changed during handoff"
         );
-        let family = package::validate(&job.join("package.msix"), &file, &journal.manifest)?;
+        let family = package::validate(&job.join("package.msix"), &journal.manifest)?;
         ensure!(family == journal.family, "Update package family mismatch");
         let installed = package::installed()?.context("The installed application is missing")?;
         ensure!(
@@ -435,7 +432,7 @@ pub fn run_helper(arguments: &[String]) -> Result<()> {
         wait_for_package_windows(&parent_identity)?;
         journal.phase = Phase::Deploying;
         write_journal(&root, &journal)?;
-        deploy(&job.join("package.msix"))?;
+        deploy(&job.join("package.msix"), &journal.sha256, &own.user_sid)?;
         let installed =
             package::installed()?.context("Windows did not register the updated application")?;
         ensure!(
@@ -537,34 +534,50 @@ fn wait_for_package_windows(parent: &Identity) -> Result<()> {
     }
 }
 
-fn deploy(path: &Path) -> Result<()> {
-    let uri = local_package_uri(path)?;
-    let operation = PackageManager::new()?.AddPackageAsync(&uri, None, DeploymentOptions::None)?;
-    // No force-shutdown or downgrade flags: failure leaves the registered
-    // version available, including if another instance refused to close.
-    let started = Instant::now();
-    while operation.Status()? == windows_future::AsyncStatus::Started {
-        if started.elapsed() > Duration::from_secs(600) {
-            operation.Cancel()?;
-            anyhow::bail!(
-                "Windows package deployment timed out; restart to reconcile its actual result"
-            );
-        }
-        std::thread::sleep(Duration::from_millis(100));
+fn deploy(path: &Path, hash: &str, user: &str) -> Result<()> {
+    let script = deployment_script(path, hash, user)?;
+    let encoded: Vec<u8> = script.encode_utf16().flat_map(u16::to_le_bytes).collect();
+    let arguments = wide(&format!(
+        "-NoProfile -NonInteractive -EncodedCommand {}",
+        STANDARD.encode(encoded)
+    ));
+    unsafe {
+        let system = SHGetKnownFolderPath(&FOLDERID_System, KF_FLAG_DEFAULT, None)?;
+        let directory = system.to_string();
+        CoTaskMemFree(Some(system.0.cast()));
+        let directory = PathBuf::from(directory?);
+        let executable =
+            package::wide_path(&directory.join("WindowsPowerShell/v1.0/powershell.exe"));
+        let directory = package::wide_path(&directory);
+        let mut execute = SHELLEXECUTEINFOW {
+            cbSize: size_of::<SHELLEXECUTEINFOW>() as u32,
+            fMask: SEE_MASK_NOCLOSEPROCESS | SEE_MASK_NOASYNC,
+            lpVerb: windows::core::w!("runas"),
+            lpFile: PCWSTR(executable.as_ptr()),
+            lpParameters: PCWSTR(arguments.as_ptr()),
+            lpDirectory: PCWSTR(directory.as_ptr()),
+            nShow: windows::Win32::UI::WindowsAndMessaging::SW_HIDE.0,
+            ..Default::default()
+        };
+        ShellExecuteExW(&mut execute)
+            .context("Windows administrator approval was cancelled or unavailable")?;
+        ensure!(
+            !execute.hProcess.is_invalid(),
+            "Windows did not return the deployment process"
+        );
+        let process = owned(execute.hProcess);
+        ensure!(
+            WaitForSingleObject(raw(&process), 600_000) == WAIT_OBJECT_0,
+            "Windows is still deploying the package; reopen crosshair-rs when installation finishes"
+        );
+        let mut code = 0;
+        GetExitCodeProcess(raw(&process), &mut code)?;
+        ensure!(
+            code == 0,
+            "Windows rejected the unsigned update (0x{code:08X}). Retry from Settings or use the release installer."
+        );
+        Ok(())
     }
-    let result = operation
-        .GetResults()
-        .context("Windows rejected the update deployment")?;
-    result.ExtendedErrorCode()?.ok().with_context(|| {
-        format!(
-            "Windows package deployment failed: {}",
-            result
-                .ErrorText()
-                .map(|v| v.to_string())
-                .unwrap_or_default()
-        )
-    })?;
-    Ok(())
 }
 
 fn activate(family: &str) -> Result<()> {
@@ -598,15 +611,7 @@ pub fn recover(data_root: &Path) -> Result<Option<Recovery>> {
         .as_ref()
         .is_some_and(|package| package.family == journal.family && package.version >= target);
     Ok(Some(Recovery {
-        target_version: journal.manifest.version,
-        installed_version: installed.map(|package| {
-            format!(
-                "{}.{}.{}",
-                package.version >> 48,
-                (package.version >> 32) & 65535,
-                (package.version >> 16) & 65535
-            )
-        }),
+        installed_version: installed.map(|package| manifest::product_version(package.version)),
         restart: journal.restart,
         succeeded,
         error: if succeeded {
@@ -821,7 +826,7 @@ fn file_path(file: &File) -> Result<PathBuf> {
     Ok(PathBuf::from(String::from_utf16(&buffer[..count])?).canonicalize()?)
 }
 
-fn local_package_uri(path: &Path) -> Result<Uri> {
+fn deployment_script(path: &Path, hash: &str, user: &str) -> Result<String> {
     let path = path.canonicalize()?;
     let text = path
         .to_str()
@@ -831,24 +836,26 @@ fn local_package_uri(path: &Path) -> Result<Uri> {
         text.as_bytes().get(1) == Some(&b':') && text.as_bytes().get(2) == Some(&b'\\'),
         "Updates must be staged on a local Windows drive"
     );
-    let path = wide(text);
-    let mut uri = vec![0_u16; 32768];
-    let mut count = uri.len() as u32;
-    unsafe {
-        UrlCreateFromPathW(
-            PCWSTR(path.as_ptr()),
-            PWSTR(uri.as_mut_ptr()),
-            &mut count,
-            0,
-        )?;
-    }
-    let end = uri
-        .iter()
-        .position(|value| *value == 0)
-        .context("Invalid local package URI")?;
-    Ok(Uri::CreateUri(&HSTRING::from(String::from_utf16(
-        &uri[..end],
-    )?))?)
+    ensure!(
+        hash.len() == 64
+            && hash
+                .bytes()
+                .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase()),
+        "Invalid verified package digest"
+    );
+    ensure!(
+        user.starts_with("S-1-")
+            && user.len() <= 184
+            && user
+                .bytes()
+                .all(|byte| byte.is_ascii_digit() || matches!(byte, b'S' | b'-')),
+        "Invalid deployment user"
+    );
+    Ok(format!(
+        "$Package = '{}'\n$ExpectedHash = '{hash}'\n$ExpectedUser = '{user}'\n{}",
+        text.replace('\'', "''"),
+        include_str!("deploy.ps1")
+    ))
 }
 
 unsafe fn duplicate(handle: HANDLE, rights: u32) -> Result<OwnedHandle> {
@@ -882,6 +889,27 @@ impl Drop for Attributes {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn recovered_failure_requires_a_new_check_before_download() {
+        let directory = tempfile::tempdir().unwrap();
+        let updates = crate::updates::Updates::new(directory.path().to_owned(), |_| {}).unwrap();
+        updates.report_recovery(&Recovery {
+            installed_version: Some("0.1.0-alpha.0".into()),
+            restart: RestartIntent {
+                visible: true,
+                reopen_editor: true,
+            },
+            succeeded: false,
+            error: Some("Installation was cancelled".into()),
+            job: Id::new_v4(),
+        });
+        let status = updates.status();
+        assert_eq!(status.phase, crosshair_core::protocol::UpdatePhase::Failed);
+        assert!(status.version.is_none());
+        assert_eq!(status.error.as_deref(), Some("Installation was cancelled"));
+        assert!(updates.download().is_err());
+    }
 
     fn journal() -> Journal {
         Journal {
@@ -943,24 +971,48 @@ mod tests {
     }
 
     #[test]
-    fn local_msix_uri_preserves_reserved_filename_characters() {
-        let _apartment = package::Apartment::new().unwrap();
+    fn deployment_arguments_preserve_unicode_and_never_execute_path_text() {
+        use std::os::windows::process::CommandExt;
         let directory = tempfile::tempdir().unwrap();
-        for name in ["package #1.msix", "package %231.msix", "über package.msix"] {
+        for name in [
+            "package #1.msix",
+            "package %231.msix",
+            "über $(throw 'injected').msix",
+        ] {
             let path = directory.path().join(name);
             fs::write(&path, b"fixture").unwrap();
-            let uri = local_package_uri(&path).unwrap();
-            assert_eq!(uri.SchemeName().unwrap().to_string(), "file");
-            assert!(uri.Fragment().unwrap().is_empty() && uri.Query().unwrap().is_empty());
-            let decoded = Uri::UnescapeComponent(&uri.Path().unwrap())
-                .unwrap()
-                .to_string();
+            let script =
+                deployment_script(&path, &"a".repeat(64), "S-1-5-21-123-456-789-1001").unwrap();
+            // Execute only the argument bindings, never deployment or elevation.
+            let bindings = script.split_once("# Embedded").unwrap().0;
+            let check = format!(
+                "{bindings}\n[Console]::OutputEncoding = [Text.UTF8Encoding]::new($false); @($Package,$ExpectedHash,$ExpectedUser) | ConvertTo-Json -Compress"
+            );
+            let encoded: Vec<u8> = check.encode_utf16().flat_map(u16::to_le_bytes).collect();
+            let output = std::process::Command::new("powershell.exe")
+                .args([
+                    "-NoProfile",
+                    "-NonInteractive",
+                    "-EncodedCommand",
+                    &STANDARD.encode(encoded),
+                ])
+                .creation_flags(CREATE_NO_WINDOW.0)
+                .output()
+                .unwrap();
+            assert!(
+                output.status.success(),
+                "{}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            let values: Vec<String> = serde_json::from_slice(&output.stdout).unwrap();
             assert_eq!(
-                PathBuf::from(decoded.trim_start_matches('/'))
-                    .canonicalize()
-                    .unwrap(),
+                PathBuf::from(&values[0]).canonicalize().unwrap(),
                 path.canonicalize().unwrap()
             );
+            assert_eq!(values[1], "a".repeat(64));
+            assert_eq!(values[2], "S-1-5-21-123-456-789-1001");
+            assert!(deployment_script(&path, "not a digest", &values[2]).is_err());
+            assert!(deployment_script(&path, &values[1], "S-1-5'; throw 'bad'").is_err());
         }
     }
 }

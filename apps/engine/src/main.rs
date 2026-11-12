@@ -43,7 +43,7 @@ fn main() -> anyhow::Result<()> {
         runtime::run(lifecycle::Options::parse(&arguments)?)
     }
     #[cfg(not(windows))]
-    anyhow::bail!("crosshair-rs requires Windows 10 or 11");
+    anyhow::bail!("crosshair-rs requires Windows 11");
 }
 #[cfg(windows)]
 mod app;

@@ -5,7 +5,7 @@
          xmlns:desktop="http://schemas.microsoft.com/appx/manifest/desktop/windows10"
          xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
          IgnorableNamespaces="uap uap3 desktop rescap">
-  <Identity Name="OhneB.crosshair-rs" Publisher="CN=ohne-b" Version="0.1.0.0" ProcessorArchitecture="x64" />
+  <Identity Name="OhneB.crosshair-rs" Publisher="CN=ohne-b, OID.2.25.311729368913984317654407730594956997722=1" Version="0.1.0.0" ProcessorArchitecture="x64" />
   <Properties>
     <DisplayName>crosshair-rs</DisplayName>
     <PublisherDisplayName>OhneB</PublisherDisplayName>
@@ -13,7 +13,7 @@
     <Logo>Assets\StoreLogo.png</Logo>
   </Properties>
   <Dependencies>
-    <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.19045.0" MaxVersionTested="10.0.26100.0" />
+    <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.22000.0" MaxVersionTested="10.0.26100.0" />
     <PackageDependency Name="Microsoft.VCLibs.140.00" MinVersion="14.0.33519.0" Publisher="CN=Microsoft Corporation, O=Microsoft Corporation, L=Redmond, S=Washington, C=US" />
   </Dependencies>
   <Resources><Resource Language="en-US" /></Resources>

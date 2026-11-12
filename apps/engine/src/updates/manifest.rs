@@ -55,9 +55,13 @@ impl Manifest {
             self.schema_version == 1,
             "Unsupported update metadata version"
         );
-        let version = stable_version(&self.version)?;
+        let version = release_version(&self.version)?;
         ensure!(
-            self.notes == format!("{RELEASES}tag/v{}", self.version),
+            self.notes
+                == format!(
+                    "[Check release notes on GitHub]({RELEASES}tag/v{})",
+                    self.version
+                ),
             "Unexpected release notes link"
         );
         ensure!(valid_date(&self.pub_date), "Invalid release date");
@@ -87,12 +91,12 @@ impl Manifest {
     }
 }
 
-pub fn stable_version(value: &str) -> Result<Version> {
-    ensure!(value.len() <= 64, "Version exceeds its limit");
+pub fn release_version(value: &str) -> Result<Version> {
+    ensure!(value.len() <= 128, "Version exceeds its limit");
     let version = Version::parse(value).context("Invalid release version")?;
     ensure!(
-        version.pre.is_empty() && version.build.is_empty(),
-        "Stable updates cannot contain a preview version"
+        version.build.is_empty() && version.to_string() == value,
+        "Release versions must be canonical and cannot include build metadata"
     );
     ensure!(
         [version.major, version.minor, version.patch]
@@ -100,11 +104,55 @@ pub fn stable_version(value: &str) -> Result<Version> {
             .all(|part| part <= u16::MAX as u64),
         "Version exceeds Windows package limits"
     );
+    if !version.pre.is_empty() {
+        let (stage, number) = version
+            .pre
+            .as_str()
+            .split_once('.')
+            .context("Expected alpha.N, beta.N or rc.N")?;
+        let number: u16 = number.parse().context("Invalid prerelease number")?;
+        ensure!(
+            matches!(stage, "alpha" | "beta" | "rc") && number < 20000,
+            "Unsupported prerelease version"
+        );
+    }
     Ok(version)
 }
 
 pub fn mapped_version(version: &Version) -> u64 {
-    (version.major << 48) | (version.minor << 32) | (version.patch << 16)
+    let revision = if version.pre.is_empty() {
+        65535
+    } else {
+        let (stage, number) = version
+            .pre
+            .as_str()
+            .split_once('.')
+            .expect("validated release version");
+        let offset = match stage {
+            "alpha" => 0,
+            "beta" => 20000,
+            "rc" => 40000,
+            _ => unreachable!("validated release stage"),
+        };
+        offset + number.parse::<u64>().expect("validated release number")
+    };
+    (version.major << 48) | (version.minor << 32) | (version.patch << 16) | revision
+}
+
+pub fn product_version(package: u64) -> String {
+    let base = format!(
+        "{}.{}.{}",
+        package >> 48,
+        (package >> 32) & 65535,
+        (package >> 16) & 65535
+    );
+    let revision = package & 65535;
+    match revision {
+        0..20000 => format!("{base}-alpha.{revision}"),
+        20000..40000 => format!("{base}-beta.{}", revision - 20000),
+        40000..60000 => format!("{base}-rc.{}", revision - 40000),
+        _ => base,
+    }
 }
 
 pub fn public_key() -> Result<PublicKey> {
@@ -230,7 +278,7 @@ pub fn request_target(url: &str, initial: &str, redirect: bool) -> Result<(&'sta
         let tag = path
             .strip_suffix("/latest.json")
             .context("Unexpected metadata redirect")?;
-        stable_version(tag)?;
+        release_version(tag)?;
         return Ok(("github.com", url["https://github.com".len()..].into()));
     }
     for host in [

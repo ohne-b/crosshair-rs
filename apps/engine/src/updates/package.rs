@@ -1,7 +1,6 @@
 use std::{
     fs::{File, OpenOptions},
-    mem::size_of,
-    os::windows::{fs::OpenOptionsExt, io::AsRawHandle},
+    os::windows::fs::OpenOptionsExt,
     path::Path,
 };
 
@@ -10,13 +9,7 @@ use windows::{
     ApplicationModel::Package,
     Management::Deployment::PackageManager,
     System::ProcessorArchitecture,
-    Win32::{
-        Foundation::{HANDLE, HWND},
-        Security::WinTrust::*,
-        Storage::Packaging::Appx::*,
-        System::Com::*,
-        UI::Shell::SHCreateStreamOnFileEx,
-    },
+    Win32::{Storage::Packaging::Appx::*, System::Com::*, UI::Shell::SHCreateStreamOnFileEx},
     core::{HSTRING, Interface, PCWSTR, PWSTR},
 };
 
@@ -26,7 +19,7 @@ const FRAMEWORK: &str = "Microsoft.VCLibs.140.00";
 const MICROSOFT: &str =
     "CN=Microsoft Corporation, O=Microsoft Corporation, L=Redmond, S=Washington, C=US";
 const FRAMEWORK_MINIMUM: u64 = (14_u64 << 48) | (33519_u64 << 16);
-const WINDOWS_MINIMUM: u64 = (10_u64 << 48) | (19045_u64 << 16);
+const WINDOWS_MINIMUM: u64 = (10_u64 << 48) | (22000_u64 << 16);
 
 pub struct Apartment;
 impl Apartment {
@@ -92,7 +85,7 @@ fn find(name: &str, publisher: &str) -> Result<Option<Installed>> {
 }
 
 pub fn current() -> Result<Installed> {
-    let package = Package::Current().context("Install the signed MSIX to use in-app updates")?;
+    let package = Package::Current().context("Install the MSIX to use in-app updates")?;
     let id = package.Id()?;
     ensure!(
         id.Name()? == PACKAGE_NAME && id.Publisher()? == manifest::publisher()?,
@@ -101,7 +94,7 @@ pub fn current() -> Result<Installed> {
     let result = installed()?.context("The application package is not registered for this user")?;
     ensure!(
         result.version
-            == manifest::mapped_version(&manifest::stable_version(
+            == manifest::mapped_version(&manifest::release_version(
                 crosshair_core::protocol::PRODUCT_VERSION
             )?),
         "The running and installed versions differ; restart before updating"
@@ -124,11 +117,12 @@ pub fn locked_file(path: &Path) -> Result<File> {
         .context("Could not lock the verified update package")
 }
 
-pub fn validate(path: &Path, file: &File, manifest: &Manifest) -> Result<String> {
+/// Package identity is checked after Minisign authenticates the locked download.
+pub fn validate(path: &Path, manifest: &Manifest) -> Result<String> {
     let version = manifest.validate()?;
+    let _locked = locked_file(path)?;
     let path = wide_path(path);
     unsafe {
-        trust(PCWSTR(path.as_ptr()), file)?;
         let stream = SHCreateStreamOnFileEx(
             PCWSTR(path.as_ptr()),
             (STGM_READ | STGM_SHARE_DENY_WRITE).0,
@@ -190,49 +184,6 @@ pub fn validate(path: &Path, file: &File, manifest: &Manifest) -> Result<String>
             "Microsoft VCLibs x64 is missing or outdated; repair it before installing this update"
         );
         take_string(identity.GetPackageFamilyName()?)
-    }
-}
-
-unsafe fn trust(path: PCWSTR, file: &File) -> Result<()> {
-    unsafe {
-        let mut file_info = WINTRUST_FILE_INFO {
-            cbStruct: size_of::<WINTRUST_FILE_INFO>() as u32,
-            pcwszFilePath: path,
-            hFile: HANDLE(file.as_raw_handle()),
-            ..Default::default()
-        };
-        let mut data = WINTRUST_DATA {
-            cbStruct: size_of::<WINTRUST_DATA>() as u32,
-            dwUIChoice: WTD_UI_NONE,
-            fdwRevocationChecks: WTD_REVOKE_WHOLECHAIN,
-            dwUnionChoice: WTD_CHOICE_FILE,
-            Anonymous: WINTRUST_DATA_0 {
-                pFile: &mut file_info,
-            },
-            dwStateAction: WTD_STATEACTION_VERIFY,
-            // No hidden network fetch during trust verification. Windows must
-            // already trust the publisher and have cached revocation evidence.
-            dwProvFlags: WTD_CACHE_ONLY_URL_RETRIEVAL | WTD_REVOCATION_CHECK_CHAIN_EXCLUDE_ROOT,
-            ..Default::default()
-        };
-        let mut action = WINTRUST_ACTION_GENERIC_VERIFY_V2;
-        let result = WinVerifyTrust(
-            HWND(-1_isize as _),
-            &mut action,
-            (&mut data as *mut WINTRUST_DATA).cast(),
-        );
-        data.dwStateAction = WTD_STATEACTION_CLOSE;
-        let _ = WinVerifyTrust(
-            HWND(-1_isize as _),
-            &mut action,
-            (&mut data as *mut WINTRUST_DATA).cast(),
-        );
-        ensure!(
-            result == 0,
-            "Windows could not verify the package publisher or cached certificate status (0x{:08X}); use the release's manual installer",
-            result as u32
-        );
-        Ok(())
     }
 }
 

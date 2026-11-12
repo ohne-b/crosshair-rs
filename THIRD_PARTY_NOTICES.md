@@ -80,6 +80,9 @@ Windows API use does not imply Microsoft endorsement of crosshair-rs.
 
 Node maintenance dependencies are pinned in `scripts/package-lock.json`; their
 own package licenses apply. The release runner uses the upstream
-[Minisign 0.12 tool](https://github.com/jedisct1/minisign/tree/0.12), under its ISC
-License, to sign artifacts. Maintenance tools and private signing keys are not
-bundled into the installed application.
+[Minisign 0.12 tool](https://github.com/jedisct1/minisign/tree/0.12) to sign
+artifacts. The release download includes its unchanged Windows verifier, with
+the ISC notices for Minisign and its Libsodium dependency in
+[Minisign-LICENSE.txt](assets/licenses/Minisign-LICENSE.txt). The verifier runs
+only during initial installation; the app has its own Rust verifier. Maintenance
+tools and private signing keys are not bundled into the installed application.
