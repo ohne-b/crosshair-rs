@@ -47,7 +47,7 @@ fn inspector_groups(rows: Vec<FieldRow>) -> Vec<FieldGroup> {
     groups
 }
 
-fn update_rows<T: Clone + 'static>(
+fn update_rows<T: Clone + PartialEq + 'static>(
     current: &ModelRc<T>,
     rows: &[T],
     same_identity: impl Fn(&T, &T) -> bool,
@@ -65,7 +65,9 @@ fn update_rows<T: Clone + 'static>(
         return false;
     }
     for (index, row) in rows.iter().enumerate() {
-        current.set_row_data(index, row.clone());
+        if current.row_data(index).as_ref() != Some(row) {
+            current.set_row_data(index, row.clone());
+        }
     }
     true
 }
@@ -494,19 +496,22 @@ impl App {
         let Some(ui) = self.ui.upgrade() else {
             return;
         };
-        ui.global::<Store>().set_bounds(model(
-            self.bounds
-                .iter()
-                .map(|(id, bounds)| BoundsRow {
-                    id: id.to_string().into(),
-                    x: bounds.left,
-                    y: bounds.top,
-                    width: bounds.width(),
-                    height: bounds.height(),
-                    selected: self.document.selected.contains(id),
-                })
-                .collect(),
-        ));
+        let rows: Vec<_> = self
+            .bounds
+            .iter()
+            .map(|(id, bounds)| BoundsRow {
+                id: id.to_string().into(),
+                x: bounds.left,
+                y: bounds.top,
+                width: bounds.width(),
+                height: bounds.height(),
+                selected: self.document.selected.contains(id),
+            })
+            .collect();
+        let store = ui.global::<Store>();
+        if !update_rows(&store.get_bounds(), &rows, |a, b| a.id == b.id) {
+            store.set_bounds(model(rows));
+        }
     }
 
     pub(super) fn refresh_bindings(&self) {
@@ -617,6 +622,150 @@ impl App {
 #[cfg(test)]
 mod inspector_tests {
     use super::*;
+
+    #[test]
+    fn refreshing_models_notifies_only_changed_rows_and_preserves_identity() {
+        let rows = vec![
+            LayerRow {
+                id: "a".into(),
+                name: "First".into(),
+                ..Default::default()
+            },
+            LayerRow {
+                id: "b".into(),
+                name: "Second".into(),
+                ..Default::default()
+            },
+        ];
+        let current = model(rows.clone());
+        let notifications = Rc::new(std::cell::Cell::new(0));
+        let counter = notifications.clone();
+        let observed = slint::FilterModel::new(current.clone(), move |_| {
+            counter.set(counter.get() + 1);
+            true
+        });
+        assert_eq!(observed.row_count(), 2);
+        notifications.set(0);
+        assert!(update_rows(&current, &rows, |a, b| a.id == b.id));
+        assert_eq!(notifications.get(), 0);
+        let mut changed = rows;
+        changed[1].selected = true;
+        assert!(update_rows(&current, &changed, |a, b| a.id == b.id));
+        assert_eq!(notifications.get(), 1);
+        assert!(current.row_data(1).unwrap().selected);
+        changed.swap(0, 1);
+        assert!(!update_rows(&current, &changed, |a, b| a.id == b.id));
+        assert_eq!(current.row_data(0).unwrap().id, "a");
+        assert_eq!(notifications.get(), 1);
+    }
+
+    #[test]
+    #[ignore = "manual software-renderer timing benchmark; run with --nocapture"]
+    fn editor_frame_timings() {
+        use slint::platform::{Platform, WindowAdapter, WindowEvent, software_renderer::*};
+        use std::time::Instant;
+        struct Headless(Rc<MinimalSoftwareWindow>);
+        impl Platform for Headless {
+            fn create_window_adapter(&self) -> Result<Rc<dyn WindowAdapter>, slint::PlatformError> {
+                Ok(self.0.clone())
+            }
+        }
+        let window = MinimalSoftwareWindow::new(RepaintBufferType::ReusedBuffer);
+        slint::platform::set_platform(Box::new(Headless(window.clone()))).unwrap();
+        let ui = AppWindow::new().unwrap();
+        ui.window().set_size(slint::LogicalSize::new(1280.0, 800.0));
+        let store = ui.global::<Store>();
+        store.set_connected(true);
+        store.set_page(1);
+        store.set_document_name("Timing fixture".into());
+        store.set_selection_editable(true);
+        store.on_format_number(|value| designer::format_number(value).into());
+        let rows = inspector_groups(
+            (0..40)
+                .map(|index| FieldRow {
+                    selection: "fixture".into(),
+                    key: format!("field-{index}").into(),
+                    label: ["Length", "Thickness", "Gap", "Rotation"][index % 4].into(),
+                    kind: 2,
+                    numeric: 10.0,
+                    maximum: 512.0,
+                    step: 1.0,
+                    ..Default::default()
+                })
+                .collect(),
+        );
+        store.set_fields(model(rows.clone()));
+        ui.show().unwrap();
+        let mut buffer = vec![slint::Rgb8Pixel::default(); 1280 * 800];
+        slint::platform::update_timers_and_animations();
+        window.draw_if_needed(|renderer| {
+            renderer.render(&mut buffer, 1280);
+        });
+        for scenario in [
+            "scroll",
+            "inspector-update",
+            "preview-resize",
+            "large-preview-resize",
+        ] {
+            ui.window().dispatch_event(WindowEvent::PointerScrolled {
+                position: slint::LogicalPosition::new(1150.0, 450.0),
+                delta_x: 0.0,
+                delta_y: 10000.0,
+            });
+            slint::platform::update_timers_and_animations();
+            window.draw_if_needed(|renderer| {
+                renderer.render(&mut buffer, 1280);
+            });
+            let mut samples = Vec::new();
+            let mut draws = 0;
+            for frame in 0..70 {
+                let start = Instant::now();
+                match scenario {
+                    "scroll" => ui.window().dispatch_event(WindowEvent::PointerScrolled {
+                        position: slint::LogicalPosition::new(1150.0, 450.0),
+                        delta_x: 0.0,
+                        delta_y: if frame % 20 < 10 { -24.0 } else { 24.0 },
+                    }),
+                    "inspector-update" => {
+                        let mut changed = rows.clone();
+                        changed[0].first.numeric = 10.0 + frame as f32;
+                        update_rows(&store.get_fields(), &changed, |a, b| {
+                            a.first.key == b.first.key
+                        });
+                    }
+                    _ => {
+                        let size = (if scenario == "large-preview-resize" {
+                            768
+                        } else {
+                            224
+                        }) + frame % 32;
+                        let raster = slint::SharedPixelBuffer::<slint::Rgba8Pixel>::new(size, size);
+                        store.set_preview(slint::Image::from_rgba8_premultiplied(raster));
+                        store.set_preview_width(size as f32 / 8.0);
+                        store.set_preview_height(size as f32 / 8.0);
+                    }
+                }
+                slint::platform::update_timers_and_animations();
+                let drew = window.draw_if_needed(|renderer| {
+                    renderer.render(&mut buffer, 1280);
+                });
+                draws += usize::from(drew);
+                if frame >= 10 {
+                    samples.push(start.elapsed().as_secs_f64() * 1000.0);
+                }
+            }
+            assert!(
+                draws >= 60,
+                "{scenario} must exercise actual paints: {draws}"
+            );
+            samples.sort_by(f64::total_cmp);
+            println!(
+                "{scenario}: p50={:.2}ms p95={:.2}ms worst={:.2}ms",
+                samples[30], samples[57], samples[59]
+            );
+        }
+        ui.hide().unwrap();
+    }
 
     #[test]
     fn colors_do_not_pair_with_separate_opacity_fields() {

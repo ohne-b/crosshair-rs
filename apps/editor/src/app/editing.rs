@@ -787,7 +787,13 @@ impl App {
                 }
                 Drag::Pan { .. } => unreachable!(),
             }
-            if validation::validate_preset(&changed, &self.state.assets).is_ok() {
+            if self
+                .document
+                .draft
+                .as_ref()
+                .is_none_or(|current| !designer::same_design(current, &changed))
+                && validation::validate_preset(&changed, &self.state.assets).is_ok()
+            {
                 if let Some(current) = &self.document.draft {
                     changed.revision = current.revision;
                 }

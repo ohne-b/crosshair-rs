@@ -68,6 +68,11 @@ cargo build --locked -p crosshair-engine -p crosshair-editor
 ./target/debug/crosshair-editor.exe
 ```
 
+For interactive testing and performance measurements, build both executables
+with `--release` and run `target/release/crosshair-editor.exe`. The software UI
+and preview renderers are substantially slower without compiler optimization;
+an unoptimized debug build is not representative of interaction performance.
+
 The editor starts its sibling engine. Closing the editor leaves the overlay
 running; use the tray's **Quit** action to stop both. Game Bar and launch at
 sign-in require an installed package. Unpackaged builds store their data in

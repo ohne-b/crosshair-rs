@@ -504,6 +504,31 @@ mod preview_tests {
     use crosshair_core::{Color, Content, Shape};
 
     #[test]
+    #[ignore = "manual preview timing benchmark; run with --nocapture"]
+    fn preview_resize_timings() {
+        let mut renderer = Renderer::new().unwrap();
+        let mut preset = Preset::new("Timing fixture");
+        let source = |_id| anyhow::bail!("No images in this fixture");
+        let mut samples = Vec::new();
+        for frame in 0..70 {
+            preset.layers[0].transform.scale = 1.0 + frame as f32 * 0.02;
+            let start = std::time::Instant::now();
+            renderer.measure(&preset, 1.0).unwrap();
+            let (raster, _) =
+                render_preview(&mut renderer, &preset, 8.0, &source, || false).unwrap();
+            assert!(raster.width <= 1024 && raster.height <= 1024);
+            if frame >= 10 {
+                samples.push(start.elapsed().as_secs_f64() * 1000.0);
+            }
+        }
+        samples.sort_by(f64::total_cmp);
+        println!(
+            "preview-render: p50={:.2}ms p95={:.2}ms worst={:.2}ms",
+            samples[30], samples[57], samples[59]
+        );
+    }
+
+    #[test]
     fn oversized_design_does_not_poison_the_next_preview() {
         let mut renderer = Renderer::new().unwrap();
         let mut preset = Preset::new("Size limit");
