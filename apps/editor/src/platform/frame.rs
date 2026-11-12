@@ -282,6 +282,13 @@ unsafe extern "system" fn procedure(
     use_corner_region: usize,
 ) -> LRESULT {
     unsafe {
+        // Keep Winit's activation bookkeeping without painting a native caption over Slint.
+        if message == WM_NCACTIVATE && !IsIconic(hwnd).as_bool() {
+            return DefSubclassProc(hwnd, message, wparam, LPARAM(-1));
+        }
+        if message == WM_NCPAINT {
+            return LRESULT(0);
+        }
         // Native hit codes retain Snap; custom bounds need their own press/release tracking.
         if message == WM_NCLBUTTONDOWN
             && matches!(wparam.0 as u32, HTMINBUTTON | HTMAXBUTTON | HTCLOSE)
@@ -519,7 +526,25 @@ fn caption_release(pressed: u32, released: u32) -> Option<&'static str> {
 mod tests {
     use super::*;
     #[test]
-    fn both_client_calculation_messages_remove_the_native_frame() {
+    fn custom_frame_removes_native_insets_and_activation_painting() {
+        unsafe extern "system" fn observe_native_paint(
+            hwnd: HWND,
+            message: u32,
+            wparam: WPARAM,
+            lparam: LPARAM,
+            _id: usize,
+            data: usize,
+        ) -> LRESULT {
+            unsafe {
+                let observed = &mut *(data as *mut [isize; 2]);
+                if message == WM_NCACTIVATE {
+                    observed[0] = lparam.0;
+                } else if message == WM_NCPAINT {
+                    observed[1] += 1;
+                }
+                DefSubclassProc(hwnd, message, wparam, lparam)
+            }
+        }
         unsafe {
             let hwnd = CreateWindowExW(
                 WINDOW_EX_STYLE::default(),
@@ -536,6 +561,16 @@ mod tests {
                 None,
             )
             .unwrap();
+            let mut observed = [0isize; 2];
+            assert!(
+                SetWindowSubclass(
+                    hwnd,
+                    Some(observe_native_paint),
+                    1,
+                    (&mut observed as *mut [isize; 2]) as usize,
+                )
+                .as_bool()
+            );
             assert!(SetWindowSubclass(hwnd, Some(procedure), 0x435248, 0).as_bool());
             let expected = RECT {
                 left: 100,
@@ -560,11 +595,16 @@ mod tests {
                 Some(WPARAM(1)),
                 Some(LPARAM((&mut extended as *mut NCCALCSIZE_PARAMS) as isize)),
             );
+            let deactivate_result = SendMessageW(hwnd, WM_NCACTIVATE, Some(WPARAM(0)), None);
+            SendMessageW(hwnd, WM_NCPAINT, Some(WPARAM(1)), None);
+            let paint_observation = observed;
             DestroyWindow(hwnd).unwrap();
             assert_eq!(simple_result, LRESULT(0));
             assert_eq!(extended_result, LRESULT(0));
             assert_eq!(simple, expected);
             assert_eq!(extended.rgrc[0], expected);
+            assert_ne!(deactivate_result, LRESULT(0));
+            assert_eq!(paint_observation, [-1, 0]);
         }
     }
     #[test]
