@@ -2,6 +2,7 @@
 
 mod assets;
 mod composite;
+mod export;
 mod geometry;
 mod svg;
 mod text;
@@ -17,7 +18,7 @@ use sha2::{Digest, Sha256};
 use tiny_skia::{Pixmap, PixmapPaint, Transform};
 
 const RASTER_CACHE_BYTES: usize = 32 * 1024 * 1024;
-const MAX_DIMENSION: u32 = 1024;
+pub const MAX_DIMENSION: u32 = 1024;
 
 #[derive(Clone, Debug)]
 pub struct Raster {
@@ -120,6 +121,74 @@ impl Renderer {
         geometry::anchor_point(layer, &mut self.text)
     }
 
+    /// Pixel-rounded output bounds, including all effects, without allocating pixels.
+    pub fn measure(&mut self, preset: &Preset, scale: f32) -> Result<LayerBounds> {
+        self.prepare(preset, scale, &|| false)
+            .map(|(_, bounds)| bounds)
+    }
+
+    /// Self-contained SVG with outlined text and embedded image assets.
+    pub fn to_svg(
+        &mut self,
+        preset: &Preset,
+        scale: f32,
+        assets: &impl AssetSource,
+    ) -> Result<Vec<u8>> {
+        let (layers, bounds) = self.prepare(preset, scale, &|| false)?;
+        export::svg(&layers, bounds, &mut self.assets, assets)
+    }
+
+    fn prepare(
+        &mut self,
+        preset: &Preset,
+        scale: f32,
+        cancelled: &impl Fn() -> bool,
+    ) -> Result<(Vec<geometry::PreparedLayer>, LayerBounds)> {
+        ensure!(
+            scale.is_finite() && scale > 0.0 && scale <= 16.0,
+            "Output scale is outside the supported range"
+        );
+        crosshair_core::validation::validate_preset_geometry(preset)?;
+        let mut layers = Vec::new();
+        let mut point_count = 0usize;
+        let mut bounds: Option<LayerBounds> = None;
+        for layer in preset
+            .layers
+            .iter()
+            .filter(|layer| layer.visible && layer.opacity > 0.0)
+        {
+            ensure!(!cancelled(), "Rendering cancelled");
+            let prepared = geometry::prepare_layer(layer, scale, &mut self.text)?;
+            point_count = point_count.saturating_add(prepared.point_count());
+            ensure!(
+                point_count <= 1_000_000,
+                "Crosshair exceeds one million vector points"
+            );
+            if prepared.is_empty() {
+                continue;
+            }
+            bounds = Some(bounds.map_or(prepared.bounds, |current| current.union(prepared.bounds)));
+            layers.push(prepared);
+        }
+        let bounds = bounds.unwrap_or(LayerBounds {
+            left: 0.0,
+            top: 0.0,
+            right: 1.0,
+            bottom: 1.0,
+        });
+        let bounds = LayerBounds {
+            left: bounds.left.floor(),
+            top: bounds.top.floor(),
+            right: bounds.right.ceil(),
+            bottom: bounds.bottom.ceil(),
+        };
+        ensure!(
+            bounds.width() <= MAX_DIMENSION as f32 && bounds.height() <= MAX_DIMENSION as f32,
+            "Crosshair exceeds 1024 physical pixels including effects"
+        );
+        Ok((layers, bounds))
+    }
+
     pub fn render(
         &mut self,
         preset: &Preset,
@@ -157,40 +226,10 @@ impl Renderer {
             self.rasters.push_back(item);
             return Ok(raster);
         }
-        let mut layers = Vec::new();
-        let mut point_count = 0usize;
-        let mut bounds: Option<LayerBounds> = None;
-        for layer in preset
-            .layers
-            .iter()
-            .filter(|layer| layer.visible && layer.opacity > 0.0)
-        {
-            ensure!(!cancelled(), "Rendering cancelled");
-            let prepared = geometry::prepare_layer(layer, scale, &mut self.text)?;
-            point_count = point_count.saturating_add(prepared.point_count());
-            ensure!(
-                point_count <= 1_000_000,
-                "Crosshair exceeds one million vector points"
-            );
-            if prepared.is_empty() {
-                continue;
-            }
-            bounds = Some(bounds.map_or(prepared.bounds, |current| current.union(prepared.bounds)));
-            layers.push(prepared);
-        }
-        let bounds = bounds.unwrap_or(LayerBounds {
-            left: 0.0,
-            top: 0.0,
-            right: 1.0,
-            bottom: 1.0,
-        });
-        let origin = [bounds.left.floor() as i32, bounds.top.floor() as i32];
-        let width = (bounds.right.ceil() - origin[0] as f32).max(1.0) as u32;
-        let height = (bounds.bottom.ceil() - origin[1] as f32).max(1.0) as u32;
-        ensure!(
-            width <= MAX_DIMENSION && height <= MAX_DIMENSION,
-            "Crosshair exceeds 1024 physical pixels including effects"
-        );
+        let (layers, bounds) = self.prepare(preset, scale, &cancelled)?;
+        let origin = [bounds.left as i32, bounds.top as i32];
+        let width = bounds.width() as u32;
+        let height = bounds.height() as u32;
         let mut output = Pixmap::new(width, height)
             .ok_or_else(|| anyhow::anyhow!("Could not allocate crosshair pixels"))?;
         for layer in layers {

@@ -22,7 +22,7 @@ its interactions are illustrative, not an implementation of the application.
 | Storage | Engine-owned versioned JSON and managed local image assets. |
 | Installation | One unsigned MSIX containing editor, engine and widget. Administrator approval for installation/updates; no Windows service. |
 | Updates | TDM's Settings interaction and signed latest.json contract, adapted to MSIX. |
-| Input | Global keyboard and mouse bindings, press/hold actions. No controllers. |
+| Input | Global keyboard and mouse shortcuts for preset selection and visibility. No controllers. |
 | Appearance | Orange placeholder logo, Tabler outline icons, Manrope interface font. |
 | License | PolyForm Noncommercial 1.0.0; third-party components retain their licenses. |
 
@@ -88,9 +88,10 @@ popovers and update states; adapt its backend to the native architecture.
   icon rail, with labels on hover/focus. On smaller available work areas, collapse
   the layer list and scroll the inspector. Never force a window beyond the work area.
 - 48 px custom title bar: logo alone above the left rail; manual profile picker, active-preset
-  thumbnail, a 64px visibility switch with the configured chord in its tooltip,
-  and native Windows minimize/maximize/close buttons right. DWM owns their drawing,
-  hit testing and Snap behavior inside the custom frame. No On/Off text or profile
+  thumbnail, a visibility power button with the configured chord in its tooltip,
+  and custom minimize/maximize/close glyphs right. The Win32 frame adapter owns
+  native caption hit testing/actions and Snap integration; native acceptance
+  remains required. No On/Off text or profile
   overflow button; profile management lives in Settings. The rail has no logo separator.
 - Navigation: Crosshairs, Designer, Keybinds. Bottom left: **only** Settings and
   GitHub linking to `https://github.com/ohne-b/crosshair-rs`. No sidebar updater
@@ -152,7 +153,7 @@ offsets and saved positions. The preset library is shared: edits change that
 design wherever selected; Duplicate makes an independent variant. Output mode
 and monitor are app settings. The title-bar profile picker shows the active
 profile; Manage offers Create/Rename/Duplicate/Import/Export/Delete. No game field.
-Switch profile atomically, clear hold overrides and preserve global visibility.
+Switch profile atomically, rearm held triggers after release and preserve global visibility.
 
 The title switch, tray toggle and default remappable `Shift+Alt+Z` action operate
 the same visibility state. The binding can be disabled. Passive observation does
@@ -161,13 +162,14 @@ modify Windows shortcuts automatically.
 
 ### Designer
 
-Toolbar: editable document name, File, undo/redo, duplicate/delete selection.
-Edits apply immediately and autosave; no Apply button. `Ctrl+S` flushes pending
-state and reports failures rather than gating preview. File offers New, Import,
-Export preset, Export PNG and Duplicate preset.
+Toolbar: editable document name, File, undo/redo, Save and Share. Save or
+`Ctrl+S` commits the draft; ordinary edits never save automatically. The editor
+updates its canvas and sends a validated transient preview to the engine without
+changing the stored preset. File offers New, Open, Import, Duplicate and Export
+crosshair. Share exports the current draft as PNG or SVG.
 
-The layer list has New layer, ordered names, visibility and per-row trash.
-Rename from the row; reorder by drag with an insertion marker. No footer menus
+The layer list has a collapse chevron, ordered names, visibility and per-row trash.
+Rename from the row; reorder by dragging, with neighboring rows moving aside. No footer menus
 or move-up/down buttons. Legacy locks remain accessible from the context menu. Context menu: Copy/Cut/Paste,
 Duplicate, Move up/down, Bring to front, Send to back, Delete. Locked layers stay
 selectable from the list but immutable. Multi-selection transforms/duplication
@@ -180,7 +182,8 @@ The shared renderer rasterizes previews at display/zoom resolution, capped at a
 1024px bitmap dimension; the engine still rasterizes at physical output scale.
 Bounds/handles and the grid are editor adornments only.
 Drag moves; handles resize/rotate; Shift constrains proportions/angles. Arrow
-keys nudge one design pixel, Shift+arrow ten. Exact fields cover every transform.
+keys nudge one design pixel, Shift+arrow ten. Moves and geometry fields use whole
+design pixels. Exact fields cover every transform.
 
 Bottom tools: Crosshair, Shape (Rectangle/Ellipse/Triangle), Image and Draw.
 Text creation is removed. Existing/imported text remains readable, renderable
@@ -210,37 +213,42 @@ computes a bounded repeat count from shaped advances and circumference, never an
 animation. Freehand retains vector strokes and eraser strokes; erasing affects
 only that layer, never lower layers. These use the same common effect order.
 
-Swatch/hex/opacity share a compact color control. Sliders pair with directly
-editable numeric values, stepping and keyboard input. Invalid/nonfinite values
-keep the last valid result; typing intermediate values does not jump the cursor
-or clamp prematurely. Zero-size components produce empty output predictably.
+A compact color row contains swatch, hex and opacity; its anchored popup provides
+HSV controls and a palette. Numeric fields support horizontal dragging, direct
+entry, stepping and keyboard input without inspector sliders. Invalid/nonfinite
+values keep the last valid result; intermediate text never clamps prematurely.
+Zero-size components produce empty output predictably. The Image tool opens a
+compact import picker; imported images use the existing bounded asset pipeline.
 
-Undo/redo covers edits, import, delete and ordering. A drag/slider gesture/text
-edit is one history entry. Cap history at 32 MiB, targeting at least 100 ordinary
-edits; reference immutable assets instead of copying them. `Ctrl+Z`, `Ctrl+Y`,
-`Ctrl+Shift+Z`, clipboard shortcuts, `Ctrl+D` and bracket ordering work. Escape
-cancels a transform to its prior valid state. Text fields retain text shortcuts.
+Designer undo/redo is local to the draft. A drag, color gesture, stroke or text
+edit is one history entry; cancel restores that gesture's starting state. Target
+100 entries within a 32 MiB budget, referencing immutable assets.
+`Ctrl+Z`, `Ctrl+Y`, `Ctrl+Shift+Z`, clipboard shortcuts, `Ctrl+D` and bracket
+ordering work. Text fields retain their own text shortcuts.
 
 Pin the editing document ID. A global key may switch the overlay while typing,
 but never redirect edits to another preset. Header shows the actually active
-preset; a compact Use action appears when editing an inactive one. Autosave is
-quiet except on failure. Keep unsent edits after disconnect; do not replay them
-over a changed revision. Closing with unsent edits offers Retry/Discard/Cancel;
-acknowledged autosaved work needs no save prompt.
-After a disconnect, saving an unsent draft stays paused until Retry. Reconnecting
-or receiving a preview never silently resumes the save. Cancelling a later
-gesture preserves any earlier unsent changes.
+preset; a compact Use action appears when editing an inactive one. Closing or
+opening another document with unsaved changes offers Save/Discard/Cancel.
+Save waits for acknowledgement before continuing; failure keeps the draft.
+Disconnect/reconnect preserves dirty drafts and never saves or overwrites them
+automatically. A changed saved revision requires explicit conflict resolution.
+Transient preview is session-owned and cleared on discard/disconnect; it never
+enters durable state or engine edit history.
 
 ### Keybinds
 
-Two compact tables: Crosshair shortcuts and Press & hold actions, with New rows
-at the top, target thumbnails, key chips and trash controls. No enabled switches,
-repeated Select crosshair labels, controller columns or animation rows.
-One dedicated application row owns Toggle visibility; new profile actions offer
-Hide (hold), Show (hold), Toggle preset (press) and Show preset (hold).
-Recording an existing disabled shortcut enables it.
-Preset shortcuts select a target on press. All rows belong to the active profile
-except the clearly identified application-wide visibility chord.
+One application table owns Toggle visibility; a separate full-width shortcut
+table has Crosshair, Shortcut name and Keyboard / mouse columns plus trash.
+Headers and body share column borders. New sits above the shortcut table.
+The thumbnail opens a reusable picker with search, All/Favorites counts and
+named cards; clicking a card chooses immediately. Escape/outside dismisses and
+returns focus. Shortcut names edit inline and default to the target preset name;
+names never identify targets. Recording a disabled shortcut enables it.
+Preset shortcuts select on press and belong to the active profile; the visibility
+chord is application-wide. There are no press/hold or preset-toggle actions.
+Legacy profile loading drops those retired bindings while preserving presets,
+profiles and supported shortcuts; malformed or unknown actions still fail.
 
 Click a chip to listen: `Press a key`, highlighted background. Escape cancels, Backspace
 clears, outside click cancels. Each capture has a unique token; delayed results
@@ -351,8 +359,8 @@ editable labels, never identity or filesystem paths.
 | Preset | ID/name, ordered layers, favorite, manual order, document revision and engine-owned global edit order for recency. |
 | Layer | ID/name, visible/locked, transform, opacity, typed content/effects. |
 | Content | Crosshair, rectangle, ellipse, triangle, text, image or freehand strokes. |
-| Binding | ID, chord, press/hold action, target if needed, enabled. |
-| Runtime only | Pressed devices/keys, holds, capture, connections, caches, edit history and update state. |
+| Binding | ID, optional display name, chord, preset-selection or visibility action, target if needed, enabled. |
+| Runtime only | Pressed devices/keys, capture, transient draft previews, connections, caches, edit history and update state. |
 
 Geometry uses physical design pixels. UI logical pixels/display scale never
 silently change thickness. Profile scale is an explicit transform; offsets are
@@ -365,18 +373,21 @@ Reject stale edits with current state for resolution. Separate selection/setting
 revisions from document revisions so a preset-switch key cannot invalidate an
 unrelated edit.
 
-Editor previews may be optimistic using the shared renderer; the engine validates
-every authoritative update. Coalesce drag/slider updates to newest once per
-display frame; always send final release. Begin/update/end transactions produce
-one undo entry; cancel reverts that transaction. Lost connections retain the
-last acknowledged valid state rather than rolling back unrelated work. Bound
-transaction lifetime/history. Keep local unsent edits for deliberate reapply,
-never silently overwrite a changed document.
+The editor owns its unsaved draft and gesture history. Coalesce transient preview
+updates once per display frame and send the final release. The engine validates
+preview documents but never persists them or advances the saved document revision.
+Only explicit Save submits an authoritative revision-checked replacement.
+Lost connections retain dirty drafts for deliberate retry; never overwrite a
+changed saved document or silently replay edits after reconnect.
 
 ### Imports and limits
 
 Preset/profile/all-data exports use versioned self-contained JSON with embedded
-assets. PNG exports transparent rendered output. Imports validate the whole
+assets. PNG exports transparent rendered output. SVG exports vector shapes and
+text outlines, embeds cropped images at output resolution and raster outline
+effects, and uses SVG Gaussian blur filters. Blur and image sampling may differ
+slightly from the raster renderer. SVG output is capped at 16 MiB.
+Both Share exports use the current draft without saving it. Imports validate the whole
 graph, create/remap IDs and merge once; all-data Replace requires explicit backup
 and confirmation. No partially applied imports or executable content.
 
@@ -501,16 +512,11 @@ keyboards. Track pressed state by device so one device cannot release another.
 - Required modifiers are a subset: plain E still works while sprinting with
   Shift; a matching Shift+E wins over E. Choose the most specific chord and reject
   equally specific ambiguous overlaps. At most one action per event.
-- Select changes base preset. Toggle preset selects its target or returns to the
-  previous valid base when its target is already active.
-- Newest still-held preset override wins; visibility holds resolve separately.
-  Release reveals current base state, including changes made while holding,
-  rather than restoring a stale snapshot.
-- Visibility toggle changes base and cancels active visibility holds until their
-  triggers release, so Off works immediately. A fresh Show-hold can reveal a
-  hidden base temporarily.
-- Profile change, removal, lock/suspend, lost input and capture cancellation clear
-  affected holds. Rearm after release; lost key-up must not leave stuck state.
+- Select changes the base preset permanently; release never restores another
+  preset. Visibility toggle changes the shared visibility state immediately.
+- Profile change, removal, lock/suspend, lost input and capture cancellation
+  block affected held triggers until release. Track releases without overrides;
+  lost key-up must not leave stuck state.
 - Bindings work globally in the editor and every other foreground application.
   Only explicit capture suspends dispatch. Never log keys or foreground apps.
 
@@ -571,7 +577,8 @@ update coordination lock also protects deployment handoff across sessions.
 Updates retain data; uninstall removes package data, so provide export. Freeze
 package identity before release.
 
-Debounce 300 ms, maximum two seconds during continuous gestures. Write complete
+Debounce committed state by 300 ms, with a two-second maximum. Unsaved Designer
+drafts and transient previews are excluded from snapshots. Write complete
 same-directory temporary snapshots, flush, atomically replace live JSON and keep
 a known-good backup. Commit assets before references. Quit/update flush pending
 state; failed flush blocks installation. A deliberate Quit with failed persistence
@@ -807,7 +814,7 @@ evidence and a recorded decision, not quietly removing a failed criterion.
 
 | Owner | Required automated coverage |
 | --- | --- |
-| Core | Bounds/references/revisions, history, transactions, profiles, input/hold arbitration. |
+| Core | Bounds/references/revisions, history, transactions, profiles, input dispatch and release tracking. |
 | Renderer | Goldens for every layer/effect, channels/alpha, overlap, odd/even alignment, text/circular text, crop/SVG/blur, 100/125/150/175/200% cases. |
 | Storage | Round trips/migrations/newer versions, corruption/assets, interrupted save/failed Quit, disk/access failures, aggregate export-size admission and full-limit backup/restore, two-session exclusion. |
 | IPC | Oversize/truncated/timeouts, coherent multi-frame snapshot during mutation, stale/wrong build, reconnect and denied user/session/package identities. |

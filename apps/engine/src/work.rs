@@ -450,6 +450,7 @@ mod tests {
         let stage = store.stage_begin(
             owner,
             StagingPurpose::Document {
+                preview: false,
                 preset: preset.id,
                 expected_revision: preset.revision,
             },

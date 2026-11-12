@@ -80,7 +80,7 @@ export component AppWindow inherits Window {
                     HorizontalLayout { padding-left: 16px; padding-right: 8px; spacing: 8px;
                         Text { text: Store.error; color: #FED7AA; font-size: 12px * Theme.text-scale; wrap: word-wrap; vertical-alignment: center; horizontal-stretch: 1; }
                         if !Store.connected: ActionButton { text: "Reconnect"; clicked => { Store.action("reconnect", ""); } }
-                        if Store.dirty: ActionButton { text: "Retry"; clicked => { Store.action("retry-edit", ""); } }
+                        if Store.save-paused: ActionButton { text: "Retry"; clicked => { Store.action("retry-edit", ""); } }
                         ActionButton { icon: @image-url("../../../assets/icons/x.svg"); label: "Dismiss message"; quiet: true; clicked => { Store.action("dismiss-error", ""); } }
                     }
                 }

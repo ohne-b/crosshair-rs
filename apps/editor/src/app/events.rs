@@ -13,8 +13,18 @@ impl App {
             }
         }
         match event {
+            Event::Maximized(value) => self.window()?.global::<Store>().set_window_maximized(value),
+            Event::CaptionHover(value) => {
+                let ui = self.window()?;
+                let store = ui.global::<Store>();
+                if store.get_caption_hover() != value {
+                    store.set_caption_hover(value);
+                }
+            }
             Event::Ui(event)
-                if (self.group_ending || (self.group_open && self.finish_group))
+                if (self.group_ending
+                    || (self.group_open && self.finish_group)
+                    || (self.finish_group && self.preview_pending))
                     && !matches!(&event, UiEvent::Action(action, _) if action.starts_with("window-") || matches!(action.as_str(), "navigate" | "dismiss-error" | "modal-cancel" | "capture-cancel" | "reconnect")) =>
             {
                 defer_ui(&mut self.deferred_ui, event)?;
@@ -155,10 +165,7 @@ impl App {
                     if selection_changed {
                         self.refresh_library();
                     }
-                    if revision > self.state.revision
-                        && !self.document.dirty
-                        && self.inflight.is_none()
-                    {
+                    if revision > self.state.revision && self.inflight.is_none() {
                         self.client.refresh();
                     }
                     if self.status.recovery_required && !self.recovery_shown {
@@ -213,7 +220,24 @@ impl App {
                 ServerMessage::Response(_) => {}
             },
             Event::Engine(_, client::Event::Completed { tag, reply }) => {
-                if tag == "document" {
+                if tag == "preview" {
+                    self.preview_sent = self.preview_inflight.take();
+                    self.preview_scale = self.preview_inflight_scale;
+                    self.send_document()?;
+                } else if tag == "clear-preview" {
+                } else if tag == "save-cancel" {
+                    self.client.refresh();
+                    EVENTS.with(|events| {
+                        events
+                            .borrow_mut()
+                            .extend(self.deferred_ui.drain(..).map(Event::Ui))
+                    });
+                } else if tag == "save-flush" {
+                    if let Some(id) = self.open_after_save.take() {
+                        self.open_document(id)?;
+                    }
+                    self.refresh_document();
+                } else if tag == "document" {
                     if let Some(sent) = self.inflight.take() {
                         let version = match reply {
                             Reply::Ack {
@@ -252,16 +276,13 @@ impl App {
                     self.group_open = false;
                     self.group_ending = false;
                     self.cancel_group = false;
-                    self.document.gesture = None;
+                    self.document.finish_gesture();
                     self.draw_base = None;
+                    self.save_requested = false;
                     if tag == "cancel-edit" {
                         self.document.dirty = false;
                     }
-                    if more_edits {
-                        self.begin_edit()?;
-                        self.finish_group = true;
-                        self.send_document()?;
-                    }
+                    self.send("save-flush", Command::Flush)?;
                     if let Some(command) = self.pending_command.take() {
                         self.send("pending", command)?;
                     }
@@ -311,10 +332,32 @@ impl App {
                     conflict,
                 },
             ) => {
+                if tag == "preview" {
+                    let failed = self.preview_inflight.take();
+                    self.preview_sent = failed;
+                    self.preview_scale = self.preview_inflight_scale;
+                    self.document.conflict |= conflict;
+                    self.send_document()?;
+                }
+                if tag == "save-flush" {
+                    self.document.dirty = true;
+                    self.document.save_paused = true;
+                    self.closing = false;
+                    self.open_after_save = None;
+                }
                 if tag == "document" || tag == "begin-edit" {
                     self.inflight = None;
                     self.document.dirty = true;
                     self.document.conflict = conflict;
+                    self.save_requested = false;
+                    self.document.save_paused = true;
+                    if self.group_open {
+                        self.group_open = false;
+                        self.group_ending = false;
+                        self.finish_group = false;
+                        self.cancel_group = false;
+                        self.send("save-cancel", Command::CancelEdit)?;
+                    }
                 }
                 if tag == "begin-edit" {
                     self.group_open = false;
@@ -374,6 +417,9 @@ impl App {
                 self.window()?.global::<Store>().set_connected(false);
                 self.document.save_paused = self.document.dirty || self.inflight.is_some();
                 self.inflight = None;
+                self.preview_inflight = None;
+                self.preview_sent = None;
+                self.save_requested = false;
                 self.group_open = false;
                 self.group_ending = false;
                 self.capture = None;
@@ -431,6 +477,7 @@ impl App {
                     }
                     self.document.draft = Some(adjusted);
                 }
+                self.last_valid = self.document.draft.clone();
                 self.send_document()?;
                 self.finish_edit()?;
                 let ui = self.window()?;
@@ -441,6 +488,7 @@ impl App {
                 store.set_preview_width(raster.width as f32 / scale);
                 store.set_preview_height(raster.height as f32 / scale);
                 self.refresh_bounds();
+                self.refresh_status();
             }
             Event::Preview(preview::Event::Thumbnail {
                 id,
@@ -467,21 +515,40 @@ impl App {
                     return Ok(());
                 }
                 self.preview_pending = false;
-                if self.draw_base.is_some() {
-                    self.drag = None;
-                    self.draw_base = None;
+                self.drag = None;
+                self.draw_base = None;
+                let restored = if let Some(valid) = self.last_valid.as_ref().filter(|preset| {
+                    preset.id == id
+                        && self.document.draft.as_ref().is_some_and(|draft| {
+                            !crate::features::designer::same_design(draft, preset)
+                        })
+                }) {
+                    let mut valid = valid.clone();
+                    if let Some(current) = &self.document.draft {
+                        valid.revision = current.revision;
+                        valid.favorite = current.favorite;
+                        valid.modified_order = current.modified_order;
+                    }
+                    self.document.draft = Some(valid);
+                    self.document.update_dirty();
+                    true
+                } else {
                     self.cancel_document_gesture();
-                    self.cancel_group = true;
-                    self.finish_group = true;
-                    self.finish_edit()?;
+                    false
+                };
+                self.save_requested = false;
+                self.finish_group = true;
+                self.finish_edit()?;
+                if restored {
                     self.render();
-                    self.refresh_document();
                 }
+                self.refresh_document();
                 self.closing = false;
                 self.install_requested = false;
                 if self.shutdown_requested.take().is_some() {
                     let _ = self.send("cancel-quit", Command::CancelQuit);
                 }
+                self.preview_error = Some(message.clone());
                 self.error(message);
             }
             Event::Preview(preview::Event::Error(message)) => {
@@ -516,8 +583,6 @@ impl App {
                 self.document.draft = Some(changed);
                 self.document.dirty = true;
                 self.finish_group = true;
-                self.send_document()?;
-                self.finish_edit()?;
                 self.render();
                 self.refresh_document();
             }
@@ -535,10 +600,18 @@ impl App {
                 );
                 self.state = state;
                 match action {
-                    preview::RecoveryAction::Reapply => {
+                    preview::RecoveryAction::Reapply | preview::RecoveryAction::Save => {
                         let current = self.state.preset(changed.id).context(
                             "This crosshair was deleted. Export the draft to preserve it.",
                         )?;
+                        if matches!(action, preview::RecoveryAction::Save)
+                            && current.revision != original.revision
+                        {
+                            self.document.conflict = true;
+                            anyhow::bail!(
+                                "The saved crosshair changed. Review the draft before replacing it."
+                            );
+                        }
                         changed.revision = current.revision;
                         changed.favorite = current.favorite;
                         changed.modified_order = current.modified_order;
@@ -551,14 +624,15 @@ impl App {
                             .set_error(SharedString::default());
                         self.group_open = false;
                         self.group_ending = false;
-                        self.begin_edit()?;
                         self.finish_group = true;
-                        self.send_document()?;
-                        self.finish_edit()?;
+                        self.save_requested = true;
                         self.render();
                     }
-                    preview::RecoveryAction::Export { destination, png } => {
-                        self.client.export_draft(changed, destination, png)?;
+                    preview::RecoveryAction::Export {
+                        destination,
+                        format,
+                    } => {
+                        self.client.export_draft(changed, destination, format)?;
                     }
                 }
             }

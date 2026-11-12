@@ -32,7 +32,6 @@ fn inspector_groups(rows: Vec<FieldRow>) -> Vec<FieldGroup> {
                         | ("Bar width", "Bar thickness")
                 ))
                 || (first.label == "Opacity" && next.key == "/transform/anchor")
-                || (first.kind == 4 && next.key.starts_with("@opacity:"))
         });
         let second = if paired {
             fields.next().unwrap()
@@ -123,6 +122,14 @@ impl App {
             return;
         };
         let store = ui.global::<Store>();
+        store.set_selector_total(self.state.presets.len() as i32);
+        store.set_selector_favorite_count(
+            self.state
+                .presets
+                .iter()
+                .filter(|preset| preset.favorite)
+                .count() as i32,
+        );
         store.set_total_presets(self.state.presets.len() as i32);
         store.set_favorite_presets(
             self.state
@@ -147,14 +154,7 @@ impl App {
             .status
             .selected_preset
             .or_else(|| self.state.selected_preset().map(|preset| preset.id));
-        let rows: Vec<_> = library::filtered(
-            &self.state,
-            &store.get_search(),
-            store.get_favorites(),
-            store.get_sort(),
-        )
-        .into_iter()
-        .map(|preset| PresetRow {
+        let preset_row = |preset: &Preset| PresetRow {
             id: preset.id.to_string().into(),
             name: preset.name.clone().into(),
             thumbnail: self
@@ -164,7 +164,35 @@ impl App {
                 .unwrap_or_default(),
             selected: selected == Some(preset.id),
             favorite: preset.favorite,
-        })
+        };
+        let selector_rows: Vec<_> = library::filtered(
+            &self.state,
+            &store.get_selector_search(),
+            store.get_selector_favorites(),
+            0,
+        )
+        .into_iter()
+        .map(preset_row)
+        .collect();
+        let palette_rows: Vec<_> = self.palette.iter().map(preset_row).collect();
+        if !update_rows(&store.get_layer_presets(), &palette_rows, |a, b| {
+            a.id == b.id
+        }) {
+            store.set_layer_presets(model(palette_rows));
+        }
+        if !update_rows(&store.get_selector_presets(), &selector_rows, |a, b| {
+            a.id == b.id
+        }) {
+            store.set_selector_presets(model(selector_rows));
+        }
+        let rows: Vec<_> = library::filtered(
+            &self.state,
+            &store.get_search(),
+            store.get_favorites(),
+            store.get_sort(),
+        )
+        .into_iter()
+        .map(preset_row)
         .collect();
         let columns = store.get_library_columns().clamp(2, 20) as usize;
         let groups = store.get_preset_groups();
@@ -215,18 +243,41 @@ impl App {
                 .unwrap_or_else(|| "Unbound".into())
                 .into(),
         );
-        store.set_can_undo(self.status.can_undo);
-        store.set_can_redo(self.status.can_redo);
+        let local_history = store.get_page() == 1 && self.document.draft.is_some();
+        store.set_can_undo(if local_history {
+            self.document.can_undo()
+        } else {
+            self.status.can_undo
+        });
+        store.set_can_redo(if local_history {
+            self.document.can_redo()
+        } else {
+            self.status.can_redo
+        });
         let active = self
             .status
             .selected_preset
             .or_else(|| self.state.selected_preset().map(|preset| preset.id));
         if let Some(active) = active {
             store.set_active_thumbnail(
-                self.thumbnails
-                    .get(&active)
-                    .map(|(_, image)| image.clone())
-                    .unwrap_or_default(),
+                if self
+                    .last_valid
+                    .as_ref()
+                    .is_some_and(|preset| preset.id == active)
+                    && self
+                        .document
+                        .draft
+                        .as_ref()
+                        .is_some_and(|preset| preset.id == active)
+                    && store.get_preview().size().width > 0
+                {
+                    store.get_preview()
+                } else {
+                    self.thumbnails
+                        .get(&active)
+                        .map(|(_, image)| image.clone())
+                        .unwrap_or_default()
+                },
             );
             store.set_active_name(
                 self.state
@@ -379,6 +430,14 @@ impl App {
                             row.kind = 2;
                             row.minimum = *min;
                             row.maximum = *max;
+                            row.step =
+                                if matches!(field.key.as_str(), "/transform/scale" | "/opacity")
+                                    || field.key.contains("/crop/")
+                                {
+                                    0.01
+                                } else {
+                                    1.0
+                                };
                             row.numeric = field.value.parse().unwrap_or_default();
                         }
                         FieldKind::Toggle => {
@@ -456,8 +515,9 @@ impl App {
         };
         let mut rows = vec![BindingRow {
             id: "global".into(),
+            name: SharedString::default(),
             action: "Toggle visibility".into(),
-            target: "All profiles".into(),
+            target: SharedString::default(),
             target_index: -1,
             chord: self
                 .state
@@ -476,11 +536,21 @@ impl App {
                 BindingRow {
                     id: binding.id.to_string().into(),
                     action: keybinds::action_name(&binding.action).into(),
+                    name: if binding.name.is_empty() {
+                        binding
+                            .action
+                            .target()
+                            .and_then(|id| self.state.preset(id))
+                            .map(|preset| preset.name.clone())
+                            .unwrap_or_default()
+                    } else {
+                        binding.name.clone()
+                    }
+                    .into(),
                     target: binding
                         .action
                         .target()
-                        .and_then(|id| self.state.preset(id))
-                        .map(|preset| preset.name.clone())
+                        .map(|id| id.to_string())
                         .unwrap_or_default()
                         .into(),
                     chord: keybinds::chord_label(&binding.chord).into(),
@@ -547,6 +617,24 @@ impl App {
 #[cfg(test)]
 mod inspector_tests {
     use super::*;
+
+    #[test]
+    fn colors_do_not_pair_with_separate_opacity_fields() {
+        let groups = inspector_groups(vec![
+            FieldRow {
+                kind: 4,
+                key: "/content/color".into(),
+                ..Default::default()
+            },
+            FieldRow {
+                kind: 2,
+                key: "@opacity:/content/color".into(),
+                ..Default::default()
+            },
+        ]);
+        assert_eq!(groups.len(), 2);
+        assert!(groups.iter().all(|group| !group.paired));
+    }
 
     #[test]
     fn pairing_preserves_edit_identity_and_never_crosses_sections() {

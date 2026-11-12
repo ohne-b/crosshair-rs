@@ -1,42 +1,69 @@
-import { DropDown } from "../shared/dropdown.slint";
 import { ScrollView } from "std-widgets.slint";
 import { Store, BindingRow } from "../shared/models.slint";
 import { Theme } from "../shared/tokens.slint";
-import { ActionButton, SectionTitle } from "../shared/controls.slint";
+import { ActionButton, RenameField, SectionTitle } from "../shared/controls.slint";
+import { PresetPicker } from "../shared/preset-picker.slint";
+
+component TableHeader inherits Rectangle {
+    in property <bool> application: false;
+    height: 40px; vertical-stretch: 0; background: Theme.preview;
+    HorizontalLayout { spacing: 0px;
+        if root.application: Rectangle { horizontal-stretch: 1; Text { x: 12px; width: parent.width - 24px; text: "Action"; color: Theme.muted; font-size: 11px * Theme.text-scale; vertical-alignment: center; } }
+        if !root.application: Text { text: "Crosshair"; color: Theme.muted; font-size: 11px * Theme.text-scale; width: 88px; vertical-alignment: center; horizontal-alignment: center; }
+        if !root.application: Rectangle { width: 1px; background: Theme.border; }
+        if !root.application: Rectangle { horizontal-stretch: 1; Text { x: 12px; width: parent.width - 24px; text: "Shortcut name"; color: Theme.muted; font-size: 11px * Theme.text-scale; vertical-alignment: center; } }
+        Rectangle { width: 1px; background: Theme.border; }
+        Text { text: "Keyboard / mouse"; color: Theme.muted; font-size: 11px * Theme.text-scale; width: 254px; vertical-alignment: center; horizontal-alignment: center; }
+        Rectangle { width: 1px; background: Theme.border; }
+        Rectangle { width: 52px; }
+    }
+    Rectangle { y: parent.height - 1px; width: parent.width; height: 1px; background: Theme.border; }
+}
 
 component BindingItem inherits Rectangle {
     in property <BindingRow> binding;
-    height: max(56px, 12px * Theme.text-scale + 32px);
-    HorizontalLayout { padding-left: 12px; padding-right: 12px; padding-top: 10px; padding-bottom: 10px; spacing: 12px;
-        if !root.binding.shortcut: Text { text: root.binding.action; color: Theme.text; font-size: 12px * Theme.text-scale; vertical-alignment: center; horizontal-stretch: root.binding.target-index < 0 ? 1 : 0; preferred-width: 180px; }
-        if root.binding.target-index >= 0: DropDown {
-            model: Store.preset-names; thumbnails: Store.preset-thumbnails; current-index: root.binding.target-index;
-            accessible-label: "Crosshair for shortcut"; horizontal-stretch: 1;
-            selected(value) => { Store.action("binding-target", root.binding.id + ":" + self.current-index); }
+    in property <length> viewport-width;
+    in property <length> viewport-height;
+    height: max(56px, 12px * Theme.text-scale + 32px); vertical-stretch: 0;
+    HorizontalLayout { spacing: 0px;
+        if root.binding.global: Rectangle { horizontal-stretch: 1; Text { x: 12px; width: parent.width - 24px; text: root.binding.action; color: Theme.text; font-size: 12px * Theme.text-scale; vertical-alignment: center; } }
+        if root.binding.shortcut: Rectangle { width: 88px;
+            trigger := ActionButton { x: 12px; y: (parent.height - self.height) / 2; width: 64px; thumbnail: Store.preset-thumbnails[root.binding.target-index]; label: "Choose crosshair for " + root.binding.name; clicked => { picker.show(); } }
+            picker := PresetPicker {
+                viewport-width: root.viewport-width; viewport-height: root.viewport-height;
+                model: Store.selector-presets; selected-id: root.binding.target;
+                total-count: Store.selector-total; favorite-count: Store.selector-favorite-count;
+                chosen(id) => { Store.action("binding-target-id", root.binding.id + ":" + id); }
+                filter-request(search, favorites) => { Store.action("selector-filter", search); Store.action("selector-favorites", favorites ? "true" : "false"); }
+                dismissed => { trigger.focus(); }
+            }
+        }
+        if root.binding.shortcut: Rectangle { width: 1px; background: Theme.border; }
+        if root.binding.shortcut: Rectangle { horizontal-stretch: 1;
+            RenameField { x: 6px; y: (parent.height - self.height) / 2; width: parent.width - 12px; value: root.binding.name; label: "Rename shortcut"; committed(value) => { Store.action("binding-name", root.binding.id + ":" + value); } }
         }
         Rectangle { width: 1px; background: Theme.border; }
-        ActionButton {
-            text: Store.capture-id == root.binding.id ? "Press a key" : !root.binding.global && !root.binding.enabled ? "Disabled: " + root.binding.chord : root.binding.chord;
-            icon: @image-url("../../../../assets/icons/keyboard.svg");
-            selected: Store.capture-id == root.binding.id; width: 230px; align-left: true;
-            clicked => { if Store.capture-id != root.binding.id {
-                Store.capture-region(self.absolute-position.x / 1px, self.absolute-position.y / 1px, self.width / 1px, self.height / 1px);
-                Store.action("capture", root.binding.id);
-            } }
+        Rectangle { width: 254px;
+            ActionButton { x: 12px; y: (parent.height - self.height) / 2; width: 230px; align-left: true;
+                text: Store.capture-id == root.binding.id ? "Press a key" : !root.binding.global && !root.binding.enabled ? "Disabled: " + root.binding.chord : root.binding.chord;
+                icon: @image-url("../../../../assets/icons/keyboard.svg"); selected: Store.capture-id == root.binding.id;
+                clicked => { if Store.capture-id != root.binding.id { Store.capture-region(self.absolute-position.x / 1px, self.absolute-position.y / 1px, self.width / 1px, self.height / 1px); Store.action("capture", root.binding.id); } }
+            }
         }
-        ActionButton { icon: @image-url("../../../../assets/icons/trash.svg"); label: root.binding.global ? "Clear visibility shortcut" : "Remove shortcut"; quiet: true; clicked => { Store.action("binding-remove", root.binding.id); } }
+        Rectangle { width: 1px; background: Theme.border; }
+        Rectangle { width: 52px;
+            ActionButton { x: 10px; y: (parent.height - self.height) / 2; width: 32px; icon: @image-url("../../../../assets/icons/trash.svg"); label: root.binding.global ? "Clear visibility shortcut" : "Remove shortcut"; quiet: true; clicked => { Store.action("binding-remove", root.binding.id); } }
+        }
     }
-    Rectangle { x: 10px; y: parent.height - 1px; width: parent.width - 20px; height: 1px; background: Theme.border; }
+    Rectangle { y: parent.height - 1px; width: parent.width; height: 1px; background: Theme.border; }
 }
 
 export component Keybinds inherits Rectangle {
     background: Theme.canvas; border-top-left-radius: 12px;
-    Timer {
-        interval: 16ms; running: Store.request-shortcut;
+    Timer { interval: 16ms; running: Store.request-shortcut;
         triggered => { Store.request-shortcut = false; Store.capture-region(shortcut-button.absolute-position.x / 1px, shortcut-button.absolute-position.y / 1px, shortcut-button.width / 1px, shortcut-button.height / 1px); Store.action("new-binding", "5"); }
     }
-    ScrollView {
-        horizontal-scrollbar-policy: always-off; content-width: self.visible-width;
+    ScrollView { horizontal-scrollbar-policy: always-off; content-width: self.visible-width;
         VerticalLayout { padding: 24px; spacing: 12px; alignment: start;
             HorizontalLayout {
                 Text { text: "Keybinds"; color: Theme.text; font-size: 15px * Theme.text-scale; font-weight: 600; }
@@ -44,51 +71,47 @@ export component Keybinds inherits Rectangle {
                 ActionButton { icon: @image-url("../../../../assets/icons/info-circle.svg"); label: "Shortcut help"; quiet: true; clicked => { Store.action("input-help", ""); } }
             }
             SectionTitle { text: "APPLICATION"; }
-            Rectangle { background: Theme.panel; border-radius: 10px; clip: true; border-width: 1px; border-color: Theme.border;
+            Rectangle { vertical-stretch: 0; background: Theme.panel; border-radius: 10px; clip: true; border-width: 1px; border-color: Theme.border;
                 VerticalLayout { padding: 1px; spacing: 0px;
-                    for binding in Store.bindings: BindingItem { binding: binding; visible: binding.global; height: binding.global ? max(56px, 12px * Theme.text-scale + 32px) : 0px; }
+                    TableHeader { application: true; }
+                    for binding in Store.bindings: BindingItem { viewport-width: root.width + root.absolute-position.x; viewport-height: root.height + root.absolute-position.y; binding: binding; visible: binding.global; height: binding.global ? max(56px, 12px * Theme.text-scale + 32px) : 0px; }
                 }
             }
             SectionTitle { text: "CROSSHAIR SHORTCUTS"; }
-            Rectangle { background: Theme.panel; border-radius: 10px; clip: true; border-width: 1px; border-color: Theme.border;
+            Rectangle { vertical-stretch: 0; background: Theme.panel; border-radius: 10px; clip: true; border-width: 1px; border-color: Theme.border;
                 VerticalLayout { padding: 1px; spacing: 0px;
-                    Rectangle { height: 40px; background: Theme.field; border-top-left-radius: 9px; border-top-right-radius: 9px;
-                        HorizontalLayout { padding-left: 16px; padding-right: 56px; spacing: 12px;
-                            Text { text: "Crosshair"; color: Theme.muted; font-size: 11px * Theme.text-scale; horizontal-stretch: 1; vertical-alignment: center; }
-                            Text { text: "Keyboard / mouse"; color: Theme.muted; font-size: 11px * Theme.text-scale; width: 230px; vertical-alignment: center; }
-                        }
-                    }
-                    Rectangle { height: max(56px, 12px * Theme.text-scale + 32px);
-                        HorizontalLayout { padding: 10px; spacing: 12px;
-                            DropDown { model: Store.preset-names; thumbnails: Store.preset-thumbnails; current-index <=> Store.target-index; accessible-label: "New shortcut crosshair"; horizontal-stretch: 1; }
-                            shortcut-button := ActionButton { width: 230px; align-left: true;
-                                text: Store.capture-id == "new-shortcut" ? "Press a key" : "New shortcut";
-                                accent-icon: true; selected: Store.capture-id == "new-shortcut"; icon: @image-url("../../../../assets/icons/plus.svg");
-                                clicked => { if Store.capture-id != "new-shortcut" { Store.capture-region(self.absolute-position.x / 1px, self.absolute-position.y / 1px, self.width / 1px, self.height / 1px); Store.action("new-binding", "5"); } }
+                    TableHeader {}
+                    Rectangle { height: max(56px, 12px * Theme.text-scale + 32px); vertical-stretch: 0;
+                        HorizontalLayout { spacing: 0px;
+                            Rectangle { width: 88px;
+                                ActionButton { x: 28px; y: (parent.height - self.height) / 2; width: 32px; icon: @image-url("../../../../assets/icons/plus.svg"); label: "Choose crosshair for new shortcut"; quiet: true; clicked => { if Store.capture-id != "new-shortcut" { new-picker.show(); } } }
                             }
-                            ActionButton { width: 32px; icon: @image-url("../../../../assets/icons/x.svg"); label: "Cancel recording"; opacity: Store.capture-id == "new-shortcut" ? 1 : 0; enabled: Store.capture-id == "new-shortcut"; quiet: true; clicked => { Store.action("capture-cancel", ""); } }
+                            Rectangle { width: 1px; background: Theme.border; }
+                            Rectangle { horizontal-stretch: 1; Text { x: 12px; width: parent.width - 24px; text: "New shortcut"; color: Theme.muted; font-size: 12px * Theme.text-scale; vertical-alignment: center; } }
+                            Rectangle { width: 1px; background: Theme.border; }
+                            Rectangle { width: 254px;
+                                shortcut-button := ActionButton { x: 12px; y: (parent.height - self.height) / 2; width: 230px; align-left: true;
+                                    text: Store.capture-id == "new-shortcut" ? "Press a key" : "New"; selected: Store.capture-id == "new-shortcut";
+                                    icon: @image-url("../../../../assets/icons/keyboard.svg"); clicked => { if Store.capture-id != "new-shortcut" { new-picker.show(); } }
+                                }
+                            }
+                            Rectangle { width: 1px; background: Theme.border; }
+                            Rectangle { width: 52px;
+                                if Store.capture-id == "new-shortcut": ActionButton { x: 10px; y: (parent.height - self.height) / 2; width: 32px; icon: @image-url("../../../../assets/icons/x.svg"); label: "Cancel recording"; quiet: true; clicked => { Store.action("capture-cancel", ""); } }
+                            }
                         }
-                        Rectangle { x: 10px; y: parent.height - 1px; width: parent.width - 20px; height: 1px; background: Theme.border; }
+                        Rectangle { y: parent.height - 1px; width: parent.width; height: 1px; background: Theme.border; }
                     }
-                    for binding in Store.bindings: BindingItem { binding: binding; visible: binding.shortcut; height: binding.shortcut ? max(56px, 12px * Theme.text-scale + 32px) : 0px; }
+                    for binding in Store.bindings: BindingItem { viewport-width: root.width + root.absolute-position.x; viewport-height: root.height + root.absolute-position.y; binding: binding; visible: binding.shortcut; height: binding.shortcut ? max(56px, 12px * Theme.text-scale + 32px) : 0px; }
                 }
             }
-            SectionTitle { text: "PRESS & HOLD ACTIONS"; }
-            Rectangle { background: Theme.panel; border-radius: 10px; clip: true; border-width: 1px; border-color: Theme.border;
-                VerticalLayout { padding: 1px; spacing: 0px;
-                    Rectangle { height: max(56px, 12px * Theme.text-scale + 32px);
-                        HorizontalLayout { padding: 10px; spacing: 12px;
-                            DropDown { model: ["Hide while held", "Show while held", "Toggle crosshair", "Show crosshair while held"]; current-index <=> Store.action-type; preferred-width: 205px; accessible-label: "New action"; horizontal-stretch: Store.action-type < 2 ? 1 : 0; }
-                            if Store.action-type >= 2: DropDown { model: Store.preset-names; thumbnails: Store.preset-thumbnails; current-index <=> Store.target-index; horizontal-stretch: 1; accessible-label: "Action crosshair"; }
-                            ActionButton { width: 230px; align-left: true; text: Store.capture-id == "new-action" ? "Press a key" : "New action"; accent-icon: true; selected: Store.capture-id == "new-action"; icon: @image-url("../../../../assets/icons/plus.svg"); clicked => { if Store.capture-id != "new-action" { Store.capture-region(self.absolute-position.x / 1px, self.absolute-position.y / 1px, self.width / 1px, self.height / 1px); Store.action("new-binding", Store.action-type + 1); } } }
-                            ActionButton { width: 32px; icon: @image-url("../../../../assets/icons/x.svg"); label: "Cancel recording"; opacity: Store.capture-id == "new-action" ? 1 : 0; enabled: Store.capture-id == "new-action"; quiet: true; clicked => { Store.action("capture-cancel", ""); } }
-                        }
-                        Rectangle { x: 10px; y: parent.height - 1px; width: parent.width - 20px; height: 1px; background: Theme.border; }
-                    }
-                    for binding in Store.bindings: BindingItem { binding: binding; visible: !binding.global && !binding.shortcut; height: !binding.global && !binding.shortcut ? max(56px, 12px * Theme.text-scale + 32px) : 0px; }
-                }
-            }
-            Rectangle { vertical-stretch: 1; }
         }
+    }
+    new-picker := PresetPicker {
+        viewport-width: root.width + root.absolute-position.x; viewport-height: root.height + root.absolute-position.y;
+        model: Store.selector-presets; total-count: Store.selector-total; favorite-count: Store.selector-favorite-count;
+        chosen(id) => { Store.action("shortcut-target", id); Store.capture-region(shortcut-button.absolute-position.x / 1px, shortcut-button.absolute-position.y / 1px, shortcut-button.width / 1px, shortcut-button.height / 1px); Store.action("new-binding", "5"); }
+        filter-request(search, favorites) => { Store.action("selector-filter", search); Store.action("selector-favorites", favorites ? "true" : "false"); }
+        dismissed => { shortcut-button.focus(); }
     }
 }

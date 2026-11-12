@@ -24,6 +24,7 @@ windows-future = "0.3.2"
 windows = { workspace = true, features = [
   "Win32_Foundation",
   "Win32_Graphics_Gdi",
+  "Win32_Devices_Display",
   "Win32_System_LibraryLoader",
   "Win32_System_Threading",
   "Win32_System_Registry",

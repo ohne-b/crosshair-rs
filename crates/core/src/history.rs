@@ -677,6 +677,27 @@ mod tests {
     }
 
     #[test]
+    fn shortcut_name_edits_undo_without_changing_selection() {
+        let mut state = AppState::default();
+        state.profiles[0].bindings.push(crate::Binding::new(
+            crate::InputChord::key(0x12),
+            crate::BindingAction::SelectPreset {
+                preset: state.presets[1].id,
+            },
+        ));
+        let before = state.clone();
+        state.profiles[0].bindings[0].name = "Precision".into();
+        let mut history = History::default();
+        history.record(&before, &state).unwrap();
+        state.profiles[0].selected_preset = state.presets[2].id;
+        history.undo(&mut state).unwrap();
+        assert_eq!(state.profiles[0].bindings[0].name, "");
+        assert_eq!(state.profiles[0].selected_preset, state.presets[2].id);
+        history.redo(&mut state).unwrap();
+        assert_eq!(state.profiles[0].bindings[0].name, "Precision");
+    }
+
+    #[test]
     fn replacing_global_and_profile_bindings_undoes_atomically() {
         let before = AppState::default();
         let mut state = before.clone();

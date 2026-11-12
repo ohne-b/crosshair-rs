@@ -15,22 +15,29 @@ impl App {
     }
 
     pub(super) fn open_document(&mut self, id: Id) -> Result<()> {
+        if self
+            .document
+            .draft
+            .as_ref()
+            .is_some_and(|preset| preset.id == id)
+        {
+            self.window()?.global::<Store>().set_page(1);
+            return Ok(());
+        }
         ensure!(
             !self.document.conflict,
             "Resolve or export this draft before opening another crosshair"
         );
         if self.group_open || self.inflight.is_some() || self.document.dirty {
-            ensure!(
-                self.window()?.global::<Store>().get_connected() && !self.document.save_paused,
-                "Reconnect and save, or export this draft before opening another crosshair"
+            self.modal = Modal::OpenDocument(id);
+            self.show_modal(
+                1,
+                "Save this crosshair?",
+                "Save your edits before opening another crosshair, or discard them.",
+                "Save",
+                "Discard",
+                "",
             );
-            defer_ui(
-                &mut self.deferred_ui,
-                UiEvent::Action("edit-preset".into(), id.to_string()),
-            )?;
-            self.finish_group = true;
-            self.send_document()?;
-            self.finish_edit()?;
             return Ok(());
         }
         let preset = self
@@ -38,6 +45,9 @@ impl App {
             .preset(id)
             .context("This crosshair no longer exists")?
             .clone();
+        self.last_valid = Some(preset.clone());
+        self.preview_sent = None;
+        self.send("clear-preview", Command::ClearPreview)?;
         self.document.open(preset)?;
         self.window()?.global::<Store>().set_page(1);
         self.refresh_document();
@@ -50,35 +60,46 @@ impl App {
             !self.document.conflict,
             "This crosshair changed in the engine. Export the draft or discard it before continuing."
         );
-        if !self.window()?.global::<Store>().get_connected() || self.document.save_paused {
-            self.document.save_paused = true;
-            self.document.begin_gesture();
-            return Ok(());
+        if let Some(error) = self.preview_error.take() {
+            let ui = self.window()?;
+            let store = ui.global::<Store>();
+            if store.get_error() == error {
+                store.set_error(SharedString::default());
+            }
         }
-        if !self.group_open {
-            let document = self
-                .document
-                .draft
-                .as_ref()
-                .context("Open a crosshair first")?;
-            self.send(
-                "begin-edit",
-                Command::BeginEdit {
-                    preset: document.id,
-                    expected_revision: document.revision,
-                },
-            )?;
-            self.group_open = true;
-            self.finish_group = false;
-            self.cancel_group = false;
-            self.document.begin_gesture();
-        }
+        self.document.begin_gesture();
         Ok(())
+    }
+
+    pub(super) fn save_document(&mut self) -> Result<()> {
+        ensure!(
+            self.window()?.global::<Store>().get_connected(),
+            "Reconnect before saving"
+        );
+        ensure!(
+            !self.document.conflict,
+            "The saved crosshair changed. Review or export this draft before replacing it."
+        );
+        if let Some(draft) = self.document.draft.as_ref().filter(|draft| {
+            draft
+                .layers
+                .iter()
+                .filter_map(|layer| layer.content.asset_id())
+                .any(|id| !self.state.assets.contains_key(&id))
+        }) {
+            return self
+                .preview
+                .recover(draft.clone(), preview::RecoveryAction::Save);
+        }
+        self.document.save_paused = false;
+        self.save_requested = true;
+        self.finish_group = true;
+        self.send_document()?;
+        self.finish_edit()
     }
 
     pub(super) fn send_document(&mut self) -> Result<()> {
         if self.inflight.is_some()
-            || !self.document.dirty
             || self.document.conflict
             || self.document.save_paused
             || self.cancel_group
@@ -90,17 +111,48 @@ impl App {
         if !self.window()?.global::<Store>().get_connected() {
             return Ok(());
         }
-        if !self.group_open {
-            let finish = self.finish_group;
-            self.begin_edit()?;
-            self.finish_group |= finish;
-        }
         let document = self
             .document
             .draft
             .as_ref()
             .context("Open a crosshair first")?
             .clone();
+        if !self.save_requested {
+            let scale = self
+                .state
+                .active_profile()
+                .map_or(1.0, |profile| profile.scale)
+                .to_bits();
+            if self.preview_inflight.is_none()
+                && (self.preview_scale != scale
+                    || self.preview_sent.as_ref().is_none_or(|sent| {
+                        !designer::same_design(sent, &document)
+                            || sent.revision != document.revision
+                    }))
+            {
+                self.client.preview(document.clone())?;
+                self.preview_inflight = Some(document);
+                self.preview_inflight_scale = scale;
+            }
+            return Ok(());
+        }
+        if !self.document.dirty {
+            if !self.group_open {
+                self.save_requested = false;
+                self.send("save-flush", Command::Flush)?;
+            }
+            return Ok(());
+        }
+        if !self.group_open {
+            self.send(
+                "begin-edit",
+                Command::BeginEdit {
+                    preset: document.id,
+                    expected_revision: document.revision,
+                },
+            )?;
+            self.group_open = true;
+        }
         self.client
             .document("document", document.clone(), document.revision)?;
         self.inflight = Some(document);
@@ -108,14 +160,19 @@ impl App {
     }
 
     pub(super) fn finish_edit(&mut self) -> Result<()> {
-        if (!self.window()?.global::<Store>().get_connected() || self.document.save_paused)
-            && self.finish_group
-            && !self.preview_pending
-        {
-            self.document.gesture = None;
-            self.finish_group = false;
-            self.cancel_group = false;
-            self.draw_base = None;
+        if !self.group_open {
+            if self.finish_group && !self.preview_pending {
+                self.document.finish_gesture();
+                self.finish_group = false;
+                self.cancel_group = false;
+                self.draw_base = None;
+                self.refresh_document();
+                EVENTS.with(|events| {
+                    events
+                        .borrow_mut()
+                        .extend(self.deferred_ui.drain(..).map(Event::Ui))
+                });
+            }
             return Ok(());
         }
         if self.group_open
@@ -158,10 +215,8 @@ impl App {
         self.document.draft = Some(changed);
         self.document.dirty = true;
         self.finish_group = true;
-        self.send_document()?;
-        self.finish_edit()?;
-        self.refresh_document();
         self.render();
+        self.refresh_document();
         Ok(())
     }
 
@@ -249,7 +304,6 @@ impl App {
             self.begin_edit()?;
             self.document.draft = Some(changed);
             self.document.dirty = true;
-            self.send_document()?;
             self.render();
         }
         if phase >= 2 {
@@ -266,6 +320,24 @@ impl App {
 
     pub(super) fn layer_action(&mut self, action: &str, value: &str) -> Result<()> {
         match action {
+            "add-crosshair-preset" => {
+                let mut layer = self
+                    .palette
+                    .iter()
+                    .find(|preset| preset.id.to_string() == value)
+                    .and_then(|preset| preset.layers.first())
+                    .context("Choose a crosshair style")?
+                    .clone();
+                layer.id = Id::new_v4();
+                let id = layer.id;
+                self.edit(|preset, _| {
+                    ensure!(preset.layers.len() < MAX_LAYERS, "Layer limit reached");
+                    preset.layers.push(layer);
+                    Ok(())
+                })?;
+                self.document.select(id, false);
+                self.refresh_document();
+            }
             "add-layer" => {
                 let mut id = Id::nil();
                 self.edit(|preset, _| {
@@ -416,13 +488,19 @@ impl App {
             "brush-size" => {
                 let number: f32 = value.parse()?;
                 ensure!(
-                    number.is_finite() && (0.1..=256.0).contains(&number),
-                    "Brush size must be between 0.1 and 256"
+                    number.is_finite() && number.fract() == 0.0 && (1.0..=256.0).contains(&number),
+                    "Brush size must be a whole number from 1 to 256"
                 );
                 self.window()?.global::<Store>().set_brush_size(number);
             }
             "brush-color" => {
-                Color::from_hex(value).context("Use six or eight hexadecimal digits")?;
+                let color =
+                    Color::from_hex(value).context("Use six or eight hexadecimal digits")?;
+                self.window()?
+                    .global::<Store>()
+                    .set_brush_swatch(slint::Color::from_argb_u8(
+                        color.a, color.r, color.g, color.b,
+                    ));
                 self.window()?
                     .global::<Store>()
                     .set_brush_color(value.into());
@@ -645,6 +723,12 @@ impl App {
                     if shift {
                         scale = (scale * 10.0).round().max(0.1) / 10.0;
                     }
+                    let span = ((origin.x - center.x).abs().max((origin.y - center.y).abs()) * 2.0)
+                        .max(1.0);
+                    scale = (span * scale)
+                        .round()
+                        .clamp(1.0, crosshair_renderer::MAX_DIMENSION as f32)
+                        / span;
                     designer::transform_around(
                         &mut changed,
                         &self.document.selected,
@@ -709,10 +793,6 @@ impl App {
                 }
                 self.document.draft = Some(changed);
                 self.document.dirty = true;
-                self.preview_pending = self.draw_base.is_some();
-                if !self.preview_pending {
-                    self.send_document()?;
-                }
                 self.render();
             }
         } else if kind == 2 && self.drag.take().is_some() {
@@ -757,7 +837,9 @@ impl App {
         if self.window()?.global::<Store>().get_read_only() {
             return Ok(false);
         }
-        if self.group_ending && !alt {
+        if (self.group_ending || (self.finish_group && (self.group_open || self.preview_pending)))
+            && !alt
+        {
             let recognized = if control {
                 matches!(
                     text.to_ascii_lowercase().as_str(),

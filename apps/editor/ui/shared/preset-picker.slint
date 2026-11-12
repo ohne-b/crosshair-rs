@@ -1,0 +1,87 @@
+import { ListView } from "std-widgets.slint";
+import { Theme } from "tokens.slint";
+import { Store, PresetRow } from "models.slint";
+import { ActionButton, EditField } from "controls.slint";
+
+export component PresetPicker inherits Rectangle {
+    in property <[PresetRow]> model;
+    in property <string> selected-id;
+    in property <length> viewport-width: min(1280px, Store.work-width * 1px);
+    in property <length> viewport-height: min(800px, Store.work-height * 1px);
+    in property <int> total-count;
+    in property <int> favorite-count;
+    in property <bool> enabled: Store.interactive;
+    callback chosen(string);
+    callback filter-request(string, bool);
+    callback dismissed;
+    property <string> search;
+    property <bool> favorites: false;
+    property <bool> opened: popup.is-open;
+    changed opened => { if !root.opened { root.dismissed(); } }
+    public function show() {
+        if root.enabled { root.search = ""; root.favorites = false; root.filter-request("", false); popup.show(); }
+    }
+    public function close() { popup.close(); }
+    function choose(id: string) { if root.enabled { root.chosen(id); root.close(); } }
+    width: 0px; height: 0px;
+    popup := PopupWindow {
+        x: (root.viewport-width - self.width) / 2 - root.absolute-position.x;
+        y: max(56px, (root.viewport-height - self.height) / 2) - root.absolute-position.y;
+        width: min(760px, root.viewport-width - 32px);
+        height: min(540px, root.viewport-height - 80px);
+        close-policy: close-on-click-outside;
+        forward-focus: keys;
+        Rectangle {
+            background: Theme.panel; border-radius: 12px; border-width: 1px; border-color: Theme.border;
+            keys := FocusScope {
+                focus-on-click: false;
+                key-pressed(event) => { if event.text == Key.Escape { root.close(); return accept; } return reject; }
+                VerticalLayout { spacing: 0px;
+                    HorizontalLayout { padding: 16px; spacing: 12px;
+                        Text { text: "Choose crosshair"; color: Theme.text; font-size: 15px * Theme.text-scale; font-weight: 600; vertical-alignment: center; horizontal-stretch: 1; }
+                        ActionButton { icon: @image-url("../../../../assets/icons/x.svg"); label: "Close crosshair picker"; quiet: true; enabled: root.enabled; clicked => { root.close(); } }
+                    }
+                    Rectangle { height: 1px; background: Theme.border; }
+                    HorizontalLayout { spacing: 0px;
+                        Rectangle { width: 164px;
+                            VerticalLayout { padding: 12px; spacing: 4px; alignment: start;
+                                Rectangle { height: 38px;
+                                    ActionButton { width: parent.width; height: 38px; text: "All"; align-left: true; quiet: true; selected: !root.favorites; enabled: root.enabled; clicked => { root.favorites = false; root.filter-request(root.search, false); } }
+                                    Text { x: parent.width - 36px; width: 24px; text: root.total-count; color: Theme.muted; font-size: 11px * Theme.text-scale; horizontal-alignment: right; vertical-alignment: center; }
+                                }
+                                Rectangle { height: 38px;
+                                    ActionButton { width: parent.width; height: 38px; text: "Favorites"; align-left: true; quiet: true; selected: root.favorites; enabled: root.enabled; clicked => { root.favorites = true; root.filter-request(root.search, true); } }
+                                    Text { x: parent.width - 36px; width: 24px; text: root.favorite-count; color: Theme.muted; font-size: 11px * Theme.text-scale; horizontal-alignment: right; vertical-alignment: center; }
+                                }
+                            }
+                            Rectangle { x: parent.width - 1px; width: 1px; height: parent.height; background: Theme.border; }
+                        }
+                        VerticalLayout { padding: 16px; spacing: 12px;
+                            EditField { text <=> root.search; placeholder: "Search crosshairs"; enabled: root.enabled; edited(value) => { root.filter-request(value, root.favorites); } }
+                            Rectangle {
+                                if root.model.length == 0: Text { text: root.search != "" ? "No crosshairs found" : root.favorites ? "No favorites yet" : "No crosshairs"; color: Theme.muted; font-size: 12px * Theme.text-scale; horizontal-alignment: center; vertical-alignment: center; }
+                                ListView { width: parent.width; height: parent.height;
+                                    for row in ceil(root.model.length / 3): Rectangle { height: 140px;
+                                        for column in min(3, root.model.length - row * 3): card := Rectangle {
+                                            property <PresetRow> preset: root.model[row * 3 + column];
+                                            x: column * parent.width / 3; width: parent.width / 3 - 8px; height: 132px;
+                                            background: card-focus.has-focus || touch.has-hover ? Theme.hover : Theme.field; border-radius: 10px;
+                                            border-width: self.preset.id == root.selected-id ? 1px : 0px; border-color: Theme.orange;
+                                            accessible-role: button; accessible-label: self.preset.name; accessible-enabled: root.enabled;
+                                            accessible-action-default => { root.choose(card.preset.id); }
+                                            forward-focus: card-focus;
+                                            Image { x: (parent.width - self.width) / 2; y: 44px - self.height / 2; width: min(64px, card.preset.thumbnail.width * 1px); height: min(64px, card.preset.thumbnail.height * 1px); source: card.preset.thumbnail; image-fit: contain; image-rendering: pixelated; }
+                                            Text { x: 10px; y: 90px; width: parent.width - 20px; height: 32px; text: card.preset.name; color: Theme.text; font-size: 12px * Theme.text-scale; overflow: elide; horizontal-alignment: center; vertical-alignment: center; }
+                                            card-focus := FocusScope { enabled: root.enabled; key-pressed(event) => { if event.text == Key.Return || event.text == Key.Space { root.choose(card.preset.id); return accept; } return reject; } }
+                                            touch := TouchArea { enabled: root.enabled; clicked => { card-focus.focus(); root.choose(card.preset.id); } }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

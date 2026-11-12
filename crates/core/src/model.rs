@@ -528,6 +528,7 @@ pub struct Profile {
     pub scale: f32,
     pub offset: Point,
     pub positions: Vec<SavedPosition>,
+    #[serde(deserialize_with = "deserialize_bindings")]
     pub bindings: Vec<Binding>,
 }
 
@@ -686,28 +687,15 @@ impl InputChord {
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum BindingAction {
     ToggleVisibility,
-    HideWhileHeld,
-    ShowWhileHeld,
     SelectPreset { preset: Id },
-    TogglePreset { preset: Id },
-    ShowPresetWhileHeld { preset: Id },
 }
 
 impl BindingAction {
     pub fn target(&self) -> Option<Id> {
         match *self {
-            Self::SelectPreset { preset }
-            | Self::TogglePreset { preset }
-            | Self::ShowPresetWhileHeld { preset } => Some(preset),
-            _ => None,
+            Self::SelectPreset { preset } => Some(preset),
+            Self::ToggleVisibility => None,
         }
-    }
-
-    pub fn is_hold(&self) -> bool {
-        matches!(
-            self,
-            Self::HideWhileHeld | Self::ShowWhileHeld | Self::ShowPresetWhileHeld { .. }
-        )
     }
 }
 
@@ -715,6 +703,8 @@ impl BindingAction {
 #[serde(deny_unknown_fields)]
 pub struct Binding {
     pub id: Id,
+    #[serde(default)]
+    pub name: String,
     pub enabled: bool,
     pub chord: InputChord,
     pub action: BindingAction,
@@ -724,9 +714,134 @@ impl Binding {
     pub fn new(chord: InputChord, action: BindingAction) -> Self {
         Self {
             id: Id::new_v4(),
+            name: String::new(),
             enabled: true,
             chord,
             action,
         }
+    }
+}
+
+fn deserialize_bindings<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Vec<Binding>, D::Error> {
+    #[derive(Deserialize)]
+    #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
+    enum StoredAction {
+        ToggleVisibility {},
+        SelectPreset { preset: Id },
+        HideWhileHeld {},
+        ShowWhileHeld {},
+        TogglePreset { preset: Id },
+        ShowPresetWhileHeld { preset: Id },
+    }
+    #[derive(Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct StoredBinding {
+        id: Id,
+        #[serde(default)]
+        name: String,
+        enabled: bool,
+        chord: InputChord,
+        action: StoredAction,
+    }
+    let bindings = Vec::<StoredBinding>::deserialize(deserializer)?;
+    Ok(bindings
+        .into_iter()
+        .filter_map(|binding| {
+            let action = match binding.action {
+                StoredAction::ToggleVisibility {} => BindingAction::ToggleVisibility,
+                StoredAction::SelectPreset { preset } => BindingAction::SelectPreset { preset },
+                StoredAction::HideWhileHeld {} | StoredAction::ShowWhileHeld {} => return None,
+                StoredAction::TogglePreset { preset }
+                | StoredAction::ShowPresetWhileHeld { preset } => {
+                    let _ = preset;
+                    return None;
+                }
+            };
+            Some(Binding {
+                id: binding.id,
+                name: binding.name,
+                enabled: binding.enabled,
+                chord: binding.chord,
+                action,
+            })
+        })
+        .collect())
+}
+
+#[cfg(test)]
+mod binding_tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn legacy_actions_are_removed_without_resetting_profile_or_shortcuts() {
+        let mut state = AppState::default();
+        let mut binding = Binding::new(
+            InputChord::key(0x12),
+            BindingAction::SelectPreset {
+                preset: state.presets[1].id,
+            },
+        );
+        binding.name = "My shortcut".into();
+        state.profiles[0].bindings.push(binding);
+        let mut stored = serde_json::to_value(&state).unwrap();
+        let bindings = stored["profiles"][0]["bindings"].as_array_mut().unwrap();
+        let mut old_shortcut = bindings[0].clone();
+        old_shortcut.as_object_mut().unwrap().remove("name");
+        old_shortcut["id"] = json!(Id::new_v4());
+        bindings.push(old_shortcut);
+        for action in [
+            json!({"type":"hide_while_held"}),
+            json!({"type":"show_while_held"}),
+            json!({"type":"toggle_preset","preset":state.presets[0].id}),
+            json!({"type":"show_preset_while_held","preset":state.presets[0].id}),
+        ] {
+            let mut retired = bindings[0].clone();
+            retired["id"] = json!(Id::new_v4());
+            retired["action"] = action;
+            bindings.push(retired);
+        }
+        let restored: AppState = serde_json::from_value(stored).unwrap();
+        assert_eq!(restored.presets, state.presets);
+        assert_eq!(restored.active_profile, state.active_profile);
+        assert_eq!(restored.profiles[0].id, state.profiles[0].id);
+        assert_eq!(
+            restored.profiles[0].selected_preset,
+            state.profiles[0].selected_preset
+        );
+        assert_eq!(restored.profiles[0].bindings.len(), 2);
+        assert_eq!(
+            restored.profiles[0].bindings[0],
+            state.profiles[0].bindings[0]
+        );
+        assert_eq!(restored.profiles[0].bindings[1].name, "");
+    }
+
+    #[test]
+    fn unknown_and_malformed_retired_actions_still_fail() {
+        let mut profile = Profile::new("Synthetic", Id::new_v4());
+        profile.bindings.push(Binding::new(
+            InputChord::key(0x12),
+            BindingAction::ToggleVisibility,
+        ));
+        let original = serde_json::to_value(profile).unwrap();
+        for action in [
+            json!({"type":"future_action"}),
+            json!({"type":"toggle_preset"}),
+            json!({"type":"show_preset_while_held","preset":"invalid"}),
+            json!({"type":"hide_while_held","extra":true}),
+        ] {
+            let mut stored = original.clone();
+            stored["bindings"][0]["action"] = action;
+            assert!(
+                serde_json::from_value::<Profile>(stored.clone()).is_err(),
+                "accepted {stored}"
+            );
+        }
+        assert!(
+            serde_json::from_value::<BindingAction>(json!({"type":"hide_while_held"})).is_err()
+        );
     }
 }

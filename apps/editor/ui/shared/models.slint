@@ -1,15 +1,23 @@
 export struct PresetRow { id: string, name: string, thumbnail: image, selected: bool, favorite: bool }
 export struct PresetGroup { items: [PresetRow] }
 export struct LayerRow { id: string, name: string, kind: string, selected: bool, shown: bool, locked: bool }
-export struct FieldRow { selection: string, key: string, label: string, value: string, kind: int, minimum: float, maximum: float, numeric: float, checked: bool, choices: [string], selected: int, swatch: color }
+export struct FieldRow { selection: string, key: string, label: string, value: string, kind: int, minimum: float, maximum: float, step: float, numeric: float, checked: bool, choices: [string], selected: int, swatch: color }
 export struct FieldGroup { first: FieldRow, second: FieldRow, paired: bool }
-export struct BindingRow { id: string, action: string, target: string, target-index: int, chord: string, enabled: bool, shortcut: bool, global: bool }
+export struct BindingRow { id: string, name: string, action: string, target: string, target-index: int, chord: string, enabled: bool, shortcut: bool, global: bool }
 export struct BoundsRow { id: string, x: float, y: float, width: float, height: float, selected: bool }
 
 export global Store {
     in-out property <float> work-width: 1280;
     in-out property <float> work-height: 800;
     in-out property <bool> wide: true;
+    in-out property <bool> window-maximized: false;
+    in-out property <int> caption-hover: -1;
+    in-out property <[PresetRow]> selector-presets;
+    in-out property <[PresetRow]> layer-presets;
+    in-out property <string> selector-search;
+    in-out property <bool> selector-favorites: false;
+    in-out property <int> selector-total: 0;
+    in-out property <int> selector-favorite-count: 0;
     in-out property <int> page: 0;
     in-out property <bool> connected: false;
     in-out property <bool> read-only: false;
@@ -56,6 +64,7 @@ export global Store {
     in-out property <bool> drawing: false;
     in-out property <float> brush-size: 2;
     in-out property <string> brush-color: "#F97316FF";
+    in-out property <color> brush-swatch: #F97316;
     in-out property <[BindingRow]> bindings;
     in-out property <string> capture-id;
     in-out property <int> action-type: 0;
@@ -94,7 +103,9 @@ export global Store {
     in-out property <float> menu-y: 0;
     in-out property <int> modal-index: 0;
     callback action(string, string);
+    pure callback format-number(float) -> string;
     callback property-edit(string, string, string, int);
+    callback property-color(string, string, color, int);
     callback select-layer(string, bool);
     callback canvas-event(int, float, float, int, bool);
     callback capture-region(float, float, float, float);

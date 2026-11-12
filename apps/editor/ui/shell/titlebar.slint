@@ -10,8 +10,8 @@ component VisibilitySwitch inherits Rectangle {
     forward-focus: keys;
     Rectangle {
         x: Store.visible ? 33px : 5px; y: 5px; width: 24px; height: 24px; border-radius: 12px;
-        background: Store.visible ? Theme.on-accent : Theme.muted;
-        Image { x: 4px; y: 4px; width: 16px; height: 16px; source: @image-url("../../../../assets/icons/eye.svg"); colorize: Store.visible ? Theme.orange : Theme.field; }
+        background: Store.visible ? Theme.on-accent : Theme.raised;
+        Image { x: 4px; y: 4px; width: 16px; height: 16px; source: Store.visible ? @image-url("../../../../assets/icons/eye.svg") : @image-url("../../../../assets/icons/power.svg"); colorize: Store.visible ? Theme.orange : Theme.muted; }
     }
     keys := FocusScope { enabled: Store.interactive; key-pressed(event) => { if event.text == Key.Space || event.text == Key.Return { Store.action("toggle-visible", ""); return accept; } return reject; } }
     touch := TouchArea { enabled: Store.interactive; clicked => { keys.focus(); Store.action("toggle-visible", ""); } }
@@ -28,14 +28,38 @@ component VisibilitySwitch inherits Rectangle {
     } }
 }
 
+component CaptionButton inherits Rectangle {
+    in property <string> action;
+    in property <string> label;
+    in property <int> kind;
+    width: 46px; height: 48px;
+    background: keys.has-focus || touch.has-hover || Store.caption-hover == root.kind ? (root.kind == 2 ? #C42B1C : Theme.hover) : transparent;
+    accessible-role: button; accessible-label: root.label;
+    accessible-action-default => { Store.action(root.action, ""); }
+    forward-focus: keys;
+    if root.kind == 0: Rectangle { x: 18px; y: 24px; width: 10px; height: 1px; background: Theme.text; }
+    if root.kind == 1: Rectangle {
+        x: 18px; y: 19px; width: 10px; height: 10px;
+        if Store.window-maximized: Rectangle { x: 2px; y: -2px; width: 10px; height: 10px; border-width: 1px; border-color: Theme.text; }
+        Rectangle { width: 10px; height: 10px; background: Theme.panel; border-width: 1px; border-color: Theme.text; }
+    }
+    if root.kind == 2: Image { x: 15px; y: 16px; width: 16px; height: 16px; source: @image-url("../../../../assets/icons/x.svg"); colorize: Theme.text; }
+    keys := FocusScope { key-pressed(event) => { if event.text == Key.Return || event.text == Key.Space { Store.action(root.action, ""); return accept; } return reject; } }
+    touch := TouchArea { clicked => { Store.action(root.action, ""); } }
+}
+
 export component TitleBar inherits Rectangle {
-    height: 48px; background: transparent;
-    Rectangle { x: 0px; width: parent.width - 154px; height: parent.height; background: Theme.panel; }
+    height: 48px; background: Theme.panel;
+    HorizontalLayout { x: parent.width - 138px; width: 138px; height: 48px; spacing: 0px;
+        CaptionButton { action: "window-minimize"; label: "Minimize"; kind: 0; }
+        CaptionButton { action: "window-maximize"; label: Store.window-maximized ? "Restore" : "Maximize"; kind: 1; }
+        CaptionButton { action: "window-close"; label: "Close"; kind: 2; }
+    }
     Image { x: 13px; y: 9px; source: @image-url("../../../../assets/logo.svg"); width: 30px; height: 30px; }
-    // Leave the rightmost 154px to Windows' native caption buttons.
+    // Caption hit testing and system actions remain in the native frame adapter.
     Rectangle { x: parent.width - 440px; width: 286px; height: 48px;
         DropDown { x: 0px; y: 8px; width: 152px; model: Store.profiles; current-index: Store.profile-index; accessible-label: "Active profile"; selected(value) => { Store.action("select-profile", self.current-index); } }
-        Rectangle { x: 164px; y: 8px; width: 32px; height: 32px; border-radius: 8px; background: Theme.field;
+        Rectangle { x: 164px; y: 8px; width: 32px; height: 32px; border-radius: 8px; background: Theme.preview; border-width: 1px; border-color: Store.visible ? Theme.orange : Theme.border;
             Image { x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2; width: min(24px, self.source.width * 1px); height: min(24px, self.source.height * 1px); source: Store.active-thumbnail; image-fit: contain; }
             accessible-role: image; accessible-label: Store.active-name;
         }

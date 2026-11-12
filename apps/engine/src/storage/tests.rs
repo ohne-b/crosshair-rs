@@ -160,7 +160,7 @@ fn all_data_round_trip_remaps_every_reference_and_backup_is_self_contained() -> 
             trigger: InputKey::Mouse { button: 4 },
             modifiers: Vec::new(),
         },
-        BindingAction::ShowPresetWhileHeld { preset: old_preset },
+        BindingAction::SelectPreset { preset: old_preset },
     ));
     state.profiles[0].positions.push(SavedPosition {
         id: Id::new_v4(),
@@ -340,6 +340,7 @@ fn staged_document_rejects_wrong_target_or_revision_without_replacing_state() ->
     let stage = store.stage_begin(
         owner,
         StagingPurpose::Document {
+            preview: false,
             preset: state.presets[0].id,
             expected_revision: 1,
         },
@@ -353,6 +354,7 @@ fn staged_document_rejects_wrong_target_or_revision_without_replacing_state() ->
     let stage = store.stage_begin(
         owner,
         StagingPurpose::Document {
+            preview: false,
             preset: state.presets[0].id,
             expected_revision: 0,
         },
@@ -444,7 +446,11 @@ fn exporting_unsent_draft_never_mutates_authoritative_state() -> Result<()> {
             owner,
             StagingPurpose::ExportDraft {
                 destination: destination.to_string_lossy().into_owned(),
-                png,
+                format: if png {
+                    crosshair_core::protocol::DraftFormat::Png
+                } else {
+                    crosshair_core::protocol::DraftFormat::Preset
+                },
             },
         )?;
         fs::write(&stage.path, serde_json::to_vec(&draft)?)?;

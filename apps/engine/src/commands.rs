@@ -165,11 +165,7 @@ impl App {
                     }
                     for binding in &mut profile.bindings {
                         match &mut binding.action {
-                            BindingAction::SelectPreset { preset: target }
-                            | BindingAction::TogglePreset { preset: target }
-                            | BindingAction::ShowPresetWhileHeld { preset: target }
-                                if *target == preset =>
-                            {
+                            BindingAction::SelectPreset { preset: target } if *target == preset => {
                                 *target = replacement
                             }
                             _ => {}

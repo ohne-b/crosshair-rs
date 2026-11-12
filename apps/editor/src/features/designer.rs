@@ -41,14 +41,19 @@ impl Field {
         }
     }
     fn number(key: &str, label: &str, value: f32, min: f32, max: f32) -> Self {
+        let integer = !matches!(key, "/transform/scale" | "/opacity")
+            && !key.contains("/crop/")
+            && !key.ends_with("/rotation")
+            && !key.ends_with("/start_angle")
+            && !key.ends_with("/sweep");
         Self {
             key: key.into(),
             label: label.into(),
             value: format_number(value),
             kind: FieldKind::Number {
-                min,
+                min: if integer { min.ceil() } else { min },
                 max,
-                integer: false,
+                integer,
             },
         }
     }
@@ -178,27 +183,7 @@ pub fn fields(layer: &Layer, fonts: &[String], common_only: bool) -> Vec<Field> 
             ),
         ]);
     }
-    let mut colors = Vec::with_capacity(rows.len());
-    for field in rows {
-        let opacity = if matches!(field.kind, FieldKind::Color) {
-            Color::from_hex(&field.value).map(|color| {
-                Field::number(
-                    &format!("@opacity:{}", field.key),
-                    "Opacity %",
-                    color.a as f32 * 100.0 / 255.0,
-                    0.0,
-                    100.0,
-                )
-            })
-        } else {
-            None
-        };
-        colors.push(field);
-        if let Some(opacity) = opacity {
-            colors.push(opacity);
-        }
-    }
-    colors
+    rows
 }
 
 fn content_fields(content: &Content, fonts: &[String], rows: &mut Vec<Field>) {
@@ -525,6 +510,10 @@ pub struct Document {
     pub gesture: Option<Preset>,
     gesture_dirty: bool,
     pub clipboard: Vec<Layer>,
+    pub saved: Option<Preset>,
+    undo: Vec<(Preset, usize)>,
+    redo: Vec<(Preset, usize)>,
+    history_bytes: usize,
 }
 
 impl Document {
@@ -541,7 +530,12 @@ impl Document {
         if let Some(layer) = preset.layers.last() {
             self.selected.insert(layer.id);
         }
+        self.saved = Some(preset.clone());
         self.draft = Some(preset);
+        self.undo.clear();
+        self.redo.clear();
+        self.history_bytes = 0;
+        self.gesture = None;
         self.save_paused = false;
         self.conflict = false;
         Ok(())
@@ -552,11 +546,15 @@ impl Document {
             && self.gesture.is_none()
         {
             *draft = preset.clone();
+            self.saved = Some(preset.clone());
             self.selected
                 .retain(|id| preset.layers.iter().any(|layer| layer.id == *id));
         }
     }
     pub fn acknowledge(&mut self, sent: &Preset, revision: u64) {
+        let mut saved = sent.clone();
+        saved.revision = revision;
+        self.saved = Some(saved);
         if let Some(draft) = self.draft.as_mut().filter(|draft| draft.id == sent.id) {
             self.dirty = draft.layers != sent.layers || draft.name != sent.name;
             draft.revision = revision;
@@ -568,6 +566,77 @@ impl Document {
             self.gesture = self.draft.clone();
             self.gesture_dirty = self.dirty;
         }
+    }
+    pub fn finish_gesture(&mut self) {
+        if let Some(before) = self.gesture.take()
+            && self
+                .draft
+                .as_ref()
+                .is_some_and(|draft| !same_design(draft, &before))
+        {
+            let bytes = serde_json::to_vec(&before).map_or(MAX_CONFIG_BYTES, |data| data.len());
+            self.history_bytes += bytes;
+            self.history_bytes = self
+                .history_bytes
+                .saturating_sub(self.redo.iter().map(|(_, bytes)| bytes).sum());
+            self.undo.push((before, bytes));
+            self.redo.clear();
+            while self.undo.len() > 1
+                && (self.undo.len() > 100 || self.history_bytes > 32 * 1024 * 1024)
+            {
+                let (_, bytes) = self.undo.remove(0);
+                self.history_bytes = self.history_bytes.saturating_sub(bytes);
+            }
+        }
+        self.update_dirty();
+    }
+    pub fn update_dirty(&mut self) {
+        self.dirty = match (&self.draft, &self.saved) {
+            (Some(draft), Some(saved)) => !same_design(draft, saved),
+            (Some(_), None) => true,
+            _ => false,
+        };
+    }
+    pub fn can_undo(&self) -> bool {
+        !self.undo.is_empty()
+    }
+    pub fn can_redo(&self) -> bool {
+        !self.redo.is_empty()
+    }
+    pub fn undo(&mut self, redo: bool) {
+        self.finish_gesture();
+        let (from, to) = if redo {
+            (&mut self.redo, &mut self.undo)
+        } else {
+            (&mut self.undo, &mut self.redo)
+        };
+        if let Some((mut previous, bytes)) = from.pop() {
+            self.history_bytes = self.history_bytes.saturating_sub(bytes);
+            if let Some(current) = self.draft.take() {
+                previous.revision = current.revision;
+                previous.favorite = current.favorite;
+                previous.modified_order = current.modified_order;
+                let bytes =
+                    serde_json::to_vec(&current).map_or(MAX_CONFIG_BYTES, |data| data.len());
+                self.history_bytes += bytes;
+                to.push((current, bytes));
+            }
+            self.selected
+                .retain(|id| previous.layers.iter().any(|layer| layer.id == *id));
+            self.draft = Some(previous);
+            self.update_dirty();
+        }
+    }
+    pub fn asset_ids(&self) -> BTreeSet<Id> {
+        self.draft
+            .iter()
+            .chain(self.undo.iter().map(|(preset, _)| preset))
+            .chain(self.redo.iter().map(|(preset, _)| preset))
+            .chain(self.gesture.iter())
+            .flat_map(|preset| &preset.layers)
+            .chain(self.clipboard.iter())
+            .filter_map(|layer| layer.content.asset_id())
+            .collect()
     }
     pub fn cancel_gesture(&mut self, state: &AppState) {
         if let Some(before) = self.gesture.take() {
@@ -666,7 +735,7 @@ pub fn apply_field(layer: &mut Layer, key: &str, input: &str, fonts: &[String]) 
             );
             if integer {
                 ensure!(number.fract() == 0.0, "Enter a whole number");
-                json!(number as u32)
+                json!(number as i32)
             } else {
                 json!(number)
             }
@@ -800,8 +869,8 @@ pub fn nudge(preset: &mut Preset, selected: &BTreeSet<Id>, x: f32, y: f32) {
         .iter_mut()
         .filter(|layer| selected.contains(&layer.id) && !layer.locked)
     {
-        layer.transform.x += x;
-        layer.transform.y += y;
+        layer.transform.x = (layer.transform.x + x).round();
+        layer.transform.y = (layer.transform.y + y).round();
     }
 }
 
@@ -824,8 +893,8 @@ pub fn transform_around(
             .context("Wait for the layer preview before transforming it")?;
         let x = layer.transform.x + pivot.x - center.x;
         let y = layer.transform.y + pivot.y - center.y;
-        layer.transform.x = center.x + scale * (x * cos - y * sin) - pivot.x;
-        layer.transform.y = center.y + scale * (x * sin + y * cos) - pivot.y;
+        layer.transform.x = (center.x + scale * (x * cos - y * sin) - pivot.x).round();
+        layer.transform.y = (center.y + scale * (x * sin + y * cos) - pivot.y).round();
         layer.transform.scale *= scale;
         layer.transform.rotation =
             (layer.transform.rotation + rotation + 360.0).rem_euclid(720.0) - 360.0;
@@ -858,6 +927,80 @@ pub fn parse_clipboard(text: &str, assets: &BTreeMap<Id, Asset>) -> Result<Vec<L
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn numbers_hide_float_noise_without_trailing_zeroes() {
+        assert_eq!(format_number(0.78999996), "0.79");
+        assert_eq!(format_number(28.0), "28");
+        assert_eq!(format_number(-1.25), "-1.25");
+    }
+
+    #[test]
+    fn manual_edits_keep_saved_design_and_undo_preserves_save_revision() {
+        let original = Preset::new("Manual");
+        let mut document = Document::default();
+        document.open(original.clone()).unwrap();
+        for x in [5.0, 12.0] {
+            document.begin_gesture();
+            document.draft.as_mut().unwrap().layers[0].transform.x = x;
+            document.finish_gesture();
+        }
+        assert_eq!(document.saved.as_ref(), Some(&original));
+        assert!(document.dirty);
+        document.undo(false);
+        assert_eq!(document.draft.as_ref().unwrap().layers[0].transform.x, 5.0);
+        document.undo(true);
+        let saved = document.draft.clone().unwrap();
+        document.acknowledge(&saved, 7);
+        assert!(!document.dirty);
+        document.undo(false);
+        assert!(document.dirty);
+        assert_eq!(document.draft.as_ref().unwrap().revision, 7);
+        document.undo(true);
+        assert!(!document.dirty);
+        assert_eq!(document.draft.as_ref().unwrap().revision, 7);
+    }
+
+    #[test]
+    fn local_history_is_bounded_and_new_edit_discards_redo() {
+        let mut document = Document::default();
+        document.open(Preset::new("History")).unwrap();
+        for x in 1..=105 {
+            document.begin_gesture();
+            document.draft.as_mut().unwrap().layers[0].transform.x = x as f32;
+            document.finish_gesture();
+        }
+        assert_eq!(document.undo.len(), 100);
+        assert_eq!(
+            document.history_bytes,
+            document.undo.iter().map(|(_, bytes)| bytes).sum::<usize>()
+        );
+        document.undo(false);
+        assert!(document.can_redo());
+        document.begin_gesture();
+        document.draft.as_mut().unwrap().name = "Changed".into();
+        document.finish_gesture();
+        assert!(!document.can_redo());
+        assert_eq!(
+            document.history_bytes,
+            document.undo.iter().map(|(_, bytes)| bytes).sum::<usize>()
+        );
+    }
+
+    #[test]
+    fn pixel_fields_reject_fractions_and_allow_negative_integer_positions() {
+        let mut layer = Preset::new("Pixels").layers.remove(0);
+        apply_field(&mut layer, "/transform/x", "-7", &[]).unwrap();
+        assert_eq!(layer.transform.x, -7.0);
+        assert!(apply_field(&mut layer, "/transform/x", "-7.5", &[]).is_err());
+        apply_field(&mut layer, "/transform/scale", "0.25", &[]).unwrap();
+        let fields = fields(&layer, &[], false);
+        assert!(
+            !fields
+                .iter()
+                .any(|field| field.key.starts_with("@opacity:"))
+        );
+    }
     #[test]
     fn switching_active_preset_cannot_retarget_dirty_draft() {
         let state = AppState::default();
@@ -984,6 +1127,20 @@ mod tests {
         };
         assert_eq!(image.height, 30.0);
         assert_eq!(image.crop, Crop::default());
+    }
+    #[test]
+    fn normalized_crop_remains_fractional() {
+        let mut layer = Layer::new(
+            "Image",
+            Content::Image(Image::new(Id::new_v4(), 20.0, 10.0)),
+        );
+        apply_field(&mut layer, "/content/properties/crop/width", "0.5", &[]).unwrap();
+        apply_field(&mut layer, "/content/properties/crop/x", "0.25", &[]).unwrap();
+        let Content::Image(image) = layer.content else {
+            panic!()
+        };
+        assert_eq!(image.crop.width, 0.5);
+        assert_eq!(image.crop.x, 0.25);
     }
     #[test]
     fn every_static_inspector_field_round_trips_through_the_shared_schema() {

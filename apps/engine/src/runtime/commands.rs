@@ -11,6 +11,7 @@ pub(super) enum SaveNext {
 pub(super) enum After {
     Reply,
     Replace { expected_revision: u64 },
+    Preview { expected_revision: u64 },
     State,
     Staged,
     Save(SaveNext),
@@ -28,6 +29,7 @@ pub(super) struct Pending {
     pub after: After,
     pub document: Option<Id>,
     pub structure: bool,
+    pub preview_generation: u64,
 }
 
 impl Pending {
@@ -39,6 +41,7 @@ impl Pending {
             after,
             document: None,
             structure: false,
+            preview_generation: 0,
         }
     }
     pub fn changes_configuration(&self) -> bool {
@@ -77,6 +80,12 @@ impl Runtime {
             return;
         }
         let revision = self.app.state.revision;
+        if matches!(
+            request.command,
+            Command::PreviewPreset { .. } | Command::ClearPreview | Command::CommitStaging { .. }
+        ) {
+            self.preview_generation = self.preview_generation.wrapping_add(1);
+        }
         let document = match &request.command {
             Command::ReplacePreset { preset, .. } => Some(preset.id),
             _ => None,
@@ -95,6 +104,7 @@ impl Runtime {
             after: After::Reply,
             document,
             structure,
+            preview_generation: self.preview_generation,
         };
         match self.dispatch(owner, request.command, pending) {
             Ok(Some(reply)) => self.respond(owner, request.id, Ok(reply)),
@@ -155,6 +165,50 @@ impl Runtime {
             );
         }
         match command {
+            Command::ClearPreview => {
+                if self
+                    .preview
+                    .as_ref()
+                    .is_some_and(|preview| preview.owner == owner)
+                {
+                    self.preview = None;
+                }
+                return Ok(Some(Reply::Ack {
+                    document_revision: None,
+                }));
+            }
+            Command::PreviewPreset {
+                preset,
+                expected_revision,
+            } => {
+                ensure!(
+                    self.app
+                        .clients
+                        .get(&owner)
+                        .is_some_and(|client| client.subscribed),
+                    "Subscribe before previewing a design"
+                );
+                if self
+                    .app
+                    .state
+                    .preset(preset.id)
+                    .ok_or(HistoryError::Missing)?
+                    .revision
+                    != expected_revision
+                {
+                    return Err(HistoryError::Conflict.into());
+                }
+                pending.after = After::Preview { expected_revision };
+                pending.structure = false;
+                self.queue(
+                    Job::ValidatePreset {
+                        state: Box::new(self.app.state.clone()),
+                        preset: Box::new(preset),
+                    },
+                    pending,
+                )?;
+                return Ok(None);
+            }
             Command::Subscribe => {
                 if self
                     .app

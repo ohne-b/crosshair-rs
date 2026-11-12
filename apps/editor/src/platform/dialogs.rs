@@ -25,45 +25,7 @@ pub enum FileKind {
     Document,
     Image,
     Png,
-}
-
-pub fn choose_color(
-    owner: HWND,
-    current: crosshair_core::Color,
-) -> Result<Option<crosshair_core::Color>> {
-    use windows::Win32::{
-        Foundation::COLORREF,
-        UI::Controls::Dialogs::{
-            CC_FULLOPEN, CC_RGBINIT, CHOOSECOLORW, ChooseColorW, CommDlgExtendedError,
-        },
-    };
-    let mut custom = [COLORREF(0); 16];
-    let mut dialog = CHOOSECOLORW {
-        lStructSize: std::mem::size_of::<CHOOSECOLORW>() as u32,
-        hwndOwner: owner,
-        rgbResult: COLORREF(
-            current.r as u32 | ((current.g as u32) << 8) | ((current.b as u32) << 16),
-        ),
-        lpCustColors: custom.as_mut_ptr(),
-        Flags: CC_FULLOPEN | CC_RGBINIT,
-        ..Default::default()
-    };
-    unsafe {
-        if ChooseColorW(&mut dialog).as_bool() {
-            let rgb = dialog.rgbResult.0;
-            return Ok(Some(crosshair_core::Color::rgba(
-                rgb as u8,
-                (rgb >> 8) as u8,
-                (rgb >> 16) as u8,
-                current.a,
-            )));
-        }
-        ensure!(
-            CommDlgExtendedError().0 == 0,
-            "Windows could not open the color picker"
-        );
-    }
-    Ok(None)
+    Svg,
 }
 
 pub fn choose(owner: HWND, save: bool, kind: FileKind, suggested: &str) -> Result<Option<PathBuf>> {
@@ -71,6 +33,7 @@ pub fn choose(owner: HWND, save: bool, kind: FileKind, suggested: &str) -> Resul
         FileKind::Document => ("crosshair-rs files", "*.json;*.crosshair", "json"),
         FileKind::Image => ("Images", "*.png;*.jpg;*.jpeg;*.gif;*.svg", "png"),
         FileKind::Png => ("PNG image", "*.png", "png"),
+        FileKind::Svg => ("SVG image", "*.svg", "svg"),
     };
     let description = wide(description);
     let filter = wide(filter);

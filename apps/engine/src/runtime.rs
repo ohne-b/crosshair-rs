@@ -142,6 +142,14 @@ struct Runtime {
     change: Option<output::Change>,
     widget_status: widget::Status,
     widget_clear_required: Option<u64>,
+    preview: Option<LivePreview>,
+    preview_generation: u64,
+}
+
+struct LivePreview {
+    owner: Id,
+    key: render::Key,
+    raster: Arc<crosshair_renderer::Raster>,
 }
 
 pub fn run(options: Options) -> Result<()> {
@@ -291,6 +299,8 @@ pub fn run(options: Options) -> Result<()> {
         change: None,
         widget_status: widget::Status::default(),
         widget_clear_required: None,
+        preview: None,
+        preview_generation: 0,
     };
     if recovery.as_ref().is_some_and(|r| r.restart.reopen_editor) {
         runtime.open_editor()?;
@@ -461,6 +471,14 @@ impl Runtime {
                 );
             }
             Event::Ipc(ipc::Event::Disconnected(id)) => {
+                if self
+                    .preview
+                    .as_ref()
+                    .is_some_and(|preview| preview.owner == id)
+                {
+                    self.preview = None;
+                    self.preview_generation = self.preview_generation.wrapping_add(1);
+                }
                 self.app.disconnect(id);
                 self.change_owner_disconnected(id);
                 let _ = self.queue(
@@ -541,7 +559,12 @@ impl Runtime {
             );
         } else if !self.previous_output_hidden() {
             if let Some((key, center)) = self.app.presentation() {
-                if let Some(raster) = self.cache.get(key) {
+                let preview = self
+                    .preview
+                    .as_ref()
+                    .filter(|preview| preview.key == key)
+                    .map(|preview| preview.raster.clone());
+                if let Some(raster) = preview.or_else(|| self.cache.get(key)) {
                     let origin = [center[0] + raster.origin[0], center[1] + raster.origin[1]];
                     if self.app.state.settings.output_mode == OutputMode::GameBar {
                         self.overlay.hide();

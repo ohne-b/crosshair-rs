@@ -96,12 +96,34 @@ impl App {
                     if self.document.conflict {
                         self.action("retry-edit", "")?;
                     } else {
-                        self.document.save_paused = false;
-                        self.begin_edit()?;
-                        self.finish_group = true;
-                        self.send_document()?;
-                        self.finish_edit()?;
+                        self.save_document()?;
                     }
+                }
+            }
+            Modal::OpenDocument(id) => {
+                if alternate {
+                    self.document.dirty = false;
+                    self.document.conflict = false;
+                    self.document.gesture = None;
+                    self.drag = None;
+                    self.draw_base = None;
+                    self.open_document(id)?;
+                } else {
+                    self.open_after_save = Some(id);
+                    self.save_document()?;
+                }
+            }
+            Modal::Install => {
+                if alternate {
+                    self.document.draft = self.document.saved.clone();
+                    self.document.dirty = false;
+                    self.document.gesture = None;
+                    self.drag = None;
+                    self.draw_base = None;
+                    self.send("clear-preview", Command::ClearPreview)?;
+                    self.send("install-flush", Command::Flush)?;
+                } else {
+                    self.save_document()?;
                 }
             }
             Modal::Conflict(target, chord, conflict) => {
@@ -113,7 +135,7 @@ impl App {
                     if self.shutdown_requested.take().is_some() {
                         self.send("cancel-quit", Command::CancelQuit)?;
                     }
-                    self.export_draft(false)?;
+                    self.export_draft(DraftFormat::Preset)?;
                 } else {
                     if self.group_open {
                         self.cancel_group = true;
@@ -137,7 +159,7 @@ impl App {
             preview::RecoveryAction::Reapply,
         )
     }
-    pub(super) fn export_draft(&self, png: bool) -> Result<()> {
+    pub(super) fn export_draft(&self, format: DraftFormat) -> Result<()> {
         let document = self
             .document
             .draft
@@ -146,22 +168,22 @@ impl App {
         if let Some(path) = dialogs::choose(
             self.hwnd()?,
             true,
-            if png {
-                dialogs::FileKind::Png
-            } else {
-                dialogs::FileKind::Document
+            match format {
+                DraftFormat::Png => dialogs::FileKind::Png,
+                DraftFormat::Svg => dialogs::FileKind::Svg,
+                DraftFormat::Preset => dialogs::FileKind::Document,
             },
-            if png {
-                "crosshair.png"
-            } else {
-                "crosshair-rs.json"
+            match format {
+                DraftFormat::Png => "crosshair.png",
+                DraftFormat::Svg => "crosshair.svg",
+                DraftFormat::Preset => "crosshair-rs.json",
             },
         )? {
             self.preview.recover(
                 document,
                 preview::RecoveryAction::Export {
                     destination: path,
-                    png,
+                    format,
                 },
             )?;
         }

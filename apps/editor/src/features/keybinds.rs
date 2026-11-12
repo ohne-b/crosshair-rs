@@ -3,22 +3,15 @@ use crosshair_core::{Binding, BindingAction, Id, InputChord, InputKey, Modifier}
 pub fn action_name(action: &BindingAction) -> &'static str {
     match action {
         BindingAction::ToggleVisibility => "Toggle visibility",
-        BindingAction::HideWhileHeld => "Hide while held",
-        BindingAction::ShowWhileHeld => "Show while held",
         BindingAction::SelectPreset { .. } => "Select crosshair",
-        BindingAction::TogglePreset { .. } => "Toggle crosshair",
-        BindingAction::ShowPresetWhileHeld { .. } => "Show crosshair while held",
     }
 }
 
 pub fn action(index: i32, preset: Id) -> BindingAction {
-    match index {
-        1 => BindingAction::HideWhileHeld,
-        2 => BindingAction::ShowWhileHeld,
-        3 => BindingAction::TogglePreset { preset },
-        4 => BindingAction::ShowPresetWhileHeld { preset },
-        5 => BindingAction::SelectPreset { preset },
-        _ => BindingAction::ToggleVisibility,
+    if index == 5 {
+        BindingAction::SelectPreset { preset }
+    } else {
+        BindingAction::ToggleVisibility
     }
 }
 

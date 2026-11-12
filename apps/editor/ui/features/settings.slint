@@ -21,6 +21,18 @@ component Group inherits Rectangle {
     rows := VerticalLayout { padding-left: 16px; padding-right: 16px; spacing: 0px; @children }
 }
 
+component ReleaseNotesLink inherits Rectangle {
+    height: 32px; width: label.preferred-width; horizontal-stretch: 0;
+    accessible-role: button; accessible-label: "Release notes"; accessible-enabled: Store.interactive;
+    accessible-action-default => { if Store.interactive { Store.action("release-notes", ""); } }
+    forward-focus: keys;
+    border-radius: Theme.radius; background: keys.has-focus || touch.has-hover ? Theme.hover : transparent;
+    label := Text { text: "Release notes"; color: Theme.muted; font-size: 12px * Theme.text-scale; vertical-alignment: center; }
+    Rectangle { y: (parent.height + label.preferred-height) / 2 - 1px; height: 1px; width: parent.width; background: Theme.muted; }
+    keys := FocusScope { enabled: Store.interactive; key-pressed(event) => { if event.text == Key.Return || event.text == Key.Space { Store.action("release-notes", ""); return accept; } return reject; } }
+    touch := TouchArea { enabled: Store.interactive; mouse-cursor: pointer; clicked => { keys.focus(); Store.action("release-notes", ""); } }
+}
+
 export component Settings inherits Rectangle {
     property <int> category: 0;
     background: Theme.canvas; border-top-left-radius: 12px;
@@ -115,10 +127,10 @@ export component Settings inherits Rectangle {
                         Rectangle { height: update-content.preferred-height; vertical-stretch: 0;
                             update-content := VerticalLayout { padding: 16px; spacing: 12px;
                                 HorizontalLayout { spacing: 8px;
-                                    Rectangle { width: version-label.preferred-width + 16px; height: max(26px, 12px * Theme.text-scale + 12px); border-radius: 6px; background: Theme.orange.with-alpha(0.12); version-label := Text { text: "v" + Store.version; color: Theme.orange; font-size: 12px * Theme.text-scale; font-weight: 600; horizontal-alignment: center; vertical-alignment: center; } }
+                                    Rectangle { vertical-stretch: 0; y: (parent.height - self.height) / 2; width: version-label.preferred-width + 16px; height: max(26px, 12px * Theme.text-scale + 12px); border-radius: 6px; background: Theme.orange.with-alpha(0.12); version-label := Text { text: "v" + Store.version; color: Theme.orange; font-size: 12px * Theme.text-scale; font-weight: 600; horizontal-alignment: center; vertical-alignment: center; } }
                                     ActionButton { icon: @image-url("../../../../assets/icons/refresh.svg"); label: Store.update-phase == 1 ? "Checking for updates" : "Check for updates"; quiet: true; enabled: Store.interactive && Store.connected && Store.update-phase != 1 && Store.update-phase != 4 && Store.update-phase != 5 && Store.update-phase != 6; clicked => { Store.action("check-update", ""); } }
-                                    Text { text: Store.update-status; color: Store.update-error != "" ? #FCA5A5 : Theme.muted; font-size: 12px * Theme.text-scale; vertical-alignment: center; wrap: word-wrap; }
-                                    Rectangle { horizontal-stretch: 1; }
+                                    Text { text: Store.update-status; horizontal-stretch: 1; color: Store.update-error != "" ? #FCA5A5 : Theme.muted; font-size: 12px * Theme.text-scale; vertical-alignment: center; wrap: word-wrap; }
+                                    ReleaseNotesLink {}
                                     ActionButton { icon: @image-url("../../../../assets/icons/info-circle.svg"); label: Store.update-error != "" ? "Update error details" : "About application updates"; quiet: true; clicked => { Store.action("update-help", ""); } }
                                 }
                                 if Store.update-version != "": Rectangle { height: 36px * Theme.text-scale; max-width: 384px;
@@ -129,7 +141,6 @@ export component Settings inherits Rectangle {
                                     if Store.update-version != "" && (Store.update-phase == 3 || Store.update-phase == 7): ActionButton { text: "Download"; icon: @image-url("../../../../assets/icons/download.svg"); primary: true; enabled: Store.interactive && Store.connected; clicked => { Store.action("download-update", ""); } }
                                     if Store.update-phase == 4: ActionButton { text: "Cancel"; enabled: Store.interactive && Store.connected; clicked => { Store.action("cancel-update", ""); } }
                                     if Store.update-phase == 5: ActionButton { text: "Install and restart"; primary: true; enabled: Store.interactive && Store.connected; clicked => { Store.action("install-update", ""); } }
-                                    ActionButton { text: "Release notes"; quiet: true; clicked => { Store.action("release-notes", ""); } }
                                     Rectangle { horizontal-stretch: 1; }
                                 }
                             }
@@ -138,7 +149,7 @@ export component Settings inherits Rectangle {
                     if root.category == 4: VerticalLayout { spacing: 12px; alignment: start;
                         SectionTitle { text: "ABOUT"; }
                         Group {
-                            Setting { label: "crosshair-rs · " + Store.version; ActionButton { text: "Source"; quiet: true; clicked => { Store.action("github", ""); } } }
+                            Setting { label: "crosshair-rs - " + Store.version; ActionButton { text: "Source"; quiet: true; clicked => { Store.action("github", ""); } } }
                             Setting { label: "PolyForm Noncommercial 1.0.0"; ActionButton { text: "License"; quiet: true; clicked => { Store.action("license", ""); } } }
                             Setting { label: "Built with Slint"; last: true; ActionButton { text: "Third-party notices"; quiet: true; clicked => { Store.action("notices", ""); } } }
                         }

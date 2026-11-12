@@ -10,10 +10,9 @@ use windows::{
         },
         Graphics::{
             Dwm::{
-                DWMWA_BORDER_COLOR, DWMWA_CAPTION_BUTTON_BOUNDS, DWMWA_CAPTION_COLOR,
-                DWMWA_TEXT_COLOR, DWMWA_USE_IMMERSIVE_DARK_MODE, DWMWA_WINDOW_CORNER_PREFERENCE,
-                DWMWCP_ROUND, DwmDefWindowProc, DwmExtendFrameIntoClientArea,
-                DwmGetWindowAttribute, DwmSetWindowAttribute,
+                DWMWA_BORDER_COLOR, DWMWA_CAPTION_COLOR, DWMWA_TEXT_COLOR,
+                DWMWA_USE_IMMERSIVE_DARK_MODE, DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_ROUND,
+                DwmDefWindowProc, DwmExtendFrameIntoClientArea, DwmSetWindowAttribute,
             },
             Gdi::{
                 CreateRoundRectRgn, DeleteObject, GetMonitorInfoW, MONITOR_DEFAULTTONEAREST,
@@ -24,6 +23,7 @@ use windows::{
         UI::{
             Controls::MARGINS,
             HiDpi::{GetDpiForWindow, GetSystemMetricsForDpi},
+            Input::KeyboardAndMouse::{TME_LEAVE, TME_NONCLIENT, TRACKMOUSEEVENT, TrackMouseEvent},
             Shell::{DefSubclassProc, RemoveWindowSubclass, SetWindowSubclass},
             WindowsAndMessaging::*,
         },
@@ -95,6 +95,8 @@ pub fn install(window: &slint::Window, scope: &str) -> Result<()> {
             PCWSTR(property.as_ptr()),
             Some(windows::Win32::Foundation::HANDLE(std::ptr::dangling_mut())),
         )?;
+        let style = GetWindowLongPtrW(hwnd, GWL_STYLE);
+        SetWindowLongPtrW(hwnd, GWL_STYLE, style & !(WS_CAPTION.0 as isize));
         let dark = BOOL(1);
         let _ = DwmSetWindowAttribute(
             hwnd,
@@ -195,7 +197,7 @@ pub fn apply_colors(hwnd: HWND, colors: Option<[u32; 4]>) {
     }
 }
 fn extend_frame(hwnd: HWND) {
-    // DWM owns the caption buttons and the rounded outer edge.
+    // DWM retains the rounded outer edge around the custom client header.
     unsafe {
         let _ = DwmExtendFrameIntoClientArea(
             hwnd,
@@ -208,6 +210,31 @@ fn extend_frame(hwnd: HWND) {
         );
     }
 }
+pub fn caption_action(hwnd: HWND, action: &str) -> Result<()> {
+    unsafe {
+        match action {
+            "window-minimize" => {
+                let _ = ShowWindow(hwnd, SW_MINIMIZE);
+            }
+            "window-maximize" => {
+                let _ = ShowWindow(
+                    hwnd,
+                    if IsZoomed(hwnd).as_bool() {
+                        SW_RESTORE
+                    } else {
+                        SW_MAXIMIZE
+                    },
+                );
+            }
+            "window-close" => {
+                PostMessageW(Some(hwnd), WM_CLOSE, WPARAM(0), LPARAM(0))?;
+            }
+            _ => bail!("Unknown window action"),
+        }
+    }
+    Ok(())
+}
+
 pub fn pointer_position(hwnd: HWND) -> Result<[f32; 2]> {
     let mut point = windows::Win32::Foundation::POINT::default();
     unsafe {
@@ -258,8 +285,32 @@ unsafe extern "system" fn procedure(
             return result;
         }
         match message {
-            WM_ACTIVATE => extend_frame(hwnd),
-            WM_SIZE if use_corner_region != 0 => round_legacy_frame(hwnd),
+            WM_NCMOUSEMOVE => {
+                let hover = match wparam.0 as u32 {
+                    HTMINBUTTON => 0,
+                    HTMAXBUTTON => 1,
+                    HTCLOSE => 2,
+                    _ => -1,
+                };
+                crate::app::caption_hover_changed(hover);
+                let _ = TrackMouseEvent(&mut TRACKMOUSEEVENT {
+                    cbSize: size_of::<TRACKMOUSEEVENT>() as u32,
+                    dwFlags: TME_LEAVE | TME_NONCLIENT,
+                    hwndTrack: hwnd,
+                    dwHoverTime: 0,
+                });
+            }
+            WM_NCMOUSELEAVE | WM_MOUSEMOVE => crate::app::caption_hover_changed(-1),
+            WM_ACTIVATE => {
+                crate::app::caption_hover_changed(-1);
+                extend_frame(hwnd);
+            }
+            WM_SIZE => {
+                crate::app::window_maximized_changed(IsZoomed(hwnd).as_bool());
+                if use_corner_region != 0 {
+                    round_legacy_frame(hwnd);
+                }
+            }
             WM_SETTINGCHANGE | WM_SYSCOLORCHANGE => {
                 crate::app::system_appearance_changed();
             }
@@ -317,20 +368,7 @@ unsafe extern "system" fn procedure(
                         && ScreenToClient(hwnd, &mut point).as_bool()
                     {
                         let scale = dpi as f32 / 96.0;
-                        let mut buttons = RECT::default();
-                        let _ = DwmGetWindowAttribute(
-                            hwnd,
-                            DWMWA_CAPTION_BUTTON_BOUNDS,
-                            (&mut buttons as *mut RECT).cast(),
-                            size_of::<RECT>() as u32,
-                        );
-                        let size = if buttons.right > buttons.left && buttons.bottom > buttons.top {
-                            [buttons.right - buttons.left, buttons.bottom - buttons.top]
-                        } else {
-                            [(138.0 * scale) as i32, (32.0 * scale) as i32]
-                        };
-                        // The maximized frame has an invisible resize inset; hit-test in client coordinates.
-                        let caption = caption_hit_test(point.x, point.y, client.right, scale, size);
+                        let caption = caption_hit_test(point.x, point.y, client.right, scale);
                         if matches!(caption, HTMINBUTTON | HTMAXBUTTON | HTCLOSE) {
                             return LRESULT(caption as isize);
                         }
@@ -346,7 +384,12 @@ unsafe extern "system" fn procedure(
                 }
             }
             // Winit injects a dummy mouse move for captions, which cancels our native drag loop.
-            WM_NCLBUTTONDOWN if wparam.0 == HTCAPTION as usize => {
+            WM_NCLBUTTONDOWN
+                if matches!(
+                    wparam.0 as u32,
+                    HTCAPTION | HTMINBUTTON | HTMAXBUTTON | HTCLOSE
+                ) =>
+            {
                 return DefWindowProcW(hwnd, message, wparam, lparam);
             }
             WM_NCDESTROY => {
@@ -404,10 +447,11 @@ fn resize_hit_test(x: i32, y: i32, width: i32, height: i32, border: i32, maximiz
     HTCLIENT
 }
 
-fn caption_hit_test(x: i32, y: i32, width: i32, scale: f32, buttons: [i32; 2]) -> u32 {
-    if y >= 0 && y < buttons[1] && x >= width - buttons[0] && x < width {
-        let index = ((width - 1 - x) * 3 / buttons[0]).min(2);
-        return [HTCLOSE, HTMAXBUTTON, HTMINBUTTON][index as usize];
+fn caption_hit_test(x: i32, y: i32, width: i32, scale: f32) -> u32 {
+    let from_right = (width - x) as f32 / scale;
+    if y >= 0 && (y as f32) < 48.0 * scale && from_right > 0.0 && from_right <= 138.0 {
+        let index = ((from_right / 46.0).ceil() as usize - 1).min(2);
+        return [HTCLOSE, HTMAXBUTTON, HTMINBUTTON][index];
     }
     let logical_x = x as f32 / scale;
     let logical_y = y as f32 / scale;
@@ -429,47 +473,27 @@ mod tests {
         assert_eq!(resize_hit_test(2, 2, 1280, 800, 8, true), HTCLIENT);
         for scale in [1.0, 1.25, 1.5, 2.0] {
             let width = (1280.0 * scale) as i32;
-            let buttons = [(138.0 * scale) as i32, (30.0 * scale) as i32];
             for (offset, expected) in [(23.0, HTCLOSE), (69.0, HTMAXBUTTON), (115.0, HTMINBUTTON)] {
                 assert_eq!(
                     caption_hit_test(
                         width - (offset * scale) as i32,
-                        (14.0 * scale) as i32,
+                        (42.0 * scale) as i32,
                         width,
-                        scale,
-                        buttons
+                        scale
                     ),
                     expected
                 );
             }
             assert_eq!(
-                caption_hit_test(
-                    (900.0 * scale) as i32,
-                    (20.0 * scale) as i32,
-                    width,
-                    scale,
-                    buttons
-                ),
+                caption_hit_test((900.0 * scale) as i32, (20.0 * scale) as i32, width, scale),
                 HTCLIENT
             );
             assert_eq!(
-                caption_hit_test(
-                    (500.0 * scale) as i32,
-                    (20.0 * scale) as i32,
-                    width,
-                    scale,
-                    buttons
-                ),
+                caption_hit_test((500.0 * scale) as i32, (20.0 * scale) as i32, width, scale),
                 HTCAPTION
             );
             assert_eq!(
-                caption_hit_test(
-                    (500.0 * scale) as i32,
-                    (200.0 * scale) as i32,
-                    width,
-                    scale,
-                    buttons
-                ),
+                caption_hit_test((500.0 * scale) as i32, (200.0 * scale) as i32, width, scale),
                 HTCLIENT
             );
         }

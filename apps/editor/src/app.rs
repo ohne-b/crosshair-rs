@@ -35,6 +35,8 @@ enum Event {
     Preview(preview::Event),
     Appearance(crate::platform::accessibility::Appearance),
     WorkArea([f32; 2]),
+    Maximized(bool),
+    CaptionHover(i32),
     Ui(UiEvent),
 }
 enum UiEvent {
@@ -67,6 +69,12 @@ pub(crate) fn work_area_changed(hwnd: HWND) {
     if let Ok(size) = frame::work_area(hwnd) {
         post(Event::WorkArea(size));
     }
+}
+pub(crate) fn window_maximized_changed(maximized: bool) {
+    post(Event::Maximized(maximized));
+}
+pub(crate) fn caption_hover_changed(index: i32) {
+    post(Event::CaptionHover(index));
 }
 fn drain_events() {
     APPLICATION.with(|application| {
@@ -117,6 +125,8 @@ enum Modal {
     ReplaceData(std::path::PathBuf),
     Reset,
     Close,
+    OpenDocument(Id),
+    Install,
     Conflict(Capture, InputChord, Option<Id>),
     DraftConflict,
     Recovery,
@@ -173,17 +183,26 @@ pub(crate) struct App {
     fields: Vec<Field>,
     collapsed: BTreeSet<String>,
     thumbnails: BTreeMap<Id, (u64, slint::Image)>,
+    palette: Vec<Preset>,
     bounds: Vec<(Id, LayerBounds)>,
     inverses: BTreeMap<Id, [Point; 3]>,
     anchors: BTreeMap<Id, Point>,
     preview_generation: u64,
     inflight: Option<Preset>,
+    preview_inflight: Option<Preset>,
+    preview_sent: Option<Preset>,
+    preview_scale: u32,
+    preview_inflight_scale: u32,
+    last_valid: Option<Preset>,
+    preview_error: Option<String>,
+    save_requested: bool,
     group_open: bool,
     group_ending: bool,
     finish_group: bool,
     cancel_group: bool,
     pending_command: Option<Command>,
     open_after_refresh: Option<Id>,
+    open_after_save: Option<Id>,
     deferred_ui: VecDeque<UiEvent>,
     image_target: Option<ImageTarget>,
     image_ready: Option<(Id, u32, u32)>,
@@ -251,17 +270,26 @@ pub fn run() -> Result<()> {
         fields: Vec::new(),
         collapsed: BTreeSet::new(),
         thumbnails: BTreeMap::new(),
+        palette: crate::features::presets::presets(),
         bounds: Vec::new(),
         inverses: BTreeMap::new(),
         anchors: BTreeMap::new(),
         preview_generation: 0,
         inflight: None,
+        preview_inflight: None,
+        preview_sent: None,
+        preview_scale: 0,
+        preview_inflight_scale: 0,
+        last_valid: None,
+        preview_error: None,
+        save_requested: false,
         group_open: false,
         group_ending: false,
         finish_group: false,
         cancel_group: false,
         pending_command: None,
         open_after_refresh: None,
+        open_after_save: None,
         deferred_ui: VecDeque::new(),
         image_target: None,
         image_ready: None,
@@ -290,6 +318,8 @@ pub fn run() -> Result<()> {
     ui.global::<Store>()
         .on_action(|action, value| ui_event(UiEvent::Action(action.into(), value.into())));
     ui.global::<Store>()
+        .on_format_number(|value| crate::features::designer::format_number(value).into());
+    ui.global::<Store>()
         .on_property_edit(|selection, key, value, phase| {
             ui_event(UiEvent::Property(
                 selection.into(),
@@ -300,6 +330,26 @@ pub fn run() -> Result<()> {
         });
     ui.global::<Store>()
         .on_select_layer(|id, extend| ui_event(UiEvent::Select(id.into(), extend)));
+    ui.global::<Store>()
+        .on_property_color(|selection, key, color, phase| {
+            let value = format!(
+                "#{:02X}{:02X}{:02X}{:02X}",
+                color.red(),
+                color.green(),
+                color.blue(),
+                color.alpha()
+            );
+            if key == "@brush" {
+                ui_event(UiEvent::Action("brush-color".into(), value));
+            } else {
+                ui_event(UiEvent::Property(
+                    selection.into(),
+                    key.into(),
+                    value,
+                    phase,
+                ));
+            }
+        });
     ui.global::<Store>()
         .on_canvas_event(|kind, x, y, button, shift| {
             ui_event(UiEvent::Canvas(kind, Point { x, y }, button, shift))
@@ -324,7 +374,13 @@ pub fn run() -> Result<()> {
     use slint::winit_030::{EventResult, WinitWindowAccessor};
     let mut frame_ready = false;
     // A zero-delay timer may run before Winit has created its native window.
-    ui.window().on_winit_window_event(move |window, _| {
+    ui.window().on_winit_window_event(move |window, event| {
+        if let slint::winit_030::winit::event::WindowEvent::DroppedFile(path) = event {
+            ui_event(UiEvent::Action(
+                "drop-image".into(),
+                path.to_string_lossy().into_owned(),
+            ));
+        }
         if !frame_ready && window.has_winit_window() {
             frame_ready = true;
             if let Err(error) = frame::install(window, &scope) {
@@ -392,20 +448,15 @@ impl App {
         )
     }
     fn render(&mut self) {
+        self.preview_pending = self.document.draft.is_some();
         if self.image_target.is_none() {
-            self.client.pin_assets(
-                self.document
-                    .draft
-                    .iter()
-                    .flat_map(|document| &document.layers)
-                    .filter_map(|layer| layer.content.asset_id())
-                    .collect(),
-            );
+            self.client.pin_assets(self.document.asset_ids());
         }
         let presets = self
             .state
             .presets
             .iter()
+            .chain(self.palette.iter())
             .filter(|preset| {
                 self.thumbnails
                     .get(&preset.id)
@@ -423,6 +474,15 @@ impl App {
             presets,
             assets: self.state.assets.clone(),
             draw_base: self.draw_base.clone(),
+            max_output_scale: self
+                .state
+                .profiles
+                .iter()
+                .flat_map(|profile| {
+                    std::iter::once(profile.scale)
+                        .chain(profile.positions.iter().map(|position| position.scale))
+                })
+                .fold(1.0f32, f32::max),
         });
     }
     fn request_close(&mut self) -> Result<()> {
@@ -433,7 +493,14 @@ impl App {
             || !self.deferred_ui.is_empty()
         {
             self.modal = Modal::Close;
-            self.show_modal(1, "Keep unsent changes?", "Changes have not reached the engine. Retry saving, discard this draft, or cancel closing.", "Retry", "Discard", "");
+            self.show_modal(
+                1,
+                "Save this crosshair?",
+                "Save your edits before closing, or discard them.",
+                "Save",
+                "Discard",
+                "",
+            );
             return Ok(());
         }
         self.closing = true;
@@ -578,5 +645,25 @@ mod tests {
         );
         assert!(matches!(queue[1], UiEvent::Property(_, _, _, 2)));
         assert!(matches!(queue[2], UiEvent::Select(_, false)));
+    }
+
+    #[test]
+    fn queued_shortcuts_preserve_save_and_undo_boundaries() {
+        let mut queue = VecDeque::new();
+        for key in ["s", "d", "d", "z", "s"] {
+            defer_ui(
+                &mut queue,
+                UiEvent::Shortcut(key.into(), true, false, false),
+            )
+            .unwrap();
+        }
+        let keys: Vec<_> = queue
+            .iter()
+            .map(|event| match event {
+                UiEvent::Shortcut(key, true, false, false) => key.as_str(),
+                _ => panic!("shortcut changed while queued"),
+            })
+            .collect();
+        assert_eq!(keys, ["s", "d", "d", "z", "s"]);
     }
 }

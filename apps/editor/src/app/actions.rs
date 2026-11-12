@@ -35,6 +35,74 @@ impl App {
             self.cancel_capture()?;
         }
         match action {
+            "selector-filter" => {
+                store.set_selector_search(value.into());
+                self.refresh_library();
+            }
+            "selector-favorites" => {
+                store.set_selector_favorites(value.parse()?);
+                self.refresh_library();
+            }
+            "shortcut-target" => {
+                store.set_target_index(
+                    self.state
+                        .presets
+                        .iter()
+                        .position(|preset| preset.id.to_string() == value)
+                        .context("The crosshair was deleted")? as i32,
+                );
+            }
+            "binding-name" => {
+                let (id, name) = value.split_once(':').context("Invalid shortcut name")?;
+                let mut profile = self.active_profile()?;
+                profile
+                    .bindings
+                    .iter_mut()
+                    .find(|binding| binding.id.to_string() == id)
+                    .context("The shortcut was deleted")?
+                    .name = name.trim().into();
+                self.profile_edit(profile)?;
+            }
+            "binding-target-id" => {
+                let (id, target) = value.split_once(':').context("Invalid shortcut target")?;
+                let preset = self
+                    .state
+                    .preset(target.parse()?)
+                    .context("The crosshair was deleted")?
+                    .id;
+                let mut profile = self.active_profile()?;
+                profile
+                    .bindings
+                    .iter_mut()
+                    .find(|binding| binding.id.to_string() == id)
+                    .context("The shortcut was deleted")?
+                    .action = BindingAction::SelectPreset { preset };
+                self.profile_edit(profile)?;
+            }
+            "add-crosshair-preset" => self.layer_action(action, value)?,
+            "drop-image" => {
+                ensure!(
+                    store.get_page() == 1 && self.document.draft.is_some(),
+                    "Open the designer to add an image"
+                );
+                ensure!(
+                    self.image_target.is_none(),
+                    "Wait for the current image import to finish"
+                );
+                self.image_target = Some(ImageTarget::New {
+                    document: self.document_id()?,
+                });
+                if let Err(error) =
+                    self.client
+                        .stage_file(value.into(), StagingPurpose::Image, "image")
+                {
+                    self.image_target = None;
+                    return Err(error);
+                }
+            }
+            "window-minimize" | "window-maximize" | "window-close" => {
+                frame::caption_action(self.hwnd()?, action)?
+            }
             "navigate" => {
                 store.set_page(value.parse()?);
                 if store.get_page() != 2 {
@@ -52,7 +120,7 @@ impl App {
             "github" => dialogs::open_url(self.hwnd()?, "https://github.com/ohne-b/crosshair-rs")?,
             "license" => dialogs::open_url(
                 self.hwnd()?,
-                "https://polyformproject.org/licenses/noncommercial/1.0.0/",
+                "https://github.com/ohne-b/crosshair-rs/blob/main/LICENSE.md",
             )?,
             "release-notes" => {
                 let url = self
@@ -241,16 +309,9 @@ impl App {
             "export-preset" => self.export(ExportKind::Preset {
                 preset: value.parse()?,
             })?,
-            "export-png" => {
-                if self.document.dirty {
-                    self.export_draft(true)?;
-                } else {
-                    self.export(ExportKind::Png {
-                        preset: self.document_id()?,
-                    })?;
-                }
-            }
-            "export-draft" => self.export_draft(false)?,
+            "export-png" => self.export_draft(DraftFormat::Png)?,
+            "export-svg" => self.export_draft(DraftFormat::Svg)?,
+            "export-draft" => self.export_draft(DraftFormat::Preset)?,
             "export-all" => self.export(ExportKind::All)?,
             "import" => {
                 if let Some(path) =
@@ -370,17 +431,6 @@ impl App {
                 });
                 self.import_image()?;
             }
-            "pick-color" => {
-                let field = self
-                    .fields
-                    .iter()
-                    .find(|field| field.key == value)
-                    .context("Select a color")?;
-                let color = Color::from_hex(&field.value).context("Invalid color")?;
-                if let Some(color) = dialogs::choose_color(self.hwnd()?, color)? {
-                    self.property_edit(value, &format!("#{}{:02X}", color.hex_rgb(), color.a), 2)?;
-                }
-            }
             "collapse-section" => {
                 if !self.collapsed.insert(value.into()) {
                     self.collapsed.remove(value);
@@ -391,6 +441,15 @@ impl App {
             | "delete-layers" | "duplicate-layers" | "paste-layers" | "copy-layers"
             | "cut-layers" | "layer-order" | "layer-drop" | "rename-document" | "draw"
             | "draw-finish" | "brush-size" | "brush-color" => self.layer_action(action, value)?,
+            "save" | "flush" if store.get_page() == 1 && self.document.draft.is_some() => {
+                self.save_document()?
+            }
+            "undo" | "redo" if store.get_page() == 1 && self.document.draft.is_some() => {
+                self.document.undo(action == "redo");
+                self.preview_sent = None;
+                self.render();
+                self.refresh_document();
+            }
             "undo" | "redo" | "flush" => {
                 ensure!(
                     !self.document.conflict,
@@ -419,12 +478,8 @@ impl App {
                     self.modal = Modal::DraftConflict;
                     self.show_modal(1, "The saved crosshair changed", "Keep the editor open, export this draft, or replace the engine's current design with this draft.", "Replace saved design", "Export draft", "");
                 } else {
-                    self.document.save_paused = false;
                     store.set_error(SharedString::default());
-                    self.begin_edit()?;
-                    self.finish_group = true;
-                    self.send_document()?;
-                    self.finish_edit()?;
+                    self.save_document()?;
                 }
             }
             "zoom-step" => {
@@ -623,9 +678,15 @@ impl App {
                 );
                 self.install_requested = true;
                 if self.group_open || self.document.dirty || self.inflight.is_some() {
-                    self.finish_group = true;
-                    self.send_document()?;
-                    self.finish_edit()?;
+                    self.modal = Modal::Install;
+                    self.show_modal(
+                        1,
+                        "Save before installing?",
+                        "Save this crosshair before restarting, or discard the edits.",
+                        "Save",
+                        "Discard",
+                        "",
+                    );
                 } else {
                     self.send("install-flush", Command::Flush)?;
                 }
@@ -684,14 +745,14 @@ impl App {
                     .find(|binding| binding.id.to_string() == id)
                     .context("The shortcut was deleted")?;
                 match &mut binding.action {
-                    BindingAction::SelectPreset { preset: target }
-                    | BindingAction::TogglePreset { preset: target }
-                    | BindingAction::ShowPresetWhileHeld { preset: target } => *target = preset,
+                    BindingAction::SelectPreset { preset: target } => *target = preset,
                     _ => bail!("This action has no crosshair target"),
                 }
                 self.profile_edit(profile)?;
             }
             "modal-cancel" => {
+                self.install_requested = false;
+                self.open_after_save = None;
                 self.hide_modal();
                 self.closing = false;
                 if self.shutdown_requested.take().is_some() {

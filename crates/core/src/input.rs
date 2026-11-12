@@ -42,40 +42,20 @@ struct Capture {
     modifier_candidate: Option<(u64, InputKey)>,
 }
 
-struct Hold {
-    device: u64,
-    trigger: InputKey,
-    modifiers: Vec<Modifier>,
-    action: BindingAction,
-}
-
 /// Passive input state: no OS calls, polling, key injection or event suppression.
 #[derive(Default)]
 pub struct InputState {
     pressed: BTreeSet<(u64, InputKey)>,
     blocked: BTreeSet<(u64, InputKey)>,
-    holds: Vec<Hold>,
-    previous_preset: Option<Id>,
     capture: Option<Capture>,
 }
 
 impl InputState {
     pub fn presentation(&self, state: &AppState) -> Option<Presentation> {
-        let mut result = Presentation {
+        Some(Presentation {
             preset: state.active_profile()?.selected_preset,
             visible: state.base_visible,
-        };
-        for hold in &self.holds {
-            match hold.action {
-                BindingAction::HideWhileHeld => result.visible = false,
-                BindingAction::ShowWhileHeld => result.visible = true,
-                BindingAction::ShowPresetWhileHeld { preset } if state.preset(preset).is_some() => {
-                    result.preset = preset
-                }
-                _ => {}
-            }
-        }
-        Some(result)
+        })
     }
 
     pub fn capturing(&self) -> bool {
@@ -97,7 +77,6 @@ impl InputState {
         } else if !event.down {
             self.pressed.remove(&pair);
             self.blocked.remove(&pair);
-            self.prune_holds();
         }
     }
 
@@ -129,10 +108,8 @@ impl InputState {
         }
     }
 
-    /// Hold overrides end on profile/session changes; held triggers rearm on up.
+    /// Session changes block held triggers until they are released.
     pub fn reset(&mut self) {
-        self.holds.clear();
-        self.previous_preset = None;
         self.capture = None;
         self.blocked.extend(self.pressed.iter().copied());
     }
@@ -140,7 +117,6 @@ impl InputState {
     pub fn remove_device(&mut self, device: u64) {
         self.pressed.retain(|(id, _)| *id != device);
         self.blocked.retain(|(id, _)| *id != device);
-        self.prune_holds();
         if let Some(capture) = &mut self.capture {
             capture.modifier_candidate = None;
             capture.waiting_for_release = !self.pressed.is_empty();
@@ -148,15 +124,7 @@ impl InputState {
     }
 
     pub fn toggle_visibility(&mut self, state: &mut AppState) {
-        state.base_visible = !self
-            .presentation(state)
-            .map_or(state.base_visible, |p| p.visible);
-        self.holds.retain(|hold| {
-            !matches!(
-                hold.action,
-                BindingAction::HideWhileHeld | BindingAction::ShowWhileHeld
-            )
-        });
+        state.base_visible = !state.base_visible;
         state.revision = state.revision.saturating_add(1);
     }
 
@@ -175,7 +143,6 @@ impl InputState {
             self.blocked.remove(&pair);
             false
         };
-        self.prune_holds();
 
         if self.capture.is_some() {
             result.capture = self.capture_event(event, repeated);
@@ -194,26 +161,20 @@ impl InputState {
             let global = state.settings.global_toggle.as_ref().filter(|chord| {
                 chord.trigger == event.key && modifiers_match(&chord.modifiers, bits)
             });
-            let action = if let Some(global) = global.filter(|global| {
-                best.is_none_or(|binding| {
-                    chord_specificity(global) > chord_specificity(&binding.chord)
+            let action = if global
+                .filter(|global| {
+                    best.is_none_or(|binding| {
+                        chord_specificity(global) > chord_specificity(&binding.chord)
+                    })
                 })
-            }) {
-                Some((BindingAction::ToggleVisibility, global.modifiers.clone()))
+                .is_some()
+            {
+                Some(BindingAction::ToggleVisibility)
             } else {
-                best.map(|binding| (binding.action.clone(), binding.chord.modifiers.clone()))
+                best.map(|binding| binding.action.clone())
             };
-            if let Some((action, modifiers)) = action {
-                if action.is_hold() && !pulse {
-                    self.holds.push(Hold {
-                        device: event.device,
-                        trigger: event.key,
-                        modifiers,
-                        action,
-                    });
-                } else {
-                    result.state_changed = self.press_action(action, state);
-                }
+            if let Some(action) = action {
+                result.state_changed = self.press_action(action, state);
             }
         }
         result.presentation_changed = before != self.presentation(state);
@@ -226,7 +187,7 @@ impl InputState {
                 self.toggle_visibility(state);
                 true
             }
-            BindingAction::SelectPreset { preset } | BindingAction::TogglePreset { preset } => {
+            BindingAction::SelectPreset { preset } => {
                 if state.preset(preset).is_none() {
                     return false;
                 }
@@ -236,25 +197,15 @@ impl InputState {
                 else {
                     return false;
                 };
-                let target =
-                    if matches!(action, BindingAction::TogglePreset { .. }) && selected == preset {
-                        self.previous_preset
-                            .filter(|id| state.preset(*id).is_some())
-                            .unwrap_or(selected)
-                    } else {
-                        preset
-                    };
-                if target == selected {
+                if preset == selected {
                     return false;
                 }
-                self.previous_preset = Some(selected);
                 if let Some(profile) = state.active_profile_mut() {
-                    profile.selected_preset = target;
+                    profile.selected_preset = preset;
                 }
                 state.revision = state.revision.saturating_add(1);
                 true
             }
-            _ => false,
         }
     }
 
@@ -301,14 +252,6 @@ impl InputState {
             .iter()
             .filter_map(|(_, key)| modifier_bit(*key))
             .fold(0, |all, bit| all | bit)
-    }
-
-    fn prune_holds(&mut self) {
-        let bits = self.modifier_bits();
-        self.holds.retain(|hold| {
-            self.pressed.contains(&(hold.device, hold.trigger))
-                && modifiers_match(&hold.modifiers, bits)
-        });
     }
 }
 
@@ -489,33 +432,14 @@ mod tests {
     }
 
     #[test]
-    fn preparing_an_import_does_not_reuse_a_held_target_from_the_old_library() {
-        let mut input = InputState::default();
+    fn selection_is_persistent_and_held_keys_do_not_override_it() {
         let mut state = AppState::default();
-        let held = state.presets[1].id;
-        state.profiles[0].bindings.push(Binding::new(
-            InputChord::key(0x12),
-            BindingAction::ShowPresetWhileHeld { preset: held },
-        ));
-        input.handle(event(0x12, true), 0, &mut state);
-        let imported = AppState::default();
-        assert_eq!(
-            input.presentation(&imported).unwrap().preset,
-            imported.profiles[0].selected_preset
-        );
-        assert_eq!(input.presentation(&state).unwrap().preset, held);
-    }
-
-    #[test]
-    fn holds_use_current_base_and_do_not_repeat() {
-        let mut state = AppState::default();
-        let base = state.presets[0].id;
-        let held = state.presets[1].id;
+        let first = state.presets[1].id;
         let next = state.presets[2].id;
         state.profiles[0].bindings = vec![
             Binding::new(
                 InputChord::key(0x12),
-                BindingAction::ShowPresetWhileHeld { preset: held },
+                BindingAction::SelectPreset { preset: first },
             ),
             Binding::new(
                 InputChord::key(0x02),
@@ -523,20 +447,15 @@ mod tests {
             ),
         ];
         let mut input = InputState::default();
-        assert_eq!(input.presentation(&state).unwrap().preset, base);
-        assert!(
-            input
-                .handle(event(0x12, true), 0, &mut state)
-                .presentation_changed
-        );
-        assert!(
-            !input
-                .handle(event(0x12, true), 1, &mut state)
-                .presentation_changed
-        );
+        assert!(input.handle(event(0x12, true), 0, &mut state).state_changed);
+        assert!(!input.handle(event(0x12, true), 1, &mut state).state_changed);
         input.handle(event(0x02, true), 2, &mut state);
-        assert_eq!(input.presentation(&state).unwrap().preset, held);
+        assert_eq!(input.presentation(&state).unwrap().preset, next);
         input.handle(event(0x12, false), 3, &mut state);
+        input.remove_device(1);
+        assert_eq!(input.presentation(&state).unwrap().preset, next);
+        input.toggle_visibility(&mut state);
+        assert!(!input.presentation(&state).unwrap().visible);
         assert_eq!(input.presentation(&state).unwrap().preset, next);
     }
 
@@ -566,47 +485,6 @@ mod tests {
         state.profiles[0].bindings.pop();
         input.handle(event(0x12, true), 3, &mut state);
         assert_eq!(state.active_profile().unwrap().selected_preset, a);
-    }
-
-    #[test]
-    fn releasing_another_keyboard_does_not_release_hold() {
-        let mut state = AppState::default();
-        state.profiles[0].bindings.push(Binding::new(
-            InputChord::key(0x12),
-            BindingAction::HideWhileHeld,
-        ));
-        let mut input = InputState::default();
-        input.handle(event(0x12, true), 0, &mut state);
-        input.handle(
-            InputEvent {
-                device: 2,
-                ..event(0x12, false)
-            },
-            1,
-            &mut state,
-        );
-        assert!(!input.presentation(&state).unwrap().visible);
-        input.remove_device(1);
-        assert!(input.presentation(&state).unwrap().visible);
-    }
-
-    #[test]
-    fn explicit_toggle_cancels_visibility_hold() {
-        let mut state = AppState {
-            base_visible: false,
-            ..Default::default()
-        };
-        state.profiles[0].bindings.push(Binding::new(
-            InputChord::key(0x12),
-            BindingAction::ShowWhileHeld,
-        ));
-        let mut input = InputState::default();
-        input.handle(event(0x12, true), 0, &mut state);
-        assert!(input.presentation(&state).unwrap().visible);
-        input.toggle_visibility(&mut state);
-        assert!(!input.presentation(&state).unwrap().visible);
-        input.handle(event(0x12, true), 1, &mut state);
-        assert!(!input.presentation(&state).unwrap().visible);
     }
 
     #[test]
@@ -728,7 +606,7 @@ mod tests {
     }
 
     #[test]
-    fn session_reset_cancels_capture_and_releases_overrides() {
+    fn session_reset_cancels_capture_and_blocks_held_keys() {
         let mut input = InputState::default();
         input.begin_capture(0);
         input.reset();

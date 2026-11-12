@@ -33,6 +33,7 @@ pub enum Staged {
     Document {
         preset: Preset,
         expected_revision: u64,
+        preview: bool,
     },
     Import {
         candidate: AppState,
@@ -177,6 +178,7 @@ impl Store {
                 StagingPurpose::Document {
                     preset,
                     expected_revision,
+                    preview,
                 } => {
                     ensure!(
                         state
@@ -197,9 +199,13 @@ impl Store {
                     Ok(Staged::Document {
                         preset: document,
                         expected_revision,
+                        preview,
                     })
                 }
-                StagingPurpose::ExportDraft { destination, png } => {
+                StagingPurpose::ExportDraft {
+                    destination,
+                    format,
+                } => {
                     let preset: Preset =
                         serde_json::from_slice(&read_bounded(file, MAX_CONFIG_BYTES as u64)?)?;
                     validate_preset(&preset, &state.assets)?;
@@ -211,10 +217,16 @@ impl Store {
                     snapshot.settings.global_toggle = None;
                     super::prune_asset_index(&mut snapshot, &Default::default());
                     validate_state(&snapshot)?;
-                    let kind = if png {
-                        crosshair_core::protocol::ExportKind::Png { preset: id }
-                    } else {
-                        crosshair_core::protocol::ExportKind::Preset { preset: id }
+                    let kind = match format {
+                        crosshair_core::protocol::DraftFormat::Png => {
+                            crosshair_core::protocol::ExportKind::Png { preset: id }
+                        }
+                        crosshair_core::protocol::DraftFormat::Svg => {
+                            crosshair_core::protocol::ExportKind::Svg { preset: id }
+                        }
+                        crosshair_core::protocol::DraftFormat::Preset => {
+                            crosshair_core::protocol::ExportKind::Preset { preset: id }
+                        }
                     };
                     self.export(
                         &snapshot,

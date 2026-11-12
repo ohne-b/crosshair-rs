@@ -13,7 +13,7 @@ pub use uuid::Uuid as Id;
 pub use validation::{ValidationError, validate_layer, validate_preset, validate_state};
 
 pub const SCHEMA_VERSION: u32 = 1;
-pub const PROTOCOL_VERSION: u32 = 3;
+pub const PROTOCOL_VERSION: u32 = 4;
 pub const MAX_CONFIG_BYTES: usize = 8 * 1024 * 1024;
 pub const MAX_PORTABLE_BYTES: u64 = 512 * 1024 * 1024;
 pub const MAX_ASSET_BYTES: u64 = 8 * 1024 * 1024;

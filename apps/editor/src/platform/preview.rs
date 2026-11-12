@@ -19,6 +19,7 @@ pub struct Request {
     pub presets: Vec<Preset>,
     pub assets: BTreeMap<Id, Asset>,
     pub draw_base: Option<Layer>,
+    pub max_output_scale: f32,
 }
 
 pub enum Event {
@@ -59,9 +60,10 @@ pub enum Event {
 #[derive(Clone)]
 pub enum RecoveryAction {
     Reapply,
+    Save,
     Export {
         destination: std::path::PathBuf,
-        png: bool,
+        format: crosshair_core::protocol::DraftFormat,
     },
 }
 
@@ -221,6 +223,9 @@ fn worker(
             if let Some(asset) = cache.borrow().get(&id) {
                 return Ok(asset.clone());
             }
+            if let Some(asset) = client.cached_asset(id) {
+                return Ok(asset);
+            }
             let metadata = request
                 .assets
                 .get(&id)
@@ -264,7 +269,12 @@ fn worker(
             adjusted = Some(document.clone());
         }
         if let Some(document) = &request.document {
-            match render_preview(&mut renderer, document, request.zoom, &source, cancelled) {
+            let rendered = renderer
+                .measure(document, request.max_output_scale)
+                .and_then(|_| {
+                    render_preview(&mut renderer, document, request.zoom, &source, cancelled)
+                });
+            match rendered {
                 Ok((raster, scale)) if !cancelled() => {
                     let bounds = document
                         .layers
@@ -492,6 +502,22 @@ fn render_preview(
 mod preview_tests {
     use super::*;
     use crosshair_core::{Color, Content, Shape};
+
+    #[test]
+    fn oversized_design_does_not_poison_the_next_preview() {
+        let mut renderer = Renderer::new().unwrap();
+        let mut preset = Preset::new("Size limit");
+        preset.layers[0].transform.scale = 100.0;
+        let source = |_: Id| -> Result<AssetData> { anyhow::bail!("No assets") };
+        assert!(render_preview(&mut renderer, &preset, 16.0, &source, || false).is_err());
+        preset.layers[0].transform.scale = 1.0;
+        let (raster, _) = render_preview(&mut renderer, &preset, 16.0, &source, || false).unwrap();
+        assert!(
+            raster.width <= crosshair_renderer::MAX_DIMENSION
+                && raster.height <= crosshair_renderer::MAX_DIMENSION
+        );
+        assert!(raster.pixels.chunks_exact(4).any(|pixel| pixel[3] > 0));
+    }
 
     #[test]
     fn zoomed_triangles_use_vector_geometry_with_bounded_bitmaps() {

@@ -47,6 +47,28 @@ pub(crate) fn render_layer(
     source: &impl AssetSource,
     cancelled: &impl Fn() -> bool,
 ) -> Result<Pixmap> {
+    render(layer, origin, size, cache, source, cancelled, false)
+}
+
+pub(crate) fn render_outline(
+    layer: &PreparedLayer,
+    origin: [i32; 2],
+    size: [u32; 2],
+    cache: &mut AssetCache,
+    source: &impl AssetSource,
+) -> Result<Pixmap> {
+    render(layer, origin, size, cache, source, &|| false, true)
+}
+
+fn render(
+    layer: &PreparedLayer,
+    origin: [i32; 2],
+    size: [u32; 2],
+    cache: &mut AssetCache,
+    source: &impl AssetSource,
+    cancelled: &impl Fn() -> bool,
+    outline_only: bool,
+) -> Result<Pixmap> {
     let mut fill = Pixmap::new(size[0], size[1]).context("Could not allocate layer")?;
     let mut geometry = Pixmap::new(size[0], size[1]).context("Could not allocate outline mask")?;
     let translation = Transform::from_translate(-origin[0] as f32, -origin[1] as f32);
@@ -161,19 +183,21 @@ pub(crate) fn render_layer(
             ]);
         }
         blur(result.data_mut(), size, outline.blur, cancelled)?;
-        result.draw_pixmap(
-            0,
-            0,
-            fill.as_ref(),
-            &PixmapPaint::default(),
-            Transform::identity(),
-            None,
-        );
+        if !outline_only {
+            result.draw_pixmap(
+                0,
+                0,
+                fill.as_ref(),
+                &PixmapPaint::default(),
+                Transform::identity(),
+                None,
+            );
+        }
         result
     } else {
         fill
     };
-    if layer.opacity < 1.0 {
+    if !outline_only && layer.opacity < 1.0 {
         for value in result.data_mut() {
             *value = (f32::from(*value) * layer.opacity).round() as u8;
         }

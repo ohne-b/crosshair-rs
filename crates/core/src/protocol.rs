@@ -56,6 +56,11 @@ pub enum Command {
         preset: Preset,
         expected_revision: u64,
     },
+    PreviewPreset {
+        preset: Preset,
+        expected_revision: u64,
+    },
+    ClearPreview,
     EndEdit,
     CancelEdit,
     Undo,
@@ -148,9 +153,26 @@ pub struct BindingSet {
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum StagingPurpose {
     Image,
-    Document { preset: Id, expected_revision: u64 },
-    Import { replace: bool },
-    ExportDraft { destination: String, png: bool },
+    Document {
+        preset: Id,
+        expected_revision: u64,
+        preview: bool,
+    },
+    Import {
+        replace: bool,
+    },
+    ExportDraft {
+        destination: String,
+        format: DraftFormat,
+    },
+}
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DraftFormat {
+    Preset,
+    Png,
+    Svg,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -160,6 +182,7 @@ pub enum ExportKind {
     Profile { profile: Id },
     All,
     Png { preset: Id },
+    Svg { preset: Id },
     Recovery,
 }
 

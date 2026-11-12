@@ -90,7 +90,7 @@ type Events = Arc<dyn Fn(u64, Event) + Send + Sync>;
 
 enum Job {
     Command(String, Command),
-    Document(String, Preset, u64),
+    Document(String, Preset, u64, bool),
     StageFile {
         path: PathBuf,
         purpose: StagingPurpose,
@@ -99,7 +99,7 @@ enum Job {
     ExportDraft {
         document: Preset,
         destination: PathBuf,
-        png: bool,
+        format: DraftFormat,
     },
     Asset {
         id: Id,
@@ -161,7 +161,11 @@ impl Client {
         self.send(Job::Command(tag.into(), command))
     }
     pub fn document(&self, tag: &str, preset: Preset, revision: u64) -> Result<()> {
-        self.send(Job::Document(tag.into(), preset, revision))
+        self.send(Job::Document(tag.into(), preset, revision, false))
+    }
+    pub fn preview(&self, preset: Preset) -> Result<()> {
+        let revision = preset.revision;
+        self.send(Job::Document("preview".into(), preset, revision, true))
     }
     pub fn stage_file(
         &self,
@@ -175,11 +179,16 @@ impl Client {
             tag: tag.into(),
         })
     }
-    pub fn export_draft(&self, document: Preset, destination: PathBuf, png: bool) -> Result<()> {
+    pub fn export_draft(
+        &self,
+        document: Preset,
+        destination: PathBuf,
+        format: DraftFormat,
+    ) -> Result<()> {
         self.send(Job::ExportDraft {
             document,
             destination,
-            png,
+            format,
         })
     }
     pub fn refresh(&self) {
@@ -398,12 +407,24 @@ impl Connection {
         crosshair_core::validation::validate_state(&state)?;
         Ok(state)
     }
-    fn document(&mut self, preset: Preset, expected_revision: u64) -> Result<Response> {
+    fn document(
+        &mut self,
+        preset: Preset,
+        expected_revision: u64,
+        preview: bool,
+    ) -> Result<Response> {
         let bytes = serde_json::to_vec(&preset)?;
         if bytes.len() < MAX_FRAME_BYTES / 2 {
-            return self.request(Command::ReplacePreset {
-                preset,
-                expected_revision,
+            return self.request(if preview {
+                Command::PreviewPreset {
+                    preset,
+                    expected_revision,
+                }
+            } else {
+                Command::ReplacePreset {
+                    preset,
+                    expected_revision,
+                }
             });
         }
         let Reply::Staging {
@@ -414,6 +435,7 @@ impl Connection {
             purpose: StagingPurpose::Document {
                 preset: preset.id,
                 expected_revision,
+                preview,
             },
         })?
         else {
@@ -462,12 +484,12 @@ impl Connection {
         &mut self,
         document: Preset,
         destination: PathBuf,
-        png: bool,
+        format: DraftFormat,
     ) -> Result<Response> {
         let bytes = serde_json::to_vec(&document)?;
         let purpose = StagingPurpose::ExportDraft {
             destination: destination.to_string_lossy().into(),
-            png,
+            format,
         };
         self.stage_bytes(&bytes, purpose)
     }
@@ -602,7 +624,9 @@ fn worker(options: Options, jobs: Receiver<Job>, client: Client, events: Events)
         }
         let (tag, result) = match job {
             Job::Command(tag, command) => (tag, current.request(command)),
-            Job::Document(tag, preset, revision) => (tag, current.document(preset, revision)),
+            Job::Document(tag, preset, revision, preview) => {
+                (tag, current.document(preset, revision, preview))
+            }
             Job::StageFile { path, purpose, tag } => {
                 let result = current.stage(path, purpose);
                 if let Ok(Response {
@@ -623,10 +647,10 @@ fn worker(options: Options, jobs: Receiver<Job>, client: Client, events: Events)
             Job::ExportDraft {
                 document,
                 destination,
-                png,
+                format,
             } => (
                 "export".into(),
-                current.export_draft(document, destination, png),
+                current.export_draft(document, destination, format),
             ),
             Job::Refresh => {
                 // Allow one follow-up snapshot when a change arrives during this transfer.
@@ -827,5 +851,34 @@ mod tests {
             response_deadline(&Command::CancelCapture { token: Id::nil() }),
             Duration::from_secs(35)
         );
+    }
+
+    #[test]
+    fn pinned_draft_images_survive_eviction_and_disconnection() {
+        let (jobs, _receiver) = mpsc::sync_channel(64);
+        let client = Client {
+            jobs,
+            refresh_pending: Arc::new(AtomicBool::new(false)),
+            pipe: Arc::new(Mutex::new(None)),
+            source_assets: Arc::new(Mutex::new(BTreeMap::new())),
+            pinned_assets: Arc::new(Mutex::new(BTreeSet::new())),
+            connection_epoch: Arc::new(AtomicU64::new(1)),
+            stopped: Arc::new(AtomicBool::new(false)),
+        };
+        let id = Id::new_v4();
+        let image = AssetData {
+            kind: crosshair_core::AssetKind::Png,
+            bytes: vec![0; 8 * 1024 * 1024].into(),
+        };
+        client.remember_asset(id, image.clone(), true);
+        for _ in 0..8 {
+            client.remember_asset(Id::new_v4(), image.clone(), false);
+        }
+        assert_eq!(client.source_assets.lock().unwrap().len(), 1);
+        client.stop();
+        let cached = client
+            .cached_asset(id)
+            .expect("offline undo keeps its source");
+        assert!(Arc::ptr_eq(&cached.bytes, &image.bytes));
     }
 }

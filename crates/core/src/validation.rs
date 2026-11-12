@@ -409,11 +409,9 @@ pub fn validate_state(state: &AppState) -> Result {
         for binding in &profile.bindings {
             unique_id(&mut ids, binding.id, "binding.id")?;
             validate_chord(&binding.chord)?;
-            require(
-                !binding.action.is_hold() || !binding.chord.trigger.is_pulse(),
-                "binding.action",
-                "wheel cannot trigger a hold action",
-            )?;
+            if !binding.name.is_empty() {
+                name(&binding.name, "binding.name")?;
+            }
             if let Some(target) = binding.action.target() {
                 require(
                     state.preset(target).is_some(),
@@ -591,15 +589,21 @@ mod tests {
     }
 
     #[test]
-    fn wheel_hold_is_invalid_and_color_parser_is_bounded() {
+    fn wheel_shortcuts_and_bounded_names_and_colors() {
         let mut state = AppState::default();
         state.profiles[0].bindings.push(Binding::new(
             InputChord {
                 trigger: InputKey::Wheel { up: true },
                 modifiers: vec![],
             },
-            BindingAction::HideWhileHeld,
+            BindingAction::SelectPreset {
+                preset: state.presets[0].id,
+            },
         ));
+        assert!(validate_state(&state).is_ok());
+        state.profiles[0].bindings[0].name = "x".repeat(81);
+        assert!(validate_state(&state).is_err());
+        state.profiles[0].bindings[0].name = "invalid\nname".into();
         assert!(validate_state(&state).is_err());
         assert_eq!(
             Color::from_hex("#F9731680"),

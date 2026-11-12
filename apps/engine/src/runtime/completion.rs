@@ -13,7 +13,11 @@ impl Runtime {
         if disconnected
             && matches!(
                 pending.after,
-                After::Replace { .. } | After::State | After::Staged | After::Restore
+                After::Replace { .. }
+                    | After::Preview { .. }
+                    | After::State
+                    | After::Staged
+                    | After::Restore
             )
         {
             if matches!(pending.after, After::Restore) {
@@ -37,7 +41,9 @@ impl Runtime {
         if revision != self.app.state.revision && !matches!(pending.after, After::Commit) {
             self.app.dirty();
         }
-        self.app.changed(pending.document, pending.structure);
+        if !matches!(pending.after, After::Preview { .. }) {
+            self.app.changed(pending.document, pending.structure);
+        }
         self.refresh();
         self.try_shutdown();
     }
@@ -124,6 +130,26 @@ impl Runtime {
                 scale,
                 raster,
             } => {
+                if let After::Preview { expected_revision } = pending.after {
+                    if self.preview_generation == pending.preview_generation {
+                        let stored = self
+                            .app
+                            .state
+                            .preset(preset.id)
+                            .ok_or(HistoryError::Missing)?;
+                        if stored.revision != expected_revision {
+                            return Err(HistoryError::Conflict.into());
+                        }
+                        self.preview = Some(LivePreview {
+                            owner: pending.owner.ok_or(HistoryError::Missing)?,
+                            key: render::Key::new(stored, scale),
+                            raster,
+                        });
+                    }
+                    return Ok(Some(Reply::Ack {
+                        document_revision: None,
+                    }));
+                }
                 let After::Replace { expected_revision } = pending.after else {
                     anyhow::bail!("Unexpected validation reply");
                 };
@@ -154,7 +180,21 @@ impl Runtime {
             WorkReply::Staged(Staged::Document {
                 preset,
                 expected_revision,
+                preview,
             }) => {
+                if preview {
+                    let mut pending = pending.clone();
+                    pending.after = After::Preview { expected_revision };
+                    pending.structure = false;
+                    self.queue(
+                        Job::ValidatePreset {
+                            state: Box::new(self.app.state.clone()),
+                            preset: Box::new(preset),
+                        },
+                        pending,
+                    )?;
+                    return Ok(None);
+                }
                 return self
                     .app
                     .command(

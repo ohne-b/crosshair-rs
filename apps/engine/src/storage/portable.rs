@@ -103,10 +103,15 @@ impl Store {
                 Ok(())
             });
         }
-        if let ExportKind::Png { preset } = kind {
+        if let ExportKind::Png { preset } | ExportKind::Svg { preset } = kind {
             let preset = state.preset(preset).context("Preset does not exist")?;
-            let raster = renderer.render(preset, 1.0, &|id| self.read_asset(state, id))?;
-            let bytes = raster.to_png()?;
+            let bytes = if matches!(kind, ExportKind::Svg { .. }) {
+                renderer.to_svg(preset, 1.0, &|id| self.read_asset(state, id))?
+            } else {
+                renderer
+                    .render(preset, 1.0, &|id| self.read_asset(state, id))?
+                    .to_png()?
+            };
             return atomic_write(&destination, |writer| {
                 writer.write_all(&bytes)?;
                 Ok(())
@@ -165,7 +170,9 @@ fn select_export(state: &AppState, kind: ExportKind) -> Result<(Kind, AppState)>
             result.profiles = vec![profile];
             Kind::Profile
         }
-        ExportKind::Png { .. } => unreachable!("PNG export has a separate encoder"),
+        ExportKind::Png { .. } | ExportKind::Svg { .. } => {
+            unreachable!("Image export has a separate encoder")
+        }
     };
     result.active_profile = result.profiles[0].id;
     result.settings = Settings {
@@ -424,13 +431,8 @@ fn merge(
         }
         for binding in &mut profile.bindings {
             binding.id = Id::new_v4();
-            match &mut binding.action {
-                BindingAction::SelectPreset { preset }
-                | BindingAction::TogglePreset { preset }
-                | BindingAction::ShowPresetWhileHeld { preset } => {
-                    *preset = *presets.get(preset).context("Binding target is missing")?
-                }
-                _ => {}
+            if let BindingAction::SelectPreset { preset } = &mut binding.action {
+                *preset = *presets.get(preset).context("Binding target is missing")?;
             }
         }
     }
@@ -603,6 +605,53 @@ impl<'de> Visitor<'de> for AssetSeed<'_> {
             })();
             result.map_err(de::Error::custom)?;
         }
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod export_tests {
+    use super::*;
+
+    #[test]
+    fn svg_export_is_self_contained_and_failed_export_preserves_destination() -> Result<()> {
+        let data = tempfile::tempdir()?;
+        let output = tempfile::tempdir()?;
+        let store = Store::open(data.path())?;
+        let mut renderer = Renderer::new()?;
+        let mut state = AppState::default();
+        let path = output.path().join("crosshair.svg");
+        let kind = ExportKind::Svg {
+            preset: state.presets[0].id,
+        };
+        store.export(&state, kind.clone(), &path, &mut renderer)?;
+        let exported = fs::read(&path)?;
+        let svg = std::str::from_utf8(&exported)?;
+        assert!(svg.starts_with("<svg"));
+        assert!(svg.contains("<path"));
+        assert!(!svg.contains("<image"));
+        assert!(!svg.contains("<text"));
+        state.presets[0].layers[0].content = Content::Rectangle(crosshair_core::Rectangle {
+            width: 1024.0,
+            height: 2.0,
+            ..Default::default()
+        });
+        state.presets[0].layers[0].effects.blur = 1.0;
+        assert!(store.export(&state, kind, &path, &mut renderer).is_err());
+        assert_eq!(fs::read(&path)?, exported);
+        assert!(
+            store
+                .export(
+                    &state,
+                    ExportKind::Svg {
+                        preset: Id::new_v4()
+                    },
+                    &path,
+                    &mut renderer
+                )
+                .is_err()
+        );
+        assert_eq!(fs::read(&path)?, exported);
         Ok(())
     }
 }
