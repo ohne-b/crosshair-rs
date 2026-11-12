@@ -22,15 +22,16 @@ if ($LASTEXITCODE) { throw 'The workspace version cannot be mapped to MSIX.' }
 if ($ReleaseCandidate -and (!$env:CROSSHAIR_UPDATE_PUBLIC_KEY -or !$env:CROSSHAIR_PACKAGE_PUBLISHER -or $Publisher -ne $env:CROSSHAIR_PACKAGE_PUBLISHER)) { throw 'Release candidates require the configured update public key and exact package publisher.' }
 if (!$ReleaseCandidate -and ($env:CROSSHAIR_UPDATE_PUBLIC_KEY -or $env:CROSSHAIR_PACKAGE_PUBLISHER)) { throw 'Clear production build variables for development packages, or explicitly select ReleaseCandidate.' }
 if (!$BinaryDirectory) { $BinaryDirectory = Join-Path $repoRoot $(if ($Configuration -eq 'Release') { 'target/release' } else { 'target/debug' }) }
+$profilePath = [Environment]::GetFolderPath('UserProfile')
+$cargoPath = if ($env:CARGO_HOME) { $env:CARGO_HOME } else { Join-Path $profilePath '.cargo' }
+$rustupPath = if ($env:RUSTUP_HOME) { $env:RUSTUP_HOME } else { Join-Path $profilePath '.rustup' }
+$pathMappings = @(@($profilePath, '/build-user'), @($cargoPath, '/cargo'), @($rustupPath, '/rustup'), @($repoRoot, '.'))
 if (!$SkipBuild) {
     Push-Location $repoRoot
     $previousFlags = $env:CARGO_ENCODED_RUSTFLAGS
     try {
         $flags = @(if ($previousFlags) { $previousFlags.Split([char]31) } elseif ($env:RUSTFLAGS) { $env:RUSTFLAGS -split '\s+' | Where-Object { $_ } })
-        $profilePath = [Environment]::GetFolderPath('UserProfile')
-        $cargoPath = if ($env:CARGO_HOME) { $env:CARGO_HOME } else { Join-Path $profilePath '.cargo' }
-        $rustupPath = if ($env:RUSTUP_HOME) { $env:RUSTUP_HOME } else { Join-Path $profilePath '.rustup' }
-        foreach ($mapping in @(@($profilePath, '/build-user'), @($cargoPath, '/cargo'), @($rustupPath, '/rustup'), @($repoRoot, '.'))) {
+        foreach ($mapping in $pathMappings) {
             $path = [IO.Path]::GetFullPath($mapping[0]).TrimEnd('\')
             $flags += "--remap-path-prefix=$path=$($mapping[1])"
             $flags += "--remap-path-prefix=$($path.Replace('\', '/'))=$($mapping[1])"
@@ -57,8 +58,9 @@ foreach ($file in @($required | Where-Object { [IO.Path]::GetExtension($_) -eq '
     $bytes = [IO.File]::ReadAllBytes($file)
     foreach ($encoding in @([Text.Encoding]::UTF8, [Text.Encoding]::Unicode)) {
         $text = $encoding.GetString($bytes)
-        foreach ($path in @($repoRoot, [Environment]::GetFolderPath('UserProfile'))) {
-            if ($text.Contains($path) -or $text.Contains($path.Replace('\', '/'))) { throw "Executable contains a local build path; rebuild through this packaging script: $([IO.Path]::GetFileName($file))" }
+        foreach ($mapping in $pathMappings) {
+            $path = [IO.Path]::GetFullPath($mapping[0]).TrimEnd('\')
+            if ($text.IndexOf($path, [StringComparison]::OrdinalIgnoreCase) -ge 0 -or $text.IndexOf($path.Replace('\', '/'), [StringComparison]::OrdinalIgnoreCase) -ge 0) { throw "Executable contains a local build path; rebuild through this packaging script: $([IO.Path]::GetFileName($file))" }
         }
     }
 }
