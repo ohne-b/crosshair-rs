@@ -1,6 +1,6 @@
 # Agent instructions
 
-Read [CONTRIBUTING.md](CONTRIBUTING.md) before planning, editing, testing or
+Read [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md) before planning, editing, testing or
 reviewing. It owns contributor workflow, privacy, validation, PR evidence and
 release boundaries for people and agents.
 
@@ -13,6 +13,12 @@ Keep changes small and complete. Reuse existing code and platform features befor
 adding dependencies or abstractions. Do not scaffold future features or crates.
 Use a separate read-only reviewer for independent review, supplying the goal,
 acceptance criteria, final revision and actual validation evidence.
+
+Keep README a short product introduction with setup links and required credits.
+Update it only when essential setup or usage changes; new features and routine
+fixes do not need README entries. Put user guides in `docs/`, release changes in
+CHANGELOG and technical contracts in `docs/architecture.md`. Write plainly; omit
+roadmaps, status reports, exhaustive control lists and repeated UI descriptions.
 
 Keep this entry point short. Extend existing documents rather than creating
 alternate instructions or planning files. Handoffs state what changed, what was

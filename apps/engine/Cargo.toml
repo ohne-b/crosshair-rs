@@ -1,0 +1,60 @@
+[package]
+name = "crosshair-engine"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license-file.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+crosshair-core.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+crosshair-renderer.workspace = true
+crosshair-platform.workspace = true
+sha2 = "0.10.9"
+base64 = "0.22.1"
+minisign-verify = "0.3.0"
+semver = "1.0"
+windows-future = "0.3.2"
+
+[target.'cfg(windows)'.dependencies]
+windows = { workspace = true, features = [
+  "Win32_Foundation",
+  "Win32_Graphics_Gdi",
+  "Win32_Devices_Display",
+  "Win32_System_LibraryLoader",
+  "Win32_System_Threading",
+  "Win32_System_Registry",
+  "Win32_System_Diagnostics_ToolHelp",
+  "Win32_System_Com",
+  "Win32_System_Com_StructuredStorage",
+  "Win32_System_Environment",
+  "Win32_System_RemoteDesktop",
+  "Win32_System_Power",
+  "Win32_Networking_WinHttp",
+  "Win32_Storage_Packaging_Appx",
+  "Win32_Storage_FileSystem",
+  "Storage",
+  "Storage_Search",
+  "Management_Deployment",
+  "ApplicationModel",
+  "Foundation",
+  "Foundation_Collections",
+  "System",
+  "Win32_UI_Controls",
+  "Win32_UI_Accessibility",
+  "Win32_UI_Input",
+  "Win32_UI_Input_KeyboardAndMouse",
+  "Win32_UI_Shell",
+  "Win32_UI_HiDpi",
+  "Win32_UI_WindowsAndMessaging",
+] }
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints]
+workspace = true

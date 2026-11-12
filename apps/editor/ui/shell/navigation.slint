@@ -1,0 +1,19 @@
+import { Store } from "../shared/models.slint";
+import { Theme } from "../shared/tokens.slint";
+import { ActionButton } from "../shared/controls.slint";
+
+export component Navigation inherits Rectangle {
+    width: 56px;
+    background: Theme.panel;
+    VerticalLayout {
+        x: 8px; y: 14px; width: parent.width - 16px; height: 126px; spacing: 6px;
+        ActionButton { label: "Crosshairs"; icon: @image-url("../../../../assets/icons/layout-grid.svg"); quiet: true; selected: Store.page == 0; height: 38px; horizontal-stretch: 1; clicked => { Store.action("navigate", "0"); } }
+        ActionButton { label: "Designer"; icon: @image-url("../../../../assets/icons/pencil.svg"); quiet: true; selected: Store.page == 1; height: 38px; horizontal-stretch: 1; clicked => { Store.action("navigate", "1"); } }
+        ActionButton { label: "Keybinds"; icon: @image-url("../../../../assets/icons/keyboard.svg"); quiet: true; selected: Store.page == 2; height: 38px; horizontal-stretch: 1; clicked => { Store.action("navigate", "2"); } }
+    }
+    VerticalLayout {
+            x: 8px; y: parent.height - 94px; width: parent.width - 16px; height: 82px; spacing: 6px;
+            ActionButton { height: 38px; icon: @image-url("../../../../assets/icons/settings.svg"); label: "Settings"; quiet: true; selected: Store.page == 3; clicked => { Store.action("navigate", "3"); } }
+            ActionButton { height: 38px; icon: @image-url("../../../../assets/icons/brand-github.svg"); label: "GitHub repository"; quiet: true; clicked => { Store.action("github", ""); } }
+    }
+}

@@ -1,0 +1,103 @@
+name: Publish release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version already merged and validated on main
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    if: github.repository == 'ohne-b/crosshair-rs' && github.ref == 'refs/heads/main'
+    runs-on: windows-2025
+    timeout-minutes: 30
+    environment: prod
+    permissions:
+      actions: read
+      contents: read
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_VERSION: ${{ inputs.version }}
+      CROSSHAIR_UPDATE_PUBLIC_KEY: ${{ vars.CROSSHAIR_UPDATE_PUBLIC_KEY }}
+      CROSSHAIR_PACKAGE_PUBLISHER: ${{ vars.CROSSHAIR_PACKAGE_PUBLISHER }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify release publisher
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          RELEASE_OWNER: ${{ github.repository_owner }}
+        run: |
+          if (!$env:GH_TOKEN) { throw 'Set RELEASE_TOKEN in the prod environment before publishing.' }
+          $publisher = gh api user --jq .login
+          if ($LASTEXITCODE -or $publisher -cne $env:RELEASE_OWNER) { throw 'RELEASE_TOKEN must belong to the repository owner.' }
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: 24
+      - name: Require immutable validation on exact canonical main
+        id: provenance
+        run: |
+          npm --prefix scripts ci --ignore-scripts
+          if ($LASTEXITCODE) { throw 'Maintenance dependency restore failed.' }
+          node scripts/release.mjs gate $env:RELEASE_VERSION
+          if ($LASTEXITCODE) { throw 'Release provenance gate failed.' }
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: ${{ steps.provenance.outputs.artifact }}
+          path: target/validated
+          run-id: ${{ steps.provenance.outputs.run }}
+          github-token: ${{ github.token }}
+      - name: Sign the validated download and prepare updater metadata
+        env:
+          RELEASE_COMMIT: ${{ steps.provenance.outputs.commit }}
+          MINISIGN_PRIVATE_KEY: ${{ secrets.MINISIGN_PRIVATE_KEY }}
+        run: |
+          ./scripts/sign-release.ps1 -ArtifactDirectory target/validated -OutputDirectory target/release-assets -Version $env:RELEASE_VERSION -Commit $env:RELEASE_COMMIT
+      - name: Create draft and verify downloaded assets
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          RELEASE_COMMIT: ${{ steps.provenance.outputs.commit }}
+          VALIDATED_ARTIFACT: ${{ steps.provenance.outputs.artifact }}
+          PRERELEASE: ${{ steps.provenance.outputs.prerelease }}
+        run: |
+          # Recheck after signing: another main revision or failed validation blocks promotion.
+          node scripts/release.mjs gate $env:RELEASE_VERSION $env:VALIDATED_ARTIFACT
+          if ($LASTEXITCODE) { throw 'Release source changed during signing.' }
+          node scripts/release.mjs body $env:RELEASE_VERSION target/release-body.md
+          if ($LASTEXITCODE) { throw 'Release notes validation failed.' }
+          $assets = @((Get-ChildItem -LiteralPath target/release-assets -File).FullName)
+          gh release create "v$env:RELEASE_VERSION" @assets --draft --target $env:RELEASE_COMMIT --title "crosshair-rs v$env:RELEASE_VERSION" --notes-file target/release-body.md
+          if ($LASTEXITCODE) { throw 'Draft release creation failed; existing releases are never overwritten.' }
+          gh release download "v$env:RELEASE_VERSION" --dir target/downloaded-release
+          if ($LASTEXITCODE) { throw 'Draft release download failed.' }
+          node scripts/release.mjs verify-assets target/downloaded-release $env:RELEASE_VERSION
+          if ($LASTEXITCODE) { throw 'Downloaded release asset verification failed.' }
+          if ((Get-FileHash target/release-assets/SHA256SUMS).Hash -ne (Get-FileHash target/downloaded-release/SHA256SUMS).Hash) { throw 'Downloaded checksums differ from the prepared release.' }
+          $minisign = ./scripts/get-minisign.ps1 -Offline
+          $package = "target/downloaded-release/crosshair-rs-$env:RELEASE_VERSION-windows-x64.msix"
+          & $minisign -V -H -P $env:CROSSHAIR_UPDATE_PUBLIC_KEY -m $package
+          if ($LASTEXITCODE) { throw 'Downloaded updater signature failed verification.' }
+          ./target/downloaded-release/Install.ps1 -VerifyOnly
+          node scripts/release.mjs gate $env:RELEASE_VERSION $env:VALIDATED_ARTIFACT draft
+          if ($LASTEXITCODE) { throw 'Release provenance changed during verification. The release remains a draft.' }
+          if ($env:PRERELEASE -eq 'true') {
+            gh release edit "v$env:RELEASE_VERSION" --draft=false --prerelease --latest=false
+          } else {
+            gh release edit "v$env:RELEASE_VERSION" --draft=false --latest
+          }
+          if ($LASTEXITCODE) { throw 'Verified release publication failed.' }

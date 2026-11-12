@@ -1,0 +1,103 @@
+import "../../../assets/fonts/Manrope.ttf";
+import { Store } from "shared/models.slint";
+import { Theme } from "shared/tokens.slint";
+import { ActionButton } from "shared/controls.slint";
+import { ScrollView } from "std-widgets.slint";
+import { TitleBar } from "shell/titlebar.slint";
+import { Navigation } from "shell/navigation.slint";
+import { Modal } from "shell/modal.slint";
+import { MenuPanel } from "shared/menu.slint";
+import { Library } from "features/library.slint";
+import { Designer } from "features/designer.slint";
+import { Keybinds } from "features/keybinds.slint";
+import { Settings } from "features/settings.slint";
+export { Store, PresetRow, PresetGroup, LayerRow, FieldRow, FieldGroup, BindingRow, BoundsRow } from "shared/models.slint";
+export { Theme } from "shared/tokens.slint";
+
+export component AppWindow inherits Window {
+    title: "crosshair-rs";
+    icon: @image-url("../../../assets/logo.svg");
+    preferred-width: 1280px; preferred-height: 800px;
+    min-width: min(960px, Store.work-width * 1px); min-height: min(640px, Store.work-height * 1px);
+    background: transparent;
+    default-font-family: "Manrope"; default-font-size: 13px * Theme.text-scale;
+    forward-focus: keys;
+    public function finish-input() { keys.focus(); }
+    property <int> modal-kind: Store.modal-kind;
+    property <bool> menu-open: menu.is-open;
+    property <bool> help-open: help.is-open;
+    changed modal-kind => {
+        if root.modal-kind == 3 { menu.show(); } else { menu.close(); }
+        if root.modal-kind == 5 { help.show(); } else { help.close(); }
+    }
+    changed menu-open => { if !root.menu-open && Store.modal-kind == 3 { Store.action("modal-cancel", ""); } }
+    changed help-open => { if !root.help-open && Store.modal-kind == 5 { Store.action("modal-cancel", ""); } }
+    menu := PopupWindow {
+        x: clamp(Store.menu-x * 1px, 8px, root.width - self.width - 8px);
+        y: clamp(Store.menu-y * 1px, 48px, root.height - self.height - 8px);
+        width: min(240px * Theme.text-scale, root.width - 16px);
+        height: min(root.height - 64px, Store.modal-options.length * max(32px, 12px * Theme.text-scale + 16px) + 8px);
+        close-policy: close-on-click-outside;
+        forward-focus: menu-panel;
+        menu-panel := MenuPanel {}
+    }
+    help := PopupWindow {
+        x: clamp(Store.menu-x * 1px, 8px, root.width - self.width - 8px);
+        y: clamp(Store.menu-y * 1px, 48px, root.height - self.height - 8px);
+        width: min(360px * Theme.text-scale, root.width - 16px);
+        height: min(root.height - 64px, help-text.preferred-height + 56px);
+        close-policy: close-on-click-outside;
+        forward-focus: help-keys;
+        Rectangle {
+            background: Theme.panel; border-radius: 10px; border-width: 1px; border-color: Theme.border;
+            Text { x: 16px; y: 12px; width: parent.width - 32px; height: 20px; text: Store.modal-title; color: Theme.text; font-size: 12px * Theme.text-scale; font-weight: 600; }
+            help-scroll := ScrollView {
+                x: 16px; y: 40px; width: parent.width - 32px; height: parent.height - 56px;
+                horizontal-scrollbar-policy: always-off; content-width: self.visible-width;
+                help-text := Text { width: help-scroll.visible-width - 8px; text: Store.modal-message; color: Theme.muted; font-size: 12px * Theme.text-scale; wrap: word-wrap; }
+            }
+            help-keys := FocusScope { focus-on-click: false; key-pressed(event) => { if event.text == Key.Escape { Store.action("modal-cancel", ""); return accept; } return reject; } }
+        }
+    }
+    changed width => { Store.wide = root.width > 1056px; }
+    Rectangle { x: 0px; y: 48px; width: root.width; height: root.height - 48px; background: Theme.panel; }
+    keys := FocusScope {
+    width: root.width; height: root.height;
+    focus-on-click: false;
+    focus-on-tab-navigation: false;
+    Rectangle { width: root.width; height: root.height;
+    VerticalLayout {
+        spacing: 0px;
+        TitleBar { z: 1; }
+        HorizontalLayout {
+            spacing: 0px;
+            Navigation {}
+            Rectangle { border-top-left-radius: 13px; clip: true; background: Theme.border;
+            VerticalLayout {
+                padding-left: 1px; padding-top: 1px; spacing: 0px;
+                if Store.activity != "": Rectangle { height: 28px; background: Theme.panel; Text { x: 16px; text: Store.activity; color: Theme.muted; font-size: 12px * Theme.text-scale; vertical-alignment: center; } }
+                if Store.error != "": Rectangle {
+                    min-height: 44px; background: #382821;
+                    HorizontalLayout { padding-left: 16px; padding-right: 8px; spacing: 8px;
+                        Text { text: Store.error; color: #FED7AA; font-size: 12px * Theme.text-scale; wrap: word-wrap; vertical-alignment: center; horizontal-stretch: 1; }
+                        if !Store.connected: ActionButton { text: "Reconnect"; clicked => { Store.action("reconnect", ""); } }
+                        if Store.save-paused: ActionButton { text: "Retry"; clicked => { Store.action("retry-edit", ""); } }
+                        ActionButton { icon: @image-url("../../../assets/icons/x.svg"); label: "Dismiss message"; quiet: true; clicked => { Store.action("dismiss-error", ""); } }
+                    }
+                }
+                if Store.page == 0: Library {}
+                if Store.page == 1: Designer {}
+                if Store.page == 2: Keybinds {}
+                if Store.page == 3: Settings {}
+            }
+            }
+        }
+    }
+    }
+        key-pressed(event) => {
+            if Store.shortcut(event.text, event.modifiers.control, event.modifiers.shift, event.modifiers.alt) { return accept; }
+            return reject;
+        }
+    if Store.modal-kind == 1 || Store.modal-kind == 2 || Store.modal-kind == 4: Modal {}
+    }
+}

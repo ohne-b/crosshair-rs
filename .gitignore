@@ -1,7 +1,16 @@
 /target/
 node_modules/
 dist/
-/apps/dashboard/src-tauri/gen/
+/apps/gamebar/packages/
+**/bin/
+**/obj/
+/.vs/
+*.pfx
+*.p12
+*.cer
+*.key
+*.msix
+*.msixbundle
 *.log
 .env
 .env.*

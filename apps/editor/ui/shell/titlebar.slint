@@ -1,0 +1,79 @@
+import { DropDown } from "../shared/dropdown.slint";
+import { Store } from "../shared/models.slint";
+import { Theme } from "../shared/tokens.slint";
+
+component VisibilitySwitch inherits Rectangle {
+    property <bool> hint-requested: Store.interactive && (touch.has-hover || keys.has-focus) && !touch.pressed;
+    property <bool> hint-visible: false;
+    changed hint-requested => { root.hint-visible = false; }
+    Timer { interval: 500ms; running: root.hint-requested && !root.hint-visible; triggered => { root.hint-visible = true; } }
+    width: 64px; height: 34px; border-radius: 17px;
+    background: Store.visible ? (keys.has-focus || touch.has-hover ? Theme.orange.brighter(0.18) : Theme.orange) : keys.has-focus || touch.has-hover ? Theme.hover : Theme.field;
+    accessible-role: switch; accessible-label: "Show crosshair"; accessible-checked: Store.visible;
+    accessible-action-default => { if Store.interactive { Store.action("toggle-visible", ""); } }
+    forward-focus: keys;
+    Rectangle {
+        x: Store.visible ? 33px : 5px; y: 5px; width: 24px; height: 24px; border-radius: 12px;
+        background: Store.visible ? Theme.on-accent : Theme.raised;
+        Image { x: 4px; y: 4px; width: 16px; height: 16px; source: Store.visible ? @image-url("../../../../assets/icons/eye.svg") : @image-url("../../../../assets/icons/power.svg"); colorize: Store.visible ? Theme.orange : Theme.muted; }
+    }
+    keys := FocusScope { enabled: Store.interactive; key-pressed(event) => { if event.text == Key.Space || event.text == Key.Return { Store.action("toggle-visible", ""); return accept; } return reject; } }
+    touch := TouchArea { enabled: Store.interactive; clicked => { keys.focus(); Store.action("toggle-visible", ""); } }
+    if root.hint-visible: hint := Rectangle {
+        x: (root.width - self.width) / 2; y: root.height + 8px;
+        width: hint-content.preferred-width; height: hint-content.preferred-height;
+        background: Theme.panel; border-radius: 10px; border-width: 1px; border-color: Theme.border;
+        hint-content := VerticalLayout { padding: 14px; spacing: 10px;
+            Text { text: Store.visible ? "Hide crosshair" : "Show crosshair"; color: Theme.text; font-size: 12px * Theme.text-scale; font-weight: 600; }
+            Rectangle { height: 1px; background: Theme.border; }
+            HorizontalLayout { spacing: 12px;
+                Image { source: @image-url("../../../../assets/icons/keyboard.svg"); colorize: Theme.muted; width: 16px; height: 16px; }
+                Text { text: Store.visibility-shortcut; color: Theme.muted; font-size: 11px * Theme.text-scale; }
+            }
+        }
+    }
+}
+
+component CaptionButton inherits Rectangle {
+    in property <string> action;
+    in property <string> label;
+    in property <int> kind;
+    width: 46px; height: 48px;
+    background: keys.has-focus || touch.has-hover || Store.caption-hover == root.kind ? (root.kind == 2 ? #C42B1C : Theme.hover) : transparent;
+    accessible-role: button; accessible-label: root.label;
+    accessible-action-default => { Store.action(root.action, ""); }
+    forward-focus: keys;
+    if root.kind == 0: Rectangle { x: 18px; y: 24px; width: 10px; height: 1px; background: Theme.text; }
+    if root.kind == 1: Rectangle {
+        x: 18px; y: 19px; width: 10px; height: 10px;
+        if Store.window-maximized: Rectangle { x: 2px; y: -2px; width: 10px; height: 10px; border-width: 1px; border-color: Theme.text; }
+        Rectangle { width: 10px; height: 10px; background: Theme.panel; border-width: 1px; border-color: Theme.text; }
+    }
+    if root.kind == 2: Image { x: 15px; y: 16px; width: 16px; height: 16px; source: @image-url("../../../../assets/icons/x.svg"); colorize: Theme.text; }
+    keys := FocusScope { key-pressed(event) => { if event.text == Key.Return || event.text == Key.Space { Store.action(root.action, ""); return accept; } return reject; } }
+    touch := TouchArea { clicked => { Store.action(root.action, ""); } }
+}
+
+export component TitleBar inherits Rectangle {
+    height: 48px; background: Theme.panel;
+    HorizontalLayout { x: parent.width - 138px; width: 138px; height: 48px; spacing: 0px;
+        CaptionButton { action: "window-minimize"; label: "Minimize"; kind: 0; }
+        CaptionButton { action: "window-maximize"; label: Store.window-maximized ? "Restore" : "Maximize"; kind: 1; }
+        CaptionButton { action: "window-close"; label: "Close"; kind: 2; }
+    }
+    Image { x: 13px; y: 9px; source: @image-url("../../../../assets/logo.svg"); width: 30px; height: 30px; }
+    // Caption hit testing and system actions remain in the native frame adapter.
+    Rectangle { x: parent.width - 440px; width: 286px; height: 48px;
+        DropDown {
+            x: 0px; y: 8px; width: 152px; model: Store.profiles; current-index: Store.profile-index; accessible-label: "Active profile";
+            menu-title: "PROFILES"; footer-text: "Profile Settings"; footer-icon: @image-url("../../../../assets/icons/settings.svg");
+            selected(value) => { Store.action("select-profile", self.current-index); }
+            footer-clicked => { Store.settings-category = 2; Store.action("navigate", "3"); }
+        }
+        Rectangle { x: 164px; y: 8px; width: 32px; height: 32px; border-radius: 8px; background: Theme.preview; border-width: 1px; border-color: Store.visible ? Theme.orange : Theme.border;
+            Image { x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2; width: min(24px, self.source.width * 1px); height: min(24px, self.source.height * 1px); source: Store.active-thumbnail; image-fit: contain; }
+            accessible-role: image; accessible-label: Store.active-name;
+        }
+        VisibilitySwitch { x: 206px; y: 7px; }
+    }
+}

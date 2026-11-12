@@ -1,0 +1,136 @@
+import { DropDown } from "../shared/dropdown.slint";
+import { ListView } from "std-widgets.slint";
+import { Store } from "../shared/models.slint";
+import { Theme } from "../shared/tokens.slint";
+import { ActionButton, EditField, RenameField, Divider } from "../shared/controls.slint";
+
+export component Library inherits Rectangle {
+    background: Theme.canvas; border-top-left-radius: 12px;
+    property <int> columns: clamp(floor((root.width - 220px) / 210px), 2, 20);
+    changed columns => { Store.action("library-columns", root.columns); }
+    VerticalLayout { spacing: 0px;
+        Rectangle { height: 48px; background: Theme.panel; border-top-left-radius: 12px;
+            HorizontalLayout { padding-left: 20px; padding-right: 20px; padding-top: 8px; padding-bottom: 8px; spacing: 8px;
+                Text { text: "Crosshairs"; font-size: 14px * Theme.text-scale; font-weight: 600; color: Theme.text; vertical-alignment: center; }
+                Rectangle { horizontal-stretch: 1; }
+                ActionButton { text: "Import"; quiet: true; icon: @image-url("../../../../assets/icons/download.svg"); clicked => { Store.action("import", ""); } }
+                ActionButton { text: "New"; primary: true; icon: @image-url("../../../../assets/icons/plus.svg"); clicked => { Store.action("new-preset", ""); } }
+            }
+            Divider { y: parent.height - 1px; }
+        }
+        Rectangle { height: 68px;
+            HorizontalLayout { padding-left: 20px; padding-right: 20px; padding-top: 18px; padding-bottom: 18px; spacing: 12px;
+                EditField { text: Store.search; placeholder: "Search crosshairs"; horizontal-stretch: 1; edited(value) => { Store.action("search", value); } }
+                Text { text: "Sort"; color: Theme.muted; font-size: 11px * Theme.text-scale; vertical-alignment: center; }
+                DropDown {
+                    compact: true; horizontal-stretch: 0;
+                    model: ["Manual", "Name", "Recently edited"];
+                    icons: [@image-url("../../../../assets/icons/grip-vertical.svg"), @image-url("../../../../assets/icons/sort-ascending-letters.svg"), @image-url("../../../../assets/icons/clock.svg")];
+                    current-index: Store.sort; accessible-label: "Sort crosshairs";
+                    selected(value) => { Store.action("sort", self.current-index); }
+                }
+            }
+            Divider { y: parent.height - 1px; }
+        }
+        HorizontalLayout { spacing: 0px;
+            Rectangle { width: 180px; background: Theme.panel;
+                VerticalLayout { padding: 12px; spacing: 4px; alignment: start;
+                    Rectangle { height: 38px; vertical-stretch: 0;
+                        ActionButton { width: parent.width; text: "All"; icon: @image-url("../../../../assets/icons/crosshair.svg"); align-left: true; height: 38px; quiet: true; selected: !Store.favorites; clicked => { Store.action("favorites", "false"); } }
+                        Text { x: parent.width - 36px; width: 24px; text: Store.total-presets; color: Theme.muted; font-size: 11px * Theme.text-scale; horizontal-alignment: right; vertical-alignment: center; }
+                    }
+                    Rectangle { height: 38px; vertical-stretch: 0;
+                        ActionButton { width: parent.width; text: "Favorites"; icon: @image-url("../../../../assets/icons/star.svg"); align-left: true; height: 38px; quiet: true; selected: Store.favorites; clicked => { Store.action("favorites", "true"); } }
+                        Text { x: parent.width - 36px; width: 24px; text: Store.favorite-presets; color: Theme.muted; font-size: 11px * Theme.text-scale; horizontal-alignment: right; vertical-alignment: center; }
+                    }
+                }
+                Rectangle { x: parent.width - 1px; width: 1px; height: parent.height; background: Theme.border; }
+            }
+            Rectangle {
+                if Store.presets.length == 0: Text {
+                    text: Store.search != "" ? "No crosshairs found" : "No favorites yet";
+                    color: Theme.muted; font-size: 13px * Theme.text-scale;
+                    horizontal-alignment: center; vertical-alignment: center;
+                }
+                ListView { x: 20px; y: 20px; width: parent.width - 40px; height: parent.height - 40px;
+
+            for group[row-index] in Store.preset-groups: Rectangle {
+            height: 182px;
+            for preset[column-index] in group.items: card := Rectangle {
+                property <int> index: row-index * root.columns + column-index;
+                property <length> stride: (parent.width - 12px) / root.columns;
+                x: column-index * self.stride;
+                width: (parent.width - 12px) / root.columns - 12px; height: 170px;
+                background: card-focus.has-focus || card-touch.has-hover ? Theme.raised : Theme.field; border-radius: 12px; border-width: preset.selected || Store.preset-drop-index == self.index ? 1px : 0px; border-color: preset.selected || Store.preset-drop-index == self.index ? Theme.orange : Theme.border;
+                accessible-role: button; accessible-label: preset.name; accessible-action-default => { Store.action("select-preset", preset.id); }
+                card-touch := TouchArea {
+                        enabled: Store.interactive;
+                        property <bool> show-actions: self.has-hover || card-focus.has-focus || name.has-focus || favorite.has-focus || trash.has-focus;
+                        property <bool> dragging: false;
+                        property <length> start-x;
+                        property <length> start-y;
+                        double-clicked => { Store.action("edit-preset", preset.id); }
+                        pointer-event(event) => {
+                            if event.kind == PointerEventKind.cancel { self.dragging = false; Store.dragged-preset = ""; Store.preset-drop-index = -1; }
+                            if event.kind == PointerEventKind.down && event.button == PointerEventButton.left { self.start-x = self.mouse-x; self.start-y = self.mouse-y; self.dragging = false; card-focus.focus(); }
+                            if event.kind == PointerEventKind.up && event.button == PointerEventButton.left {
+                                if self.dragging && Store.preset-drop-index >= 0 { Store.action("preset-drop", preset.id + ":" + Store.presets[Store.preset-drop-index].id); }
+                                else { Store.action("select-preset", preset.id); }
+                                self.dragging = false; Store.dragged-preset = ""; Store.preset-drop-index = -1;
+                            }
+                            if event.kind == PointerEventKind.down && event.button == PointerEventButton.right {
+                                card-focus.focus();
+                                Store.menu-x = (self.absolute-position.x + self.mouse-x) / 1px;
+                                Store.menu-y = (self.absolute-position.y + self.mouse-y) / 1px;
+                                Store.action("preset-menu", preset.id);
+                            }
+                        }
+                        moved => {
+                            if self.pressed && Store.sort == 0 && (self.dragging || abs(self.mouse-x - self.start-x) + abs(self.mouse-y - self.start-y) > 6px) {
+                                self.dragging = true; Store.dragged-preset = preset.id;
+                                let column = clamp(floor((column-index * card.stride + self.mouse-x) / card.stride), 0, root.columns - 1);
+                                let row = max(0, floor((row-index * 182px + self.mouse-y) / 182px));
+                                Store.preset-drop-index = clamp(row * root.columns + column, 0, Store.presets.length - 1);
+                            }
+                        }
+                    Image { x: (parent.width - self.width) / 2; y: 62px - self.height / 2; width: min(80px, preset.thumbnail.width * 1px); height: min(80px, preset.thumbnail.height * 1px); source: preset.thumbnail; image-fit: contain; image-rendering: pixelated; }
+                    favorite := ActionButton {
+                        x: 6px; y: 6px; width: 32px; opacity: preset.favorite || card-touch.show-actions ? 1 : 0;
+                        icon: preset.favorite ? @image-url("../../../../assets/icons/star-filled.svg") : @image-url("../../../../assets/icons/star.svg");
+                        accent-icon: preset.favorite; label: preset.favorite ? "Remove favorite" : "Favorite"; quiet: true;
+                        clicked => { Store.action("favorite", preset.id); }
+                    }
+                    trash := ActionButton {
+                        x: parent.width - 38px; y: 6px; width: 32px; opacity: card-touch.show-actions ? 1 : 0;
+                        icon: @image-url("../../../../assets/icons/trash.svg"); label: "Delete " + preset.name; quiet: true;
+                        clicked => { Store.action("delete-preset", preset.id); }
+                    }
+                    name := RenameField {
+                        x: 20px; y: 128px; width: parent.width - 40px;
+                        value: preset.name; centered: true; label: "Rename " + preset.name;
+                        committed(value) => { Store.action("commit-preset-name", preset.id + ":" + value); }
+                        finished => { card-focus.focus(); }
+                    }
+                    card-focus := FocusScope {
+                        enabled: Store.interactive; focus-on-click: false;
+                        key-pressed(event) => {
+                            if event.text == Key.Return { Store.action("edit-preset", preset.id); return accept; }
+                            if event.text == Key.Space { Store.action("select-preset", preset.id); return accept; }
+                            if event.text == Key.F2 { name.edit(); return accept; }
+                            if event.text == Key.Delete { Store.action("delete-preset", preset.id); return accept; }
+                            if event.text == Key.Menu || (event.text == Key.F10 && event.modifiers.shift) {
+                                Store.menu-x = card.absolute-position.x / 1px;
+                                Store.menu-y = (card.absolute-position.y + 34px) / 1px;
+                                Store.action("preset-menu", preset.id); return accept;
+                            }
+                            return reject;
+                        }
+                    }
+                }
+            }
+            }
+        }
+            }
+        }
+    }
+}

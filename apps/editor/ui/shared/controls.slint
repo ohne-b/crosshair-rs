@@ -1,0 +1,167 @@
+import { Theme } from "tokens.slint";
+import { Store } from "models.slint";
+
+export component ActionButton inherits Rectangle {
+    in property <string> text;
+    in property <image> icon;
+    in property <image> thumbnail;
+    in property <bool> accent-icon: false;
+    in property <string> label: root.text;
+    in property <bool> primary: false;
+    in property <bool> quiet: false;
+    in property <bool> selected: false;
+    in property <bool> enabled: Store.interactive;
+    in property <bool> danger: false;
+    in property <bool> align-left: false;
+    out property <bool> has-focus: focus.has-focus;
+    callback clicked;
+    height: root.text == "" ? 32px : max(32px, 12px * Theme.text-scale + 16px);
+    preferred-width: root.text == "" ? 32px : content.preferred-width;
+    horizontal-stretch: 0;
+    vertical-stretch: 0;
+    border-radius: Theme.radius;
+    background: !root.enabled ? transparent : root.danger && touch.has-hover ? #B4232A : root.primary ? (focus.has-focus || touch.has-hover ? Theme.orange.brighter(0.18) : Theme.orange) : touch.has-hover || focus.has-focus ? Theme.hover : root.selected ? Theme.raised : root.quiet ? transparent : Theme.raised;
+    border-width: 0px;
+    opacity: root.enabled ? 1 : 0.4;
+    accessible-role: button;
+    accessible-label: root.label;
+    accessible-enabled: root.enabled;
+    accessible-action-default => { root.activate(); }
+    forward-focus: focus;
+    function activate() {
+        if root.enabled {
+            Store.menu-x = root.absolute-position.x / 1px;
+            Store.menu-y = (root.absolute-position.y + root.height + 4px) / 1px;
+            focus.focus(); Store.commit-focused-input(); root.clicked();
+        }
+    }
+    content := HorizontalLayout {
+        padding-left: root.text == "" ? 7px : 10px; padding-right: root.text == "" ? 7px : 10px; spacing: 8px; alignment: root.align-left ? start : center;
+        if root.thumbnail.width > 0: Rectangle { width: 26px; Image { x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2; source: root.thumbnail; width: min(26px, root.thumbnail.width * 1px); height: min(26px, root.thumbnail.height * 1px); image-fit: contain; } }
+        if root.icon.width > 0: Rectangle { width: 18px; Image { y: (parent.height - 18px) / 2; source: root.icon; width: 18px; height: 18px; colorize: root.primary ? Theme.on-accent : root.selected || root.accent-icon ? Theme.orange : Theme.muted; } }
+        if root.text != "": Text { text: root.text; color: root.primary ? Theme.on-accent : Theme.text; font-size: 12px * Theme.text-scale; font-weight: root.primary ? 600 : 500; vertical-alignment: center; overflow: elide; }
+    }
+    focus := FocusScope {
+        enabled: root.enabled;
+        key-pressed(event) => {
+            if event.text == "\n" || event.text == " " { root.activate(); return accept; }
+            return reject;
+        }
+    }
+    touch := TouchArea {
+        enabled: root.enabled;
+        clicked => { root.activate(); }
+    }
+    if root.label != "" && (root.text == "" || root.label != root.text): Tooltip {
+        Rectangle {
+            background: Theme.raised; border-radius: 8px; border-width: 1px; border-color: Theme.border;
+            HorizontalLayout { padding-left: 8px; padding-right: 8px; padding-top: 6px; padding-bottom: 6px; Text { text: root.label; color: Theme.text; font-size: 11px * Theme.text-scale; } }
+        }
+    }
+}
+
+export component RenameField inherits Rectangle {
+    in property <string> value;
+    in property <string> label: "Rename crosshair";
+    in property <bool> centered: false;
+    in property <bool> enabled: Store.connected && Store.interactive;
+    out property <bool> has-focus: input.has-focus;
+    callback committed(string);
+    callback finished;
+    property <bool> modified: false;
+    changed value => { if !root.modified { input.text = root.value; } }
+    changed has-focus => { if !root.has-focus { root.commit(); } }
+    init => { input.text = root.value; }
+    public function edit() { input.focus(); input.select-all(); }
+    function commit() {
+        if root.modified { root.modified = false; root.committed(input.text); }
+    }
+    height: max(30px, 12px * Theme.text-scale + 16px);
+    min-width: 0px; vertical-stretch: 0;
+    background: input.has-focus ? Theme.field : Theme.panel;
+    border-radius: 6px; border-width: input.has-focus ? 1px : 0px; border-color: Theme.orange;
+    forward-focus: input;
+    input := TextInput {
+        x: 8px; width: parent.width - 16px; height: parent.height;
+        enabled: root.enabled; single-line: true;
+        font-size: 12px * Theme.text-scale; color: Theme.text;
+        horizontal-alignment: root.centered ? center : left; vertical-alignment: center;
+        selection-background-color: Theme.orange; selection-foreground-color: Theme.on-accent;
+        accessible-label: root.label;
+        edited => { root.modified = true; }
+        accepted => { root.commit(); root.finished(); }
+        key-pressed(event) => {
+            if event.text == Key.Escape { root.modified = false; self.text = root.value; root.finished(); return accept; }
+            if event.modifiers.control && !event.modifiers.alt && (event.text == "s" || event.text == "S") { root.commit(); }
+            return reject;
+        }
+    }
+}
+
+export component EditField inherits Rectangle {
+    in property <string> identity;
+    changed identity => { root.modified = false; }
+    in-out property <string> text;
+    in property <string> placeholder;
+    in property <string> label: root.placeholder;
+    in property <bool> enabled: Store.interactive;
+    in property <bool> numeric: false;
+    callback edited(string);
+    callback committed(string);
+    callback accepted(string);
+    property <bool> focused: input.has-focus;
+    property <bool> modified: false;
+    changed focused => { if !root.focused && root.modified { root.modified = false; root.committed(root.text); } }
+    height: max(32px, 12px * Theme.text-scale + 16px);
+    vertical-stretch: 0;
+    min-width: 0px;
+    border-radius: Theme.radius;
+    background: Theme.field;
+    border-width: 1px;
+    border-color: input.has-focus ? Theme.orange : transparent;
+    forward-focus: input;
+    input := TextInput {
+        x: 9px; y: 6px; width: parent.width - 18px; height: parent.height - 12px;
+        text <=> root.text;
+        enabled: root.enabled;
+        single-line: true;
+        vertical-alignment: center;
+        color: Theme.text;
+        selection-background-color: Theme.orange;
+        selection-foreground-color: Theme.canvas;
+        font-size: 12px * Theme.text-scale;
+        horizontal-alignment: root.numeric ? right : left;
+        accessible-label: root.label;
+        edited => { root.modified = true; root.edited(self.text); }
+        accepted => { root.modified = false; root.committed(self.text); root.accepted(self.text); }
+        key-pressed(event) => {
+            if root.modified && (event.text == Key.Tab || (event.modifiers.control && !event.modifiers.alt && (event.text == "s" || event.text == "S"))) { root.modified = false; root.committed(self.text); }
+            return reject;
+        }
+    }
+    if input.text == "" && !input.has-focus: Text { x: 9px; text: root.placeholder; color: Theme.muted; font-size: 12px * Theme.text-scale; vertical-alignment: center; }
+}
+
+export component Switch inherits Rectangle {
+    in property <bool> checked;
+    in property <string> label;
+    in property <bool> enabled: Store.interactive;
+    callback toggled;
+    width: 34px; height: 32px; vertical-stretch: 0; horizontal-stretch: 0;
+    background: focus.has-focus ? Theme.hover : transparent; border-radius: 8px;
+    accessible-role: switch;
+    accessible-label: root.label;
+    accessible-checked: root.checked;
+    accessible-enabled: root.enabled;
+    accessible-action-default => { if root.enabled { root.toggled(); } }
+    forward-focus: focus;
+    Rectangle { y: 6px; width: 34px; height: 20px; border-radius: 10px;
+        background: root.checked ? Theme.orange : Theme.border;
+        Rectangle { x: root.checked ? 17px : 3px; y: 3px; width: 14px; height: 14px; border-radius: 7px; background: root.checked ? Theme.canvas : Theme.muted; }
+    }
+    focus := FocusScope { enabled: root.enabled; key-pressed(event) => { if event.text == " " { root.toggled(); return accept; } return reject; } }
+    TouchArea { enabled: root.enabled; clicked => { focus.focus(); root.toggled(); } }
+}
+
+export component Divider inherits Rectangle { height: 1px; vertical-stretch: 0; background: Theme.border; horizontal-stretch: 1; }
+export component SectionTitle inherits Text { color: Theme.muted; font-size: 11px * Theme.text-scale; font-weight: 600; height: 36px; vertical-stretch: 0; vertical-alignment: center; }

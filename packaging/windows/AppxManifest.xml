@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Package xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
+         xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+         xmlns:uap3="http://schemas.microsoft.com/appx/manifest/uap/windows10/3"
+         xmlns:desktop="http://schemas.microsoft.com/appx/manifest/desktop/windows10"
+         xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
+         IgnorableNamespaces="uap uap3 desktop rescap">
+  <Identity Name="OhneB.crosshair-rs" Publisher="CN=ohne-b, OID.2.25.311729368913984317654407730594956997722=1" Version="0.1.0.0" ProcessorArchitecture="x64" />
+  <Properties>
+    <DisplayName>crosshair-rs</DisplayName>
+    <PublisherDisplayName>OhneB</PublisherDisplayName>
+    <Description>A lightweight crosshair overlay and editor.</Description>
+    <Logo>Assets\StoreLogo.png</Logo>
+  </Properties>
+  <Dependencies>
+    <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.22000.0" MaxVersionTested="10.0.26100.0" />
+    <PackageDependency Name="Microsoft.VCLibs.140.00" MinVersion="14.0.33519.0" Publisher="CN=Microsoft Corporation, O=Microsoft Corporation, L=Redmond, S=Washington, C=US" />
+  </Dependencies>
+  <Resources><Resource Language="en-US" /></Resources>
+  <Applications>
+    <Application Id="Editor" Executable="crosshair-editor.exe" EntryPoint="Windows.FullTrustApplication">
+      <uap:VisualElements DisplayName="crosshair-rs" Description="Crosshair editor"
+          Square150x150Logo="Assets\Square150x150Logo.png" Square44x44Logo="Assets\Square44x44Logo.png" BackgroundColor="#181818" />
+      <Extensions>
+        <uap:Extension Category="windows.protocol">
+          <uap:Protocol Name="crosshair-rs"><uap:DisplayName>crosshair-rs</uap:DisplayName></uap:Protocol>
+        </uap:Extension>
+      </Extensions>
+    </Application>
+    <Application Id="Engine" Executable="crosshair-engine.exe" EntryPoint="Windows.FullTrustApplication">
+      <uap:VisualElements DisplayName="crosshair-rs engine" Description="Crosshair overlay"
+          AppListEntry="none" Square150x150Logo="Assets\Square150x150Logo.png" Square44x44Logo="Assets\Square44x44Logo.png" BackgroundColor="transparent" />
+      <Extensions>
+        <desktop:Extension Category="windows.startupTask" Executable="crosshair-engine.exe" EntryPoint="Windows.FullTrustApplication">
+          <desktop:StartupTask TaskId="CrosshairEngineStartup" Enabled="false" DisplayName="crosshair-rs" />
+        </desktop:Extension>
+      </Extensions>
+    </Application>
+    <Application Id="Widget" Executable="crosshair-gamebar.exe" EntryPoint="CrosshairWidget.App">
+      <uap:VisualElements DisplayName="crosshair-rs" Description="Crosshair Game Bar widget"
+          AppListEntry="none" Square150x150Logo="Assets\Square150x150Logo.png" Square44x44Logo="Assets\Square44x44Logo.png" BackgroundColor="transparent" />
+      <Extensions>
+        <desktop:Extension Category="windows.fullTrustProcess" Executable="crosshair-engine.exe" />
+        <uap3:Extension Category="windows.appExtension">
+          <uap3:AppExtension Name="microsoft.gameBarUIExtension" Id="CrosshairOverlay" DisplayName="crosshair-rs" Description="Crosshair overlay" PublicFolder="Assets">
+            <uap3:Properties>
+              <GameBarWidget Type="Standard">
+                <HomeMenuVisible>true</HomeMenuVisible><PinningSupported>true</PinningSupported>
+                <ActivateAfterInstall>false</ActivateAfterInstall><FavoriteAfterInstall>false</FavoriteAfterInstall>
+                <Window>
+                  <AllowForegroundTransparency>true</AllowForegroundTransparency>
+                  <Size><Width>200</Width><Height>100</Height><MinWidth>32</MinWidth><MinHeight>32</MinHeight><MaxWidth>4096</MaxWidth><MaxHeight>4096</MaxHeight></Size>
+                  <ResizeSupported><Horizontal>false</Horizontal><Vertical>false</Vertical></ResizeSupported>
+                </Window>
+              </GameBarWidget>
+            </uap3:Properties>
+          </uap3:AppExtension>
+        </uap3:Extension>
+      </Extensions>
+    </Application>
+  </Applications>
+  <Extensions>
+    <Extension Category="windows.activatableClass.inProcessServer">
+      <InProcessServer>
+        <Path>Microsoft.Gaming.XboxGameBar.dll</Path>
+        <ActivatableClass ActivatableClassId="Microsoft.Gaming.XboxGameBar.XboxGameBarWidget" ThreadingModel="both" />
+      </InProcessServer>
+    </Extension>
+    <!-- SDK metadata-based marshaling registrations are inserted from its pinned package readme. -->
+  </Extensions>
+  <Capabilities><rescap:Capability Name="runFullTrust" /></Capabilities>
+</Package>

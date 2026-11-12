@@ -1,0 +1,151 @@
+import { Theme } from "tokens.slint";
+import { Store } from "models.slint";
+import { ActionButton, EditField } from "controls.slint";
+import { NumericField } from "numeric-field.slint";
+
+component ColorTrack inherits Rectangle {
+    in property <string> label;
+    in-out property <float> value;
+    callback changed(int);
+    height: 14px; border-radius: 7px;
+    forward-focus: focus;
+    Rectangle { x: clamp(root.value, 0, 1) * (parent.width - 8px); y: -2px; width: 8px; height: parent.height + 4px;
+        border-radius: 4px; border-width: 2px; border-color: white; background: transparent; }
+    focus := FocusScope { key-pressed(event) => {
+        if event.text == Key.LeftArrow || event.text == Key.RightArrow {
+            root.value = clamp(root.value + (event.text == Key.RightArrow ? 0.01 : -0.01), 0, 1); root.changed(2); return accept;
+        }
+        return reject;
+    } }
+    TouchArea {
+        pointer-event(event) => {
+            if event.button == PointerEventButton.left {
+                if event.kind == PointerEventKind.down { focus.focus(); root.value = clamp(self.mouse-x / self.width, 0, 1); root.changed(1); }
+                if event.kind == PointerEventKind.up { root.changed(2); }
+            }
+            if event.kind == PointerEventKind.cancel { root.changed(2); }
+        }
+        moved => { if self.pressed { root.value = clamp(self.mouse-x / self.width, 0, 1); root.changed(1); } }
+    }
+    accessible-role: slider; accessible-label: root.label; accessible-value: root.value;
+    accessible-value-minimum: 0; accessible-value-maximum: 1; accessible-value-step: 0.01;
+    accessible-action-set-value(value) => { if value.is-float() { root.value = clamp(value.to-float(), 0, 1); root.changed(2); } }
+    accessible-action-increment => { root.value = min(1, root.value + 0.01); root.changed(2); }
+    accessible-action-decrement => { root.value = max(0, root.value - 0.01); root.changed(2); }
+}
+
+export component ColorField inherits Rectangle {
+    in property <string> identity;
+    in property <string> label;
+    in property <bool> enabled: Store.interactive;
+    in property <color> value;
+    in property <string> hex;
+    in property <length> window-width: 1000px;
+    in property <length> window-height: 700px;
+    callback changed(color, int);
+    callback hex-committed(string);
+    property <float> hue;
+    property <float> saturation;
+    property <float> brightness;
+    property <float> alpha;
+    changed identity => { popup.close(); }
+    changed value => {
+        if popup.is-open {
+            // Keep hue for achromatic colors so crossing black does not reset the picker.
+            if root.value.to-hsv().saturation > 0 && root.value.to-hsv().value > 0 {
+                if !(root.hue > 0.99 && root.value.to-hsv().hue == 0) { root.hue = root.value.to-hsv().hue / 360; }
+            }
+            root.saturation = root.value.to-hsv().saturation;
+            root.brightness = root.value.to-hsv().value;
+            root.alpha = root.value.to-hsv().alpha;
+        }
+    }
+    height: max(32px, 12px * Theme.text-scale + 16px); min-width: 0px; vertical-stretch: 0;
+    background: Theme.field; border-radius: Theme.radius;
+    function open() {
+        if root.enabled {
+            root.hue = root.value.to-hsv().hue / 360;
+            root.saturation = root.value.to-hsv().saturation;
+            root.brightness = root.value.to-hsv().value;
+            root.alpha = root.value.to-hsv().alpha;
+            popup.show();
+        }
+    }
+    function emit(phase: int) { root.changed(Colors.hsv(root.hue * 360, root.saturation, root.brightness, root.alpha), phase); }
+    HorizontalLayout { spacing: 0px; padding-left: 5px;
+        ActionButton { width: 28px; height: 32px; enabled: root.enabled; quiet: true; label: "Choose " + root.label;
+            Rectangle { x: 4px; y: (parent.height - 20px) / 2; width: 20px; height: 20px; border-radius: 4px;
+                background: root.value; border-width: 1px; border-color: Theme.muted; }
+            clicked => { root.open(); }
+        }
+        EditField { text: root.hex; enabled: root.enabled; label: root.label + " hexadecimal color";
+            committed(text) => { root.hex-committed(text); }
+        }
+        Rectangle { width: 1px; y: 8px; height: parent.height - 16px; background: Theme.border; }
+        NumericField { width: 66px; enabled: root.enabled; label: root.label + " opacity"; suffix: "%";
+            minimum: 0; maximum: 100; step: 1;
+            value: round(root.value.to-hsv().alpha * 100);
+            changed(value, phase) => { root.changed(root.value.with-alpha(value / 100), phase); }
+        }
+    }
+    popup := PopupWindow {
+        x: clamp(-self.width - 8px, 8px - root.absolute-position.x, max(8px - root.absolute-position.x, root.window-width - self.width - root.absolute-position.x - 8px));
+        y: clamp(0px, 8px - root.absolute-position.y, max(8px - root.absolute-position.y, root.window-height - self.height - root.absolute-position.y - 8px));
+        width: 260px; height: 348px;
+        close-policy: close-on-click-outside;
+        forward-focus: popup-focus;
+        popup-focus := FocusScope { focus-on-click: false;
+            key-pressed(event) => { if event.text == Key.Escape { popup.close(); return accept; } return reject; }
+            Rectangle { background: Theme.panel; border-radius: 10px; border-width: 1px; border-color: Theme.border;
+                VerticalLayout { padding: 12px; spacing: 12px;
+                    sv := Rectangle {
+                        height: 176px; background: Colors.hsv(root.hue * 360, 1, 1);
+                        Rectangle { background: @linear-gradient(90deg, white, transparent); }
+                        Rectangle { background: @linear-gradient(180deg, transparent, black); }
+                        Rectangle { x: root.saturation * parent.width - 5px; y: (1 - root.brightness) * parent.height - 5px;
+                            width: 10px; height: 10px; border-radius: 5px; border-width: 2px; border-color: white; background: transparent; }
+                        forward-focus: sv-focus;
+                        sv-focus := FocusScope { key-pressed(event) => {
+                            if event.text == Key.LeftArrow || event.text == Key.RightArrow { root.saturation = clamp(root.saturation + (event.text == Key.RightArrow ? 0.01 : -0.01), 0, 1); root.emit(2); return accept; }
+                            if event.text == Key.UpArrow || event.text == Key.DownArrow { root.brightness = clamp(root.brightness + (event.text == Key.UpArrow ? 0.01 : -0.01), 0, 1); root.emit(2); return accept; }
+                            return reject;
+                        } }
+                        TouchArea {
+                            pointer-event(event) => {
+                                if event.button == PointerEventButton.left {
+                                    if event.kind == PointerEventKind.down { sv-focus.focus(); root.saturation = clamp(self.mouse-x / self.width, 0, 1); root.brightness = 1 - clamp(self.mouse-y / self.height, 0, 1); root.emit(1); }
+                                    if event.kind == PointerEventKind.up { root.emit(2); }
+                                }
+                                if event.kind == PointerEventKind.cancel { root.emit(2); }
+                            }
+                            moved => { if self.pressed { root.saturation = clamp(self.mouse-x / self.width, 0, 1); root.brightness = 1 - clamp(self.mouse-y / self.height, 0, 1); root.emit(1); } }
+                        }
+                        accessible-role: groupbox; accessible-label: "Saturation and brightness; use arrow keys";
+                    }
+                    ColorTrack { label: "Hue"; value <=> root.hue;
+                        background: @linear-gradient(90deg, #f00 0%, #ff0 16.67%, #0f0 33.33%, #0ff 50%, #00f 66.67%, #f0f 83.33%, #f00 100%);
+                        changed(phase) => { root.emit(phase); }
+                    }
+                    ColorTrack { label: "Alpha"; value <=> root.alpha;
+                        background: @linear-gradient(90deg, root.value.with-alpha(0), root.value.with-alpha(1));
+                        changed(phase) => { root.emit(phase); }
+                    }
+                    EditField { text: root.hex; label: "Hexadecimal color"; enabled: root.enabled;
+                        committed(text) => { root.hex-committed(text); }
+                    }
+                    HorizontalLayout { spacing: 6px; height: 24px;
+                        for shade[index] in [#ffffff, #181818, #ef4444, #f97316, #facc15, #22c55e, #3b82f6, #a855f7]: ActionButton {
+                            height: 24px; width: 24px; enabled: root.enabled;
+                            label: "Use " + ["white", "black", "red", "orange", "yellow", "green", "blue", "purple"][index];
+                            Rectangle { x: 3px; y: 3px; width: 18px; height: 18px; border-radius: 4px; background: shade; }
+                            clicked => {
+                                root.hue = shade.to-hsv().hue / 360; root.saturation = shade.to-hsv().saturation; root.brightness = shade.to-hsv().value;
+                                root.emit(2);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

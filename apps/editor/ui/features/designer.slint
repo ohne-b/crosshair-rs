@@ -1,0 +1,356 @@
+import { DropDown } from "../shared/dropdown.slint";
+import { ScrollView } from "std-widgets.slint";
+import { Store, FieldRow } from "../shared/models.slint";
+import { NumericField } from "../shared/numeric-field.slint";
+import { ColorField } from "../shared/color-field.slint";
+import { PresetPicker } from "../shared/preset-picker.slint";
+import { Theme } from "../shared/tokens.slint";
+import { ActionButton, EditField, RenameField, Switch, Divider } from "../shared/controls.slint";
+
+component PropertyRow inherits Rectangle {
+    in property <FieldRow> field;
+    in property <length> viewport-width;
+    in property <length> viewport-height;
+    property <bool> editable: Store.selection-editable && Store.interactive;
+    height: root.field.key == "/name" ? max(38px, 12px * Theme.text-scale + 24px) : root.field.kind == 0 ? max(38px, 12px * Theme.text-scale + 28px) : root.field.kind == 3 ? max(36px, 12px * Theme.text-scale + 16px) : max(58px, 12px * Theme.text-scale + 42px);
+    vertical-stretch: 0;
+    if root.field.kind == 0: Rectangle {
+        Divider { y: 0px; }
+        ActionButton {
+            y: 6px; width: parent.width; text: root.field.label; align-left: true; quiet: true;
+            label: (root.field.checked ? "Expand " : "Collapse ") + root.field.label;
+            icon: @image-url("../../../../assets/icons/chevron-down.svg");
+            clicked => { Store.action("collapse-section", root.field.key); }
+        }
+        if root.field.checked: Text { x: parent.width - 18px; y: 6px; height: 32px; text: "+"; color: Theme.muted; vertical-alignment: center; }
+    }
+    if root.field.kind == 3: HorizontalLayout {
+        Text { text: root.field.label; color: Theme.muted; font-size: 12px * Theme.text-scale; vertical-alignment: center; horizontal-stretch: 1; }
+        Switch { enabled: root.editable; checked: root.field.checked; label: root.field.label; toggled => { Store.property-edit(root.field.selection, root.field.key, root.field.checked ? "false" : "true", 2); } }
+    }
+    if root.field.kind != 0 && root.field.kind != 3: VerticalLayout {
+        padding-top: 3px; padding-bottom: 5px; spacing: 5px; alignment: start;
+        if root.field.key != "/name": Text { text: root.field.label; color: Theme.muted; font-size: 11px * Theme.text-scale; height: 16px * Theme.text-scale; }
+        HorizontalLayout {
+            spacing: 6px;
+            if root.field.kind == 2: NumericField {
+                identity: root.field.selection + root.field.key; enabled: root.editable; horizontal-stretch: 1;
+                label: root.field.label; minimum: root.field.minimum; maximum: root.field.maximum; value: root.field.numeric;
+                step: root.field.step;
+                icon: root.field.label == "Rotation" || root.field.label == "Sweep" ? @image-url("../../../../assets/icons/refresh.svg")
+                    : root.field.label == "Blur" || root.field.label == "Line blur" || root.field.label == "Dot blur" || root.field.label == "Outline blur" ? @image-url("../../../../assets/icons/circle.svg")
+                    : root.field.label == "Opacity" ? @image-url("../../../../assets/icons/eye.svg")
+                    : root.field.label == "Arms" ? @image-url("../../../../assets/icons/crosshair.svg")
+                    : root.field.label == "X" || root.field.label == "Gap" || root.field.label == "Crop X" ? @image-url("../../../../assets/icons/arrows-horizontal.svg")
+                    : root.field.label == "Y" || root.field.label == "Height" || root.field.label == "Crop Y" || root.field.label == "Crop height" ? @image-url("../../../../assets/icons/arrow-down.svg")
+                    : root.field.label == "Thickness" || root.field.label == "Outline thickness" || root.field.label == "Bar thickness" ? @image-url("../../../../assets/icons/line-height.svg")
+                    : root.field.label == "Scale" ? @image-url("../../../../assets/icons/square.svg")
+                    : root.field.label == "Radius" || root.field.label == "Diameter" || root.field.label == "Corner radius" ? @image-url("../../../../assets/icons/circle.svg")
+                    : @image-url("../../../../assets/icons/ruler.svg");
+                changed(value, phase) => { Store.property-edit(root.field.selection, root.field.key, "" + value, phase); }
+            }
+            if root.field.kind == 4: ColorField {
+                identity: root.field.selection + root.field.key; enabled: root.editable; horizontal-stretch: 1;
+                label: root.field.label; value: root.field.swatch; hex: root.field.value;
+                window-width: root.viewport-width; window-height: root.viewport-height;
+                changed(value, phase) => { Store.property-color(root.field.selection, root.field.key, value, phase); }
+                hex-committed(value) => { Store.property-edit(root.field.selection, root.field.key, value, 2); }
+            }
+            if root.field.kind == 1: EditField {
+                identity: root.field.selection + root.field.key; enabled: root.editable; horizontal-stretch: 1;
+                text: root.field.value; label: root.field.label;
+                edited(value) => { Store.property-edit(root.field.selection, root.field.key, value, 0); }
+                committed(value) => { Store.property-edit(root.field.selection, root.field.key, value, 2); }
+            }
+            if root.field.kind == 5: DropDown { enabled: root.editable; horizontal-stretch: 1; model: root.field.choices; current-index: root.field.selected; accessible-label: root.field.label; selected(value) => { Store.property-edit(root.field.selection, root.field.key, self.current-index, 3); } }
+            if root.field.kind == 6: ActionButton { enabled: root.editable; text: "Choose…"; horizontal-stretch: 1; clicked => { Store.action("property-action", root.field.key); } }
+        }
+    }
+
+}
+
+component LayerList inherits Rectangle {
+    property <int> drop-index: -1;
+    property <int> drag-index: -1;
+    property <length> drag-offset;
+    callback collapse;
+    property <string> focused-layer;
+    property <length> row-height: max(38px, 12px * Theme.text-scale + 18px);
+    background: Theme.panel;
+    VerticalLayout { padding: 8px; spacing: 6px;
+        HorizontalLayout { height: 32px;
+            Text { text: "Layers"; color: Theme.text; font-size: 12px * Theme.text-scale; font-weight: 600; vertical-alignment: center; horizontal-stretch: 1; }
+            ActionButton { icon: @image-url("../../../../assets/icons/chevron-down.svg"); label: "Collapse layers"; quiet: true; clicked => { root.collapse(); } }
+        }
+        layer-scroll := ScrollView {
+            horizontal-scrollbar-policy: always-off;
+            content-width: self.visible-width;
+            Rectangle { height: Store.layers.length * (root.row-height + 3px);
+                for layer[index] in Store.layers: Rectangle {
+                    x: 0px; width: parent.width;
+                    y: index * (root.row-height + 3px) + (root.drop-index < 0 ? 0px : index == root.drag-index ? root.drag-offset : root.drag-index < root.drop-index && index > root.drag-index && index <= root.drop-index ? -(root.row-height + 3px) : root.drag-index > root.drop-index && index >= root.drop-index && index < root.drag-index ? root.row-height + 3px : 0px);
+                    animate y { duration: !Theme.animations || root.drag-index == index ? 0ms : 100ms; }
+                    height: root.row-height; vertical-stretch: 0;
+                    background: layer.selected ? Theme.raised : transparent; border-radius: 8px;
+                    accessible-role: list-item; accessible-label: layer.name + (layer.selected ? ", selected" : "");
+                    accessible-action-default => { root.focused-layer = layer.id; layer-keys.focus(); Store.select-layer(layer.id, false); }
+                    HorizontalLayout { padding-left: 8px; spacing: 2px;
+                        Rectangle { width: 22px;
+                            Image { y: (parent.height - 15px) / 2; width: 15px; height: 15px; colorize: Theme.muted;
+                                source: layer.kind == "Crosshair" ? @image-url("../../../../assets/icons/crosshair.svg") : layer.kind == "Rectangle" ? @image-url("../../../../assets/icons/square.svg") : layer.kind == "Ellipse" ? @image-url("../../../../assets/icons/circle.svg") : layer.kind == "Triangle" ? @image-url("../../../../assets/icons/triangle.svg") : layer.kind == "Image" ? @image-url("../../../../assets/icons/photo.svg") : @image-url("../../../../assets/icons/pencil.svg");
+                            }
+                        }
+                        Text { text: layer.name; font-size: 12px * Theme.text-scale; color: layer.selected ? Theme.text : Theme.muted; overflow: elide; vertical-alignment: center; horizontal-stretch: 1; }
+                        ActionButton { height: root.row-height; icon: @image-url("../../../../assets/icons/eye.svg"); label: layer.shown ? "Hide layer" : "Show layer"; opacity: layer.shown ? 1 : 0.35; quiet: true; clicked => { Store.action("layer-visible", layer.id); } }
+                        ActionButton { height: root.row-height; icon: @image-url("../../../../assets/icons/trash.svg"); label: "Delete " + layer.name; quiet: true; clicked => { layer-keys.focus(); Store.action("delete-layer", layer.id); } }
+                    }
+                    TouchArea { width: parent.width - 68px;
+                        enabled: Store.interactive;
+                        property <length> start-y;
+                        property <bool> dragging: false;
+                        pointer-event(event) => {
+                            if event.kind == PointerEventKind.down {
+                                root.drag-index = index; root.focused-layer = layer.id; layer-keys.focus(); self.start-y = self.absolute-position.y + self.mouse-y; root.drag-offset = 0px; self.dragging = false;
+                                Store.select-layer(layer.id, event.modifiers.control || event.modifiers.shift);
+                                if event.button == PointerEventButton.right {
+                                    Store.menu-x = (self.absolute-position.x + self.mouse-x) / 1px;
+                                    Store.menu-y = (self.absolute-position.y + self.mouse-y) / 1px;
+                                    Store.action("layer-menu", "selected");
+                                }
+                            }
+                            if event.kind == PointerEventKind.cancel { self.dragging = false; root.drop-index = -1; root.drag-index = -1; root.drag-offset = 0px; }
+                            if event.kind == PointerEventKind.up && event.button == PointerEventButton.left {
+                                if self.dragging && root.drop-index >= 0 { Store.action("layer-drop", layer.id + ":" + Store.layers[root.drop-index].id); }
+                                self.dragging = false; root.drop-index = -1; root.drag-index = -1; root.drag-offset = 0px;
+                            }
+                        }
+                        moved => { if self.pressed && abs(self.absolute-position.y + self.mouse-y - self.start-y) > 6px {
+                            self.dragging = true;
+                            root.drag-offset = self.absolute-position.y + self.mouse-y - self.start-y;
+                            root.drop-index = clamp(round(index + root.drag-offset / (root.row-height + 3px)), 0, Store.layers.length - 1);
+                        } }
+                        double-clicked => { Store.action("rename-layer", layer.id); }
+                    }
+
+
+                }
+            }
+        }
+    }
+    layer-keys := FocusScope {
+        enabled: Store.interactive; focus-on-click: false;
+        key-pressed(event) => {
+            if event.text == Key.F2 && root.focused-layer != "" { Store.action("rename-layer", root.focused-layer); return accept; }
+            if Store.shortcut(event.text, event.modifiers.control, event.modifiers.shift, event.modifiers.alt) { return accept; }
+            return reject;
+        }
+    }
+}
+
+export component Designer inherits Rectangle {
+    property <bool> show-layers: Store.wide;
+    background: Theme.canvas; border-top-left-radius: 12px;
+    VerticalLayout {
+        spacing: 0px;
+        Rectangle { height: 44px; background: Theme.panel; border-top-left-radius: 12px;
+            HorizontalLayout {
+                padding-left: 12px; padding-right: 12px; padding-top: 6px; padding-bottom: 6px; spacing: 8px;
+                RenameField { background: Theme.preview; value: Store.document-name; label: "Crosshair name"; width: 208px; enabled: Store.interactive; committed(value) => { Store.action("rename-document", value); } finished => { canvas-keys.focus(); } }
+                ActionButton { text: "File"; width: 64px; align-left: true; quiet: true; clicked => { file-menu.show(); }
+                    Image { x: 43px; y: (parent.height - 14px) / 2; width: 14px; height: 14px; source: @image-url("../../../../assets/icons/chevron-down.svg"); colorize: Theme.muted; }
+                    file-menu := PopupWindow { y: parent.height + 4px; width: 200px; height: 198px; close-policy: close-on-click-outside; forward-focus: file-keys;
+                        file-keys := FocusScope { key-pressed(event) => { if event.text == Key.Escape { file-menu.close(); return accept; } return reject; }
+                        Rectangle { background: Theme.panel; border-radius: 10px; border-width: 1px; border-color: Theme.border;
+                            VerticalLayout { padding: 8px; spacing: 2px;
+                                for item[index] in ["New", "Open", "Import", "Duplicate", "Export crosshair"]: ActionButton { text: item; align-left: true; quiet: true; clicked => { file-menu.close(); if index == 1 { open-picker.show(); } else { Store.action(["new-preset", "", "import", "duplicate-preset", "export-draft"][index], index >= 3 ? Store.document-id : ""); } } }
+                            }
+                        }
+                        }
+                    }
+                }
+                Rectangle { horizontal-stretch: 1; }
+                if !Store.document-active: ActionButton { text: "Use"; primary: true; clicked => { Store.action("use-document", ""); } }
+                ActionButton { text: "Save"; enabled: Store.interactive; clicked => { Store.action("save", ""); } }
+                ActionButton { text: "Share"; icon: @image-url("../../../../assets/icons/file-export.svg"); quiet: true; clicked => { share-menu.show(); }
+                    share-menu := PopupWindow { x: min(0px, root.width + root.absolute-position.x - self.width - parent.absolute-position.x - 8px); y: parent.height + 4px; width: 168px; height: 84px; close-policy: close-on-click-outside; forward-focus: share-keys;
+                        share-keys := FocusScope { key-pressed(event) => { if event.text == Key.Escape { share-menu.close(); return accept; } return reject; }
+                        Rectangle { background: Theme.panel; border-radius: 10px; border-width: 1px; border-color: Theme.border;
+                            VerticalLayout { padding: 8px; spacing: 2px;
+                                ActionButton { text: "Export PNG"; align-left: true; quiet: true; clicked => { share-menu.close(); Store.action("export-png", ""); } }
+                                ActionButton { text: "Export SVG"; align-left: true; quiet: true; clicked => { share-menu.close(); Store.action("export-svg", ""); } }
+                            }
+                        }
+                        }
+                    }
+                }
+                ActionButton { enabled: Store.interactive && (Store.can-undo || Store.dirty); icon: @image-url("../../../../assets/icons/arrow-back-up.svg"); label: "Undo (Ctrl+Z)"; quiet: true; clicked => { Store.action("undo", ""); } }
+                ActionButton { enabled: Store.interactive && Store.can-redo; icon: @image-url("../../../../assets/icons/arrow-forward-up.svg"); label: "Redo (Ctrl+Y)"; quiet: true; clicked => { Store.action("redo", ""); } }
+                ActionButton { icon: @image-url("../../../../assets/icons/copy.svg"); label: "Duplicate selection (Ctrl+D)"; quiet: true; clicked => { Store.action("duplicate-layers", ""); } }
+                ActionButton { icon: @image-url("../../../../assets/icons/trash.svg"); label: "Delete selection"; quiet: true; clicked => { Store.action("delete-layers", ""); } }
+            }
+        }
+        Divider {}
+        HorizontalLayout {
+            spacing: 0px;
+            canvas := Rectangle {
+                clip: true; background: Theme.preview;
+                property <float> center-x: self.width / 2px + Store.pan-x;
+                property <float> center-y: self.height / 2px + Store.pan-y;
+                property <int> pressed-button: 0;
+                property <bool> shift-down: false;
+                if Store.zoom >= 8: Rectangle {
+                    for column in ceil(parent.width / (Store.zoom * 1px)): Rectangle { x: (mod(mod(canvas.center-x, Store.zoom) + Store.zoom, Store.zoom) + column * Store.zoom) * 1px; width: 1px; height: parent.height; background: #FFFFFF0C; }
+                    for row in ceil(parent.height / (Store.zoom * 1px)): Rectangle { y: (mod(mod(canvas.center-y, Store.zoom) + Store.zoom, Store.zoom) + row * Store.zoom) * 1px; height: 1px; width: parent.width; background: #FFFFFF0C; }
+                }
+                Rectangle { x: canvas.center-x * 1px; width: 1px; height: parent.height; background: #FFFFFF0A; }
+                Rectangle { y: canvas.center-y * 1px; height: 1px; width: parent.width; background: #FFFFFF0A; }
+                Image { source: Store.preview; x: (canvas.center-x + Store.preview-x * Store.zoom) * 1px; y: (canvas.center-y + Store.preview-y * Store.zoom) * 1px; width: Store.preview-width * Store.zoom * 1px; height: Store.preview-height * Store.zoom * 1px; image-rendering: smooth; }
+                for bounds in Store.bounds: Rectangle {
+                    visible: bounds.selected && !Store.drawing;
+                    x: (canvas.center-x + bounds.x * Store.zoom) * 1px; y: (canvas.center-y + bounds.y * Store.zoom) * 1px;
+                    width: max(1px, bounds.width * Store.zoom * 1px); height: max(1px, bounds.height * Store.zoom * 1px);
+                    border-width: 1px; border-color: Theme.muted; background: transparent;
+                    Rectangle { x: (parent.width - self.width) / 2; y: parent.height + 8px; width: dimensions.preferred-width + 12px; height: 24px; background: Theme.panel; border-radius: 5px;
+                        dimensions := Text { text: (ceil(bounds.x + bounds.width) - floor(bounds.x)) + " x " + (ceil(bounds.y + bounds.height) - floor(bounds.y)) + " px"; color: Theme.muted; font-size: 10px * Theme.text-scale; horizontal-alignment: center; vertical-alignment: center; }
+                    }
+                    Rectangle { x: -3px; y: -3px; width: 6px; height: 6px; background: Theme.canvas; border-width: 1px; border-color: Theme.muted; }
+                    Rectangle { x: parent.width - 3px; y: -3px; width: 6px; height: 6px; background: Theme.canvas; border-width: 1px; border-color: Theme.muted; }
+                    Rectangle { x: -3px; y: parent.height - 3px; width: 6px; height: 6px; background: Theme.canvas; border-width: 1px; border-color: Theme.muted; }
+                    Rectangle { x: parent.width - 3px; y: parent.height - 3px; width: 6px; height: 6px; background: Theme.canvas; border-width: 1px; border-color: Theme.muted; }
+                    Rectangle { x: parent.width / 2 - 3px; y: -24px; width: 6px; height: 6px; border-radius: 3px; background: Theme.canvas; border-width: 1px; border-color: Theme.orange; }
+                }
+                for bounds in Store.bounds: Rectangle {
+                    visible: canvas.pressed-button == 1 && bounds.selected && !Store.drawing && abs(bounds.x + bounds.width / 2) < 0.01;
+                    x: canvas.center-x * 1px; y: 0px; width: 1px; height: canvas.height;
+                    for dot in ceil(canvas.height / 6px): Rectangle { y: dot * 6px; width: 1px; height: 2px; background: #EAB308; }
+                }
+                for bounds in Store.bounds: Rectangle {
+                    visible: canvas.pressed-button == 1 && bounds.selected && !Store.drawing && abs(bounds.y + bounds.height / 2) < 0.01;
+                    x: 0px; y: canvas.center-y * 1px; height: 1px; width: canvas.width;
+                    for dot in ceil(canvas.width / 6px): Rectangle { x: dot * 6px; height: 1px; width: 2px; background: #EAB308; }
+                }
+                mouse := TouchArea {
+                    enabled: Store.interactive;
+                    pointer-event(event) => {
+                        let button = event.button == PointerEventButton.right ? 2 : event.button == PointerEventButton.middle ? 3 : 1;
+                        if event.kind == PointerEventKind.down && button == 2 {
+                            Store.menu-x = (self.absolute-position.x + self.mouse-x) / 1px;
+                            Store.menu-y = (self.absolute-position.y + self.mouse-y) / 1px;
+                        }
+                        if event.kind == PointerEventKind.down { canvas-keys.focus(); canvas.pressed-button = button; canvas.shift-down = event.modifiers.shift; }
+                        Store.canvas-event(event.kind == PointerEventKind.down ? 0 : event.kind == PointerEventKind.up ? 2 : event.kind == PointerEventKind.cancel ? 3 : 4, button == 3 ? self.mouse-x / 1px : (self.mouse-x / 1px - canvas.center-x) / Store.zoom, button == 3 ? self.mouse-y / 1px : (self.mouse-y / 1px - canvas.center-y) / Store.zoom, button, event.modifiers.shift);
+                        if event.kind == PointerEventKind.up || event.kind == PointerEventKind.cancel { canvas.pressed-button = 0; }
+                    }
+                    moved => { if canvas.pressed-button != 0 { Store.canvas-event(1, canvas.pressed-button == 3 ? self.mouse-x / 1px : (self.mouse-x / 1px - canvas.center-x) / Store.zoom, canvas.pressed-button == 3 ? self.mouse-y / 1px : (self.mouse-y / 1px - canvas.center-y) / Store.zoom, canvas.pressed-button, canvas.shift-down); } }
+                    scroll-event(event) => { if canvas.pressed-button == 0 { Store.action("zoom-step", (event.delta-y > 0 ? "1" : "-1") + "," + ((self.mouse-x - canvas.width / 2) / 1px) + "," + ((self.mouse-y - canvas.height / 2) / 1px)); } return accept; }
+                }
+                canvas-keys := FocusScope { enabled: Store.interactive; focus-on-click: false; }
+                if root.show-layers: LayerList {
+                    x: 12px; y: 12px; width: 210px;
+                    height: min(parent.height - 120px, max(96px, Store.layers.length * (max(38px, 12px * Theme.text-scale + 18px) + 3px) + 54px));
+                    border-radius: 10px; border-width: 1px; border-color: Theme.border;
+                    collapse => { root.show-layers = false; }
+                }
+                if !root.show-layers: ActionButton { x: 12px; y: 12px; width: 104px; text: "Layers"; icon: @image-url("../../../../assets/icons/chevron-down.svg"); clicked => { root.show-layers = true; } }
+                tools := Rectangle {
+                    x: (parent.width - self.width) / 2; y: parent.height - 94px; width: 168px; height: 48px;
+                    background: Theme.panel; border-width: 1px; border-color: Theme.border; border-radius: 12px;
+                    crosshair-popup := PopupWindow {
+                        x: (parent.width - self.width) / 2; y: -self.height - 8px;
+                        width: 280px; height: max(120px, ceil(Store.layer-presets.length / 4) * 64px + 56px);
+                        close-policy: close-on-click-outside; forward-focus: crosshair-keys;
+                        crosshair-keys := FocusScope { key-pressed(event) => { if event.text == Key.Escape { crosshair-popup.close(); return accept; } return reject; }
+                            Rectangle { background: Theme.panel; border-radius: 10px; border-width: 1px; border-color: Theme.border;
+                                Text { x: 12px; y: 8px; height: 32px; text: "Crosshair presets"; color: Theme.muted; font-size: 12px * Theme.text-scale; vertical-alignment: center; }
+                                ActionButton { x: parent.width - 40px; y: 8px; width: 32px; icon: @image-url("../../../../assets/icons/x.svg"); label: "Close crosshair presets"; quiet: true; clicked => { crosshair-popup.close(); } }
+                                for preset[index] in Store.layer-presets: ActionButton {
+                                    x: 8px + mod(index, 4) * 66px; y: 48px + floor(index / 4) * 64px; width: 62px; height: 58px;
+                                    thumbnail: preset.thumbnail; label: "Add " + preset.name;
+                                    clicked => { crosshair-popup.close(); Store.action("add-crosshair-preset", preset.id); }
+                                }
+                            }
+                        }
+                    }
+                    shape-popup := PopupWindow {
+                        x: (parent.width - self.width) / 2; y: -self.height - 8px; width: 152px; height: 120px;
+                        close-policy: close-on-click-outside; forward-focus: shape-keys;
+                        shape-keys := FocusScope { key-pressed(event) => { if event.text == Key.Escape { shape-popup.close(); return accept; } return reject; }
+                            Rectangle { background: Theme.panel; border-radius: 10px; border-width: 1px; border-color: Theme.border;
+                                VerticalLayout { padding: 8px; spacing: 2px;
+                                    for shape[index] in ["Rectangle", "Ellipse", "Triangle"]: ActionButton {
+                                        text: shape; align-left: true; quiet: true;
+                                        icon: index == 0 ? @image-url("../../../../assets/icons/square.svg") : index == 1 ? @image-url("../../../../assets/icons/circle.svg") : @image-url("../../../../assets/icons/triangle.svg");
+                                        clicked => { shape-popup.close(); Store.action("add-layer", ["rectangle", "ellipse", "triangle"][index]); }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    image-popup := PopupWindow {
+                        x: (parent.width - self.width) / 2; y: -self.height - 8px; width: 280px; height: 176px;
+                        close-policy: close-on-click-outside; forward-focus: image-keys;
+                        image-keys := FocusScope { key-pressed(event) => { if event.text == Key.Escape { image-popup.close(); return accept; } return reject; }
+                            Rectangle { background: Theme.panel; border-radius: 10px; border-width: 1px; border-color: Theme.border;
+                                VerticalLayout { padding: 16px; spacing: 12px;
+                                    Image { source: @image-url("../../../../assets/icons/photo.svg"); colorize: Theme.muted; width: 24px; height: 24px; }
+                                    Text { text: "Drop an image onto the canvas"; color: Theme.text; font-size: 12px * Theme.text-scale; horizontal-alignment: center; }
+                                    Text { text: "PNG, JPEG, SVG or the first GIF frame"; color: Theme.muted; font-size: 11px * Theme.text-scale; horizontal-alignment: center; wrap: word-wrap; }
+                                    ActionButton { text: "Browse files"; icon: @image-url("../../../../assets/icons/photo.svg"); clicked => { image-popup.close(); Store.action("add-image", ""); } }
+                                }
+                            }
+                        }
+                    }
+                    tools-layout := HorizontalLayout { padding: 8px; spacing: 8px; alignment: center;
+                        ActionButton { icon: @image-url("../../../../assets/icons/crosshair.svg"); label: "Crosshair layer"; quiet: true; clicked => { crosshair-popup.show(); } }
+                        ActionButton { icon: @image-url("../../../../assets/icons/square.svg"); label: "Shape layer"; quiet: true; clicked => { shape-popup.show(); } }
+                        ActionButton { icon: @image-url("../../../../assets/icons/photo.svg"); label: "Image layer"; quiet: true; clicked => { image-popup.show(); } }
+                        ActionButton { icon: @image-url("../../../../assets/icons/pencil.svg"); label: "Draw / erase"; selected: Store.drawing; quiet: true; clicked => { Store.action("draw", ""); } }
+                    }
+                }
+                HorizontalLayout {
+                    x: 12px; y: parent.height - 38px; width: parent.width - 24px; height: 30px; spacing: 4px;
+                    Rectangle { horizontal-stretch: 1; }
+                    ActionButton { text: "Fit"; quiet: true; clicked => { Store.action("zoom-fit", (canvas.width / 1px) + "," + (canvas.height / 1px)); } }
+                    ActionButton { text: round(Store.zoom * 100) + "%"; label: "Reset zoom to 100%"; quiet: true; clicked => { Store.action("zoom-reset", ""); } }
+                }
+            }
+            Rectangle { width: 1px; background: Theme.border; }
+            Rectangle {
+                width: min(400px, 288px * Theme.text-scale); background: Theme.panel;
+                ScrollView {
+                    horizontal-scrollbar-policy: always-off; content-width: self.visible-width;
+                    VerticalLayout {
+                        padding-left: 14px; padding-right: 14px; padding-top: 6px; padding-bottom: 16px; spacing: 6px; alignment: start;
+                        if Store.drawing: VerticalLayout { spacing: 6px;
+                            Text { text: "Brush"; color: Theme.text; font-weight: 600; height: 24px; }
+                            HorizontalLayout { spacing: 6px;
+                            NumericField { width: 72px; value: Store.brush-size; minimum: 1; maximum: 256; step: 1; icon: @image-url("../../../../assets/icons/pencil.svg"); label: "Brush size"; changed(value, phase) => { Store.action("brush-size", "" + value); } }
+                            ColorField { horizontal-stretch: 1; value: Store.brush-swatch; hex: Store.brush-color; label: "Brush color";
+                                window-width: root.width + root.absolute-position.x; window-height: root.height + root.absolute-position.y;
+                                changed(value, phase) => { Store.property-color("", "@brush", value, phase); }
+                                hex-committed(value) => { Store.action("brush-color", value); }
+                            }
+                            }
+                            ActionButton { text: "Finish drawing"; clicked => { Store.action("draw-finish", ""); } }
+                            Divider {}
+                        }
+                        for group in Store.fields: HorizontalLayout {
+                            spacing: 10px; vertical-stretch: 0;
+                            PropertyRow { viewport-width: root.width + root.absolute-position.x; viewport-height: root.height + root.absolute-position.y; field: group.first; horizontal-stretch: 1; }
+                            if group.paired: PropertyRow { viewport-width: root.width + root.absolute-position.x; viewport-height: root.height + root.absolute-position.y; field: group.second; horizontal-stretch: 1; }
+                        }
+                        Rectangle { vertical-stretch: 1; }
+                    }
+                }
+            }
+        }
+    }
+    open-picker := PresetPicker {
+        viewport-width: root.width + root.absolute-position.x; viewport-height: root.height + root.absolute-position.y;
+        model: Store.selector-presets; selected-id: Store.document-id; total-count: Store.selector-total; favorite-count: Store.selector-favorite-count;
+        chosen(id) => { Store.action("edit-preset", id); }
+        filter-request(search, favorites) => { Store.action("selector-filter", search); Store.action("selector-favorites", favorites ? "true" : "false"); }
+        dismissed => { canvas-keys.focus(); }
+    }
+
+}
