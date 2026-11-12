@@ -49,6 +49,9 @@ test('only latest successful canonical-main validation can be promoted', () => {
     { path: '.github/workflows/other.yml' }, { head_repository: { full_name: 'attacker/crosshair-rs' } }]) assert.throws(() => validateRun({ ...run, ...patch }, [run], run.head_sha));
   assert.throws(() => validateRun(run, [{ ...run, id: 43, run_number: 6, conclusion: 'failure' }, run], run.head_sha));
   assert.throws(() => validateRun(run, [{ ...run, run_attempt: 3, conclusion: 'cancelled' }], run.head_sha));
+  const retry = { ...run, run_attempt: 3 };
+  assert.throws(() => validateRun(retry, [retry], run.head_sha, `windows-${run.head_sha}-42-2`));
+  assert.equal(validateRun(retry, [retry], run.head_sha, `windows-${run.head_sha}-42-3`), `windows-${run.head_sha}-42-3`);
 });
 test('latest manifest rejects wrong signed version and legacy signatures', () => {
   const data = Buffer.alloc(74); data.write('ED');

@@ -59,7 +59,7 @@ export function validateBuild(build, version, commit, publicKey, publisher) {
   }
 }
 
-export function validateRun(selected, candidates, main) {
+export function validateRun(selected, candidates, main, expectedArtifact) {
   if (selected.repository?.full_name !== repository || selected.head_repository?.full_name !== repository ||
       selected.head_branch !== 'main' || selected.head_sha !== main || !['push', 'workflow_dispatch'].includes(selected.event) ||
       selected.status !== 'completed' || selected.conclusion !== 'success' || selected.path !== '.github/workflows/validation.yml') {
@@ -70,7 +70,9 @@ export function validateRun(selected, candidates, main) {
   if (!latest || latest.id !== selected.id || latest.run_attempt !== selected.run_attempt || latest.conclusion !== 'success') {
     throw new Error('A newer validation run or attempt supersedes this artifact. Revalidate main.');
   }
-  return `windows-${main}-${selected.id}-${selected.run_attempt}`;
+  const artifact = `windows-${main}-${selected.id}-${selected.run_attempt}`;
+  if (expectedArtifact && artifact !== expectedArtifact) throw new Error('The validated artifact was superseded during publication.');
+  return artifact;
 }
 
 export function manifest(version, signature, date) {
@@ -123,7 +125,7 @@ export function notesFor(value, content = readFileSync(join(root, 'CHANGELOG.md'
 
 function api(path) { return JSON.parse(run('gh', ['api', path])); }
 
-function gate(requested, expectedRun) {
+function gate(requested, expectedArtifact, phase) {
   releaseVersion(requested);
   if (version() !== requested) throw new Error('Release differs from the workspace version.');
   notesFor(requested);
@@ -132,15 +134,21 @@ function gate(requested, expectedRun) {
   const candidates = api(`repos/${repository}/actions/workflows/validation.yml/runs?branch=main&head_sha=${main}&per_page=100`).workflow_runs;
   const latest = candidates.filter(value => value.head_sha === main && value.head_branch === 'main' &&
     ['push', 'workflow_dispatch'].includes(value.event)).sort((a, b) => b.run_number - a.run_number)[0];
-  if (!latest || (expectedRun && String(latest.id) !== expectedRun)) throw new Error('Exact-main validation is missing or changed during publication.');
+  if (!latest) throw new Error('Exact-main validation is missing.');
   const id = latest.id;
   const selected = api(`repos/${repository}/actions/runs/${id}`);
-  const artifact = validateRun(selected, candidates, main);
+  const artifact = validateRun(selected, candidates, main, expectedArtifact);
   const artifacts = api(`repos/${repository}/actions/runs/${id}/artifacts?per_page=100`).artifacts.filter(value => value.name === artifact && !value.expired);
   if (artifacts.length !== 1) throw new Error('The validated immutable artifact is missing or expired. Revalidate.');
-  if (api(`repos/${repository}/releases?per_page=100`).some(value => value.tag_name === `v${requested}`) ||
-      api(`repos/${repository}/git/matching-refs/tags/v${requested}`).some(value => value.ref === `refs/tags/v${requested}`)) {
-    throw new Error('Release or tag already exists; it will not be overwritten.');
+  const releases = api(`repos/${repository}/releases?per_page=100`).filter(value => value.tag_name === `v${requested}`);
+  const tags = api(`repos/${repository}/git/matching-refs/tags/v${requested}`).filter(value => value.ref === `refs/tags/v${requested}`);
+  if (phase === 'draft') {
+    if (!expectedArtifact || releases.length !== 1 || !releases[0].draft || releases[0].target_commitish !== main ||
+        releases[0].author?.login !== 'ohne-b' || tags.some(tag => tag.object.type !== 'commit' || tag.object.sha !== main)) {
+      throw new Error('The verified owner-authored draft no longer targets the validated revision.');
+    }
+  } else if (phase || releases.length || tags.length) {
+    throw new Error('Release or tag already exists, or the publication phase is invalid.');
   }
   writeFileSync(process.env.GITHUB_OUTPUT, `artifact=${artifact}\ncommit=${main}\nrun=${id}\nprerelease=${semver.prerelease(requested) !== null}\n`, { flag: 'a' });
 }

@@ -6,6 +6,10 @@ $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
 if ($ExpectedUser -and $identity.User.Value -ne $ExpectedUser) { throw 'Install using the same Windows account that requested installation.' }
 $publicKey = '@UPDATE_PUBLIC_KEY@'
 $publisher = '@PACKAGE_PUBLISHER@'
+$deployment = {
+    param($Package, $ExpectedHash, $ExpectedUser, $Framework)
+    # @DEPLOY_SCRIPT@
+}
 if ($publicKey -notmatch '^[A-Za-z0-9+/]{56}$') { throw 'This development package has no release verification key.' }
 if (!$Package) {
     $files = @(Get-ChildItem -LiteralPath $PSScriptRoot -Filter 'crosshair-rs-*-windows-x64.msix' -File)
@@ -52,15 +56,15 @@ try {
     } finally { $archive.Dispose() }
     if ($VerifyOnly) { Write-Output 'Release signature, version, identity and dependencies verified.'; return }
     $administrator = [Security.Principal.WindowsPrincipal]::new($identity).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
-    if (!$administrator) {
-        $arguments = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', ('"' + $PSCommandPath + '"'), '-Package', ('"' + $Package + '"'), '-ExpectedUser', $identity.User.Value)
-        $powershell = Join-Path ([Environment]::GetFolderPath('System')) 'WindowsPowerShell/v1.0/powershell.exe'
-        $process = Start-Process -FilePath $powershell -Verb RunAs -WindowStyle Hidden -ArgumentList $arguments -Wait -PassThru
-        if ($process.ExitCode) { throw 'Installation was cancelled or failed. The existing application was preserved.' }
-    } else {
-        # Explicit Windows unsigned-package deployment. No certificate import or Developer Mode.
-        Add-AppxPackage -Path $Package -DependencyPath $framework -AllowUnsigned -ErrorAction Stop
-    }
+    $hash = (Get-FileHash -LiteralPath $Package -Algorithm SHA256).Hash.ToLowerInvariant()
+    # Transfer the already parsed deployment code, never reopen a writable script after elevation.
+    $command = "& { $deployment } -Package '" + $Package.Replace("'", "''") + "' -ExpectedHash '$hash' -ExpectedUser '" + $identity.User.Value + "' -Framework '" + $framework.Replace("'", "''") + "'"
+    $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($command))
+    $system = [Environment]::GetFolderPath('System')
+    $start = @{ FilePath=(Join-Path $system 'WindowsPowerShell/v1.0/powershell.exe'); ArgumentList=@('-NoProfile', '-NonInteractive', '-EncodedCommand', $encoded); WorkingDirectory=$system; WindowStyle='Hidden'; Wait=$true; PassThru=$true }
+    if (!$administrator) { $start.Verb = 'RunAs' }
+    $process = Start-Process @start
+    if ($process.ExitCode) { throw 'Installation was cancelled or failed. The existing application was preserved.' }
     Write-Output 'crosshair-rs installed. Open it from Start.'
 } finally {
     foreach ($locked in $locks) { $locked.Dispose() }

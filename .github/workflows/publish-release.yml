@@ -72,11 +72,11 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
           RELEASE_COMMIT: ${{ steps.provenance.outputs.commit }}
-          VALIDATION_RUN: ${{ steps.provenance.outputs.run }}
+          VALIDATED_ARTIFACT: ${{ steps.provenance.outputs.artifact }}
           PRERELEASE: ${{ steps.provenance.outputs.prerelease }}
         run: |
           # Recheck after signing: another main revision or failed validation blocks promotion.
-          node scripts/release.mjs gate $env:RELEASE_VERSION $env:VALIDATION_RUN
+          node scripts/release.mjs gate $env:RELEASE_VERSION $env:VALIDATED_ARTIFACT
           if ($LASTEXITCODE) { throw 'Release source changed during signing.' }
           node scripts/release.mjs body $env:RELEASE_VERSION target/release-body.md
           if ($LASTEXITCODE) { throw 'Release notes validation failed.' }
@@ -93,8 +93,8 @@ jobs:
           & $minisign -V -H -P $env:CROSSHAIR_UPDATE_PUBLIC_KEY -m $package
           if ($LASTEXITCODE) { throw 'Downloaded updater signature failed verification.' }
           ./target/downloaded-release/Install.ps1 -VerifyOnly
-          $main = gh api repos/ohne-b/crosshair-rs/commits/main --jq .sha
-          if ($LASTEXITCODE -or $main -cne $env:RELEASE_COMMIT) { throw 'Main advanced during verification. The release remains a draft.' }
+          node scripts/release.mjs gate $env:RELEASE_VERSION $env:VALIDATED_ARTIFACT draft
+          if ($LASTEXITCODE) { throw 'Release provenance changed during verification. The release remains a draft.' }
           if ($env:PRERELEASE -eq 'true') {
             gh release edit "v$env:RELEASE_VERSION" --draft=false --prerelease --latest=false
           } else {

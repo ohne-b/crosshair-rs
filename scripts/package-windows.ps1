@@ -51,13 +51,13 @@ $process = [Diagnostics.Process]::Start($start)
 try {
     if (!$process.WaitForExit(15000)) { $process.Kill(); throw 'Engine build-information command did not complete.' }
     if ($process.ExitCode -ne 0) { throw 'Engine build-information command failed.' }
-    $configuration = $process.StandardOutput.ReadToEnd() | ConvertFrom-Json
+    $buildConfiguration = $process.StandardOutput.ReadToEnd() | ConvertFrom-Json
 } finally { $process.Dispose() }
-if ($configuration.version -ne $productVersion -or $configuration.packageName -ne 'OhneB.crosshair-rs') { throw 'Engine build does not match the workspace version or package identity.' }
+if ($buildConfiguration.version -ne $productVersion -or $buildConfiguration.packageName -ne 'OhneB.crosshair-rs') { throw 'Engine build does not match the workspace version or package identity.' }
 if ($ReleaseCandidate) {
-    if ($configuration.updatePublicKey -notmatch '^[A-Za-z0-9+/]{56}$') { throw 'Invalid updater public key.' }
-    if (!$configuration.updatesConfigured -or $configuration.updatePublicKey -ne $env:CROSSHAIR_UPDATE_PUBLIC_KEY -or $configuration.packagePublisher -ne $Publisher) { throw 'Engine was not compiled with the configured release trust. Rebuild before packaging.' }
-} elseif ($configuration.updatesConfigured -or $configuration.updatePublicKey -or $configuration.packagePublisher) { throw 'Development packages must contain an updater-disabled engine. Rebuild with production variables unset.' }
+    if ($buildConfiguration.updatePublicKey -notmatch '^[A-Za-z0-9+/]{56}$') { throw 'Invalid updater public key.' }
+    if (!$buildConfiguration.updatesConfigured -or $buildConfiguration.updatePublicKey -ne $env:CROSSHAIR_UPDATE_PUBLIC_KEY -or $buildConfiguration.packagePublisher -ne $Publisher) { throw 'Engine was not compiled with the configured release trust. Rebuild before packaging.' }
+} elseif ($buildConfiguration.updatesConfigured -or $buildConfiguration.updatePublicKey -or $buildConfiguration.packagePublisher) { throw 'Development packages must contain an updater-disabled engine. Rebuild with production variables unset.' }
 $stage = Join-Path $packageRoot ('stage-' + [Guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $stage | Out-Null
 foreach ($file in $required) { Copy-Item -LiteralPath $file -Destination $stage }
@@ -73,8 +73,8 @@ Copy-Item -LiteralPath (Join-Path $gamebarOutput 'CppWinRT-LICENSE') -Destinatio
 & node (Join-Path $PSScriptRoot 'generate-notices.mjs') (Join-Path $licenses 'third-party-rust.md')
 if ($LASTEXITCODE -ne 0) { throw 'Dependency license collection failed; no installer was produced.' }
 [xml]$manifest = Get-Content -LiteralPath (Join-Path $repoRoot 'packaging/windows/AppxManifest.xml') -Raw
-$manifest.Package.Identity.Publisher = $Publisher
-$manifest.Package.Identity.Version = $msixVersion
+$manifest.Package.Identity.SetAttribute('Publisher', $Publisher)
+$manifest.Package.Identity.SetAttribute('Version', [string]$msixVersion)
 if (!$ReleaseCandidate) { $manifest.Package.Identity.Name += '.Preview' }
 $sdkReadme = Get-Content -LiteralPath (Join-Path $repoRoot 'target/gamebar/deps/microsoft.gaming.xboxgamebar.7.3.2607010/readme.txt') -Raw
 $proxyXml = [regex]::Match($sdkReadme, '(?s)<Extension Category="windows\.activatableClass\.proxyStub">.*?</Extension>').Value
@@ -102,11 +102,12 @@ if ($LASTEXITCODE -ne 0) { throw 'Cannot determine package source revision.' }
 $dirty = [bool](& git -C $repoRoot status --porcelain)
 if ($LASTEXITCODE -ne 0) { throw 'Cannot determine package source state.' }
 $hash = (Get-FileHash -LiteralPath $packageFile -Algorithm SHA256).Hash.ToLowerInvariant()
-$build = [ordered]@{ schemaVersion=1; version=$productVersion; packageVersion=$msixVersion; commit=$commit; dirty=$dirty; platform='windows-x86_64-msix'; package=[IO.Path]::GetFileName($packageFile); sha256=$hash; signed=$false; releaseCandidate=[bool]$ReleaseCandidate; configuration=$configuration }
+$build = [ordered]@{ schemaVersion=1; version=$productVersion; packageVersion=$msixVersion; commit=$commit; dirty=$dirty; platform='windows-x86_64-msix'; package=[IO.Path]::GetFileName($packageFile); sha256=$hash; signed=$false; releaseCandidate=[bool]$ReleaseCandidate; configuration=$buildConfiguration }
 [IO.File]::WriteAllText((Join-Path $packageRoot 'build.json'), ($build | ConvertTo-Json -Depth 4) + "`n", [Text.UTF8Encoding]::new($false))
 & (Join-Path $PSScriptRoot 'get-vclibs.ps1') -OutputDirectory $packageRoot -Offline:$Offline | Out-Host
 $installer = Get-Content -LiteralPath (Join-Path $repoRoot 'packaging/windows/Install.ps1') -Raw
-$installer = $installer.Replace('@UPDATE_PUBLIC_KEY@', [string]$configuration.updatePublicKey).Replace('@PACKAGE_PUBLISHER@', $Publisher.Replace("'", "''"))
+$installer = $installer.Replace('@UPDATE_PUBLIC_KEY@', [string]$buildConfiguration.updatePublicKey).Replace('@PACKAGE_PUBLISHER@', $Publisher.Replace("'", "''"))
+$installer = $installer.Replace('# @DEPLOY_SCRIPT@', [IO.File]::ReadAllText((Join-Path $repoRoot 'apps/engine/src/updates/deploy.ps1')))
 [IO.File]::WriteAllText((Join-Path $packageRoot 'Install.ps1'), $installer, [Text.UTF8Encoding]::new($false))
 $minisign = & (Join-Path $PSScriptRoot 'get-minisign.ps1') -Offline:$Offline
 Copy-Item -LiteralPath $minisign -Destination $packageRoot

@@ -852,7 +852,7 @@ fn deployment_script(path: &Path, hash: &str, user: &str) -> Result<String> {
         "Invalid deployment user"
     );
     Ok(format!(
-        "$Package = '{}'\n$ExpectedHash = '{hash}'\n$ExpectedUser = '{user}'\n{}",
+        "$Package = '{}'\n$ExpectedHash = '{hash}'\n$ExpectedUser = '{user}'\n$Framework = $null\n{}",
         text.replace('\'', "''"),
         include_str!("deploy.ps1")
     ))
