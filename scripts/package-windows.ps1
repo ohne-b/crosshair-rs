@@ -26,7 +26,7 @@ if (!$SkipBuild) {
     Push-Location $repoRoot
     $previousFlags = $env:CARGO_ENCODED_RUSTFLAGS
     try {
-        $flags = if ($previousFlags) { @($previousFlags.Split([char]31)) } elseif ($env:RUSTFLAGS) { @($env:RUSTFLAGS -split '\s+' | Where-Object { $_ }) } else { @() }
+        $flags = @(if ($previousFlags) { $previousFlags.Split([char]31) } elseif ($env:RUSTFLAGS) { $env:RUSTFLAGS -split '\s+' | Where-Object { $_ } })
         $profilePath = [Environment]::GetFolderPath('UserProfile')
         $cargoPath = if ($env:CARGO_HOME) { $env:CARGO_HOME } else { Join-Path $profilePath '.cargo' }
         $rustupPath = if ($env:RUSTUP_HOME) { $env:RUSTUP_HOME } else { Join-Path $profilePath '.rustup' }
