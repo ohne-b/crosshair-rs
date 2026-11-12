@@ -369,11 +369,31 @@ unsafe extern "system" fn procedure(
                 crate::app::work_area_changed(hwnd);
             }
             WM_GETMINMAXINFO => {
-                if let Ok([width, height]) = work_area(hwnd) {
+                let mut monitor = MONITORINFO {
+                    cbSize: size_of::<MONITORINFO>() as u32,
+                    ..Default::default()
+                };
+                if GetMonitorInfoW(
+                    MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST),
+                    &mut monitor,
+                )
+                .as_bool()
+                {
+                    let width = monitor.rcWork.right - monitor.rcWork.left;
+                    let height = monitor.rcWork.bottom - monitor.rcWork.top;
                     let scale = GetDpiForWindow(hwnd).max(96) as f32 / 96.0;
                     let info = &mut *(lparam.0 as *mut MINMAXINFO);
-                    info.ptMinTrackSize.x = (width.min(960.0) * scale).round() as i32;
-                    info.ptMinTrackSize.y = (height.min(640.0) * scale).round() as i32;
+                    // The outer HWND must also stop at the taskbar, not just the painted client.
+                    info.ptMaxPosition = POINT {
+                        x: monitor.rcWork.left - monitor.rcMonitor.left,
+                        y: monitor.rcWork.top - monitor.rcMonitor.top,
+                    };
+                    info.ptMaxSize = POINT {
+                        x: width,
+                        y: height,
+                    };
+                    info.ptMinTrackSize.x = width.min((960.0 * scale).round() as i32);
+                    info.ptMinTrackSize.y = height.min((640.0 * scale).round() as i32);
                     return LRESULT(0);
                 }
             }
@@ -525,6 +545,69 @@ fn caption_release(pressed: u32, released: u32) -> Option<&'static str> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn maximized_window_bounds_exclude_the_taskbar() {
+        unsafe {
+            let hwnd = CreateWindowExW(
+                WINDOW_EX_STYLE::default(),
+                windows::core::w!("STATIC"),
+                windows::core::w!("Maximized frame regression"),
+                WS_OVERLAPPEDWINDOW & !WS_CAPTION,
+                100,
+                100,
+                1280,
+                800,
+                None,
+                None,
+                None,
+                None,
+            )
+            .unwrap();
+            assert!(SetWindowSubclass(hwnd, Some(procedure), 0x435248, 0).as_bool());
+            let mut monitor = MONITORINFO {
+                cbSize: size_of::<MONITORINFO>() as u32,
+                ..Default::default()
+            };
+            assert!(
+                GetMonitorInfoW(
+                    MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST),
+                    &mut monitor
+                )
+                .as_bool()
+            );
+            let mut info = MINMAXINFO {
+                ptMaxPosition: POINT { x: -8, y: -8 },
+                ptMaxSize: POINT {
+                    x: monitor.rcMonitor.right - monitor.rcMonitor.left + 16,
+                    y: monitor.rcMonitor.bottom - monitor.rcMonitor.top + 16,
+                },
+                ptMaxTrackSize: POINT { x: 8000, y: 6000 },
+                ..Default::default()
+            };
+            SendMessageW(
+                hwnd,
+                WM_GETMINMAXINFO,
+                None,
+                Some(LPARAM((&mut info as *mut MINMAXINFO) as isize)),
+            );
+            DestroyWindow(hwnd).unwrap();
+            assert_eq!(
+                info.ptMaxPosition,
+                POINT {
+                    x: monitor.rcWork.left - monitor.rcMonitor.left,
+                    y: monitor.rcWork.top - monitor.rcMonitor.top,
+                }
+            );
+            assert_eq!(
+                info.ptMaxSize,
+                POINT {
+                    x: monitor.rcWork.right - monitor.rcWork.left,
+                    y: monitor.rcWork.bottom - monitor.rcWork.top,
+                }
+            );
+            assert_eq!(info.ptMaxTrackSize, POINT { x: 8000, y: 6000 });
+        }
+    }
     #[test]
     fn custom_frame_removes_native_insets_and_activation_painting() {
         unsafe extern "system" fn observe_native_paint(
