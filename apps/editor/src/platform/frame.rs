@@ -370,12 +370,13 @@ unsafe extern "system" fn procedure(
                     return LRESULT(0);
                 }
             }
-            WM_NCCALCSIZE if wparam.0 != 0 => {
-                let params = &mut *(lparam.0 as *mut NCCALCSIZE_PARAMS);
-                let top = params.rgrc[0].top;
-                // Let Windows lay out its caption buttons before extending the client area.
-                DefWindowProcW(hwnd, message, wparam, lparam);
-                params.rgrc[0].top = top;
+            WM_NCCALCSIZE => {
+                // Both message forms must exclude the native frame from our custom header.
+                let client = if wparam.0 == 0 {
+                    &mut *(lparam.0 as *mut RECT)
+                } else {
+                    &mut (*(lparam.0 as *mut NCCALCSIZE_PARAMS)).rgrc[0]
+                };
                 if IsZoomed(hwnd).as_bool() {
                     let mut monitor = MONITORINFO {
                         cbSize: size_of::<MONITORINFO>() as u32,
@@ -387,7 +388,7 @@ unsafe extern "system" fn procedure(
                     )
                     .as_bool()
                     {
-                        params.rgrc[0] = monitor.rcWork;
+                        *client = monitor.rcWork;
                     }
                 }
                 return LRESULT(0);
@@ -517,6 +518,55 @@ fn caption_release(pressed: u32, released: u32) -> Option<&'static str> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn both_client_calculation_messages_remove_the_native_frame() {
+        unsafe {
+            let hwnd = CreateWindowExW(
+                WINDOW_EX_STYLE::default(),
+                windows::core::w!("STATIC"),
+                windows::core::w!("Frame regression"),
+                WS_OVERLAPPEDWINDOW & !WS_CAPTION,
+                100,
+                100,
+                1280,
+                800,
+                None,
+                None,
+                None,
+                None,
+            )
+            .unwrap();
+            assert!(SetWindowSubclass(hwnd, Some(procedure), 0x435248, 0).as_bool());
+            let expected = RECT {
+                left: 100,
+                top: 100,
+                right: 1380,
+                bottom: 900,
+            };
+            let mut simple = expected;
+            let mut extended = NCCALCSIZE_PARAMS {
+                rgrc: [expected; 3],
+                ..Default::default()
+            };
+            let simple_result = SendMessageW(
+                hwnd,
+                WM_NCCALCSIZE,
+                Some(WPARAM(0)),
+                Some(LPARAM((&mut simple as *mut RECT) as isize)),
+            );
+            let extended_result = SendMessageW(
+                hwnd,
+                WM_NCCALCSIZE,
+                Some(WPARAM(1)),
+                Some(LPARAM((&mut extended as *mut NCCALCSIZE_PARAMS) as isize)),
+            );
+            DestroyWindow(hwnd).unwrap();
+            assert_eq!(simple_result, LRESULT(0));
+            assert_eq!(extended_result, LRESULT(0));
+            assert_eq!(simple, expected);
+            assert_eq!(extended.rgrc[0], expected);
+        }
+    }
     #[test]
     fn caption_click_requires_release_on_the_pressed_button() {
         assert_eq!(
