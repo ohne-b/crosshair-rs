@@ -80,6 +80,7 @@ export component Library inherits Rectangle {
                                 self.dragging = false; Store.dragged-preset = ""; Store.preset-drop-index = -1;
                             }
                             if event.kind == PointerEventKind.down && event.button == PointerEventButton.right {
+                                card-focus.focus();
                                 Store.menu-x = (self.absolute-position.x + self.mouse-x) / 1px;
                                 Store.menu-y = (self.absolute-position.y + self.mouse-y) / 1px;
                                 Store.action("preset-menu", preset.id);

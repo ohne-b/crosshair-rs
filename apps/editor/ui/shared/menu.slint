@@ -12,9 +12,9 @@ export component MenuPanel inherits Rectangle {
         key-pressed(event) => {
             if event.text == Key.Escape { Store.action("modal-cancel", ""); return accept; }
             if event.text == Key.Return || event.text == Key.Space { Store.action("modal-option", root.highlighted); return accept; }
-            if event.text == Key.UpArrow || event.text == Key.DownArrow { root.highlighted = clamp(root.highlighted + (event.text == Key.DownArrow ? 1 : -1), 0, Store.modal-options.length - 1); return accept; }
-            if event.text == Key.Home { root.highlighted = 0; return accept; }
-            if event.text == Key.End { root.highlighted = Store.modal-options.length - 1; return accept; }
+            if event.text == Key.UpArrow || event.text == Key.DownArrow { root.highlighted = clamp(root.highlighted + (event.text == Key.DownArrow ? 1 : -1), 0, Store.modal-options.length - 1); keys.focus(); return accept; }
+            if event.text == Key.Home { root.highlighted = 0; keys.focus(); return accept; }
+            if event.text == Key.End { root.highlighted = Store.modal-options.length - 1; keys.focus(); return accept; }
             return reject;
         }
         ScrollView {
@@ -26,6 +26,7 @@ export component MenuPanel inherits Rectangle {
                     enabled: true; text: option; align-left: true; quiet: true;
                     height: max(32px, 12px * Theme.text-scale + 16px); horizontal-stretch: 1;
                     selected: index == root.highlighted;
+                    changed has-focus => { if self.has-focus { root.highlighted = index; } }
                     icon: option == "Crosshair" ? @image-url("../../../../assets/icons/crosshair.svg")
                         : option == "Rectangle" ? @image-url("../../../../assets/icons/square.svg")
                         : option == "Ellipse" ? @image-url("../../../../assets/icons/circle.svg")
