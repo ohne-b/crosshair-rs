@@ -16,9 +16,9 @@ Keep backups private: they can contain names and imported images.
 
 ## Network and input
 
-There are no accounts, cloud sync or telemetry. Update checks contact GitHub when
-you open the editor unless disabled, or when you check manually. Downloads start
-only when requested. Opening external links uses your browser.
+There are no accounts, cloud sync or telemetry. Automatic update checks contact
+GitHub and can be disabled in Settings. You can also check manually. Downloads
+start only when requested. Opening external links uses your browser.
 
 Keyboard and mouse shortcuts are observed globally without blocking or injecting
 input. The app does not record a history of your keystrokes. Xbox Game Bar is a
