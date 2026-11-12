@@ -68,7 +68,7 @@ export component AppWindow inherits Window {
     Rectangle { width: root.width; height: root.height;
     VerticalLayout {
         spacing: 0px;
-        TitleBar {}
+        TitleBar { z: 1; }
         HorizontalLayout {
             spacing: 0px;
             Navigation {}

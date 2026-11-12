@@ -52,7 +52,7 @@ export component ActionButton inherits Rectangle {
         enabled: root.enabled;
         clicked => { root.activate(); }
     }
-    Tooltip {
+    if root.label != "" && (root.text == "" || root.label != root.text): Tooltip {
         Rectangle {
             background: Theme.raised; border-radius: 8px; border-width: 1px; border-color: Theme.border;
             HorizontalLayout { padding-left: 8px; padding-right: 8px; padding-top: 6px; padding-bottom: 6px; Text { text: root.label; color: Theme.text; font-size: 11px * Theme.text-scale; } }

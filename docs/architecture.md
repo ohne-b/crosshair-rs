@@ -152,7 +152,8 @@ A preset is a design. A profile groups shortcuts, selected preset, output scale,
 offsets and saved positions. The preset library is shared: edits change that
 design wherever selected; Duplicate makes an independent variant. Output mode
 and monitor are app settings. The title-bar profile picker shows the active
-profile; Manage offers Create/Rename/Duplicate/Import/Export/Delete. No game field.
+profile and a Profile Settings link to Settings > Data, where Manage offers
+Create/Rename/Duplicate/Import/Export/Delete. No game field.
 Switch profile atomically, rearm held triggers after release and preserve global visibility.
 
 The title switch, tray toggle and default remappable `Shift+Alt+Z` action operate
@@ -240,7 +241,9 @@ enters durable state or engine edit history.
 
 One application table owns Toggle visibility; a separate full-width shortcut
 table has Crosshair, Shortcut name and Keyboard / mouse columns plus trash.
-Headers and body share column borders. New is the first row below the header.
+Headers and body share column borders. The first row contains only the plus
+button and New until a crosshair is chosen; either opens the picker, then the
+keyboard/mouse cell asks for a key and offers cancellation.
 The thumbnail opens a reusable picker with search, All/Favorites counts and
 named cards; clicking a card chooses immediately. Escape/outside dismisses and
 returns focus. Shortcut names edit inline and default to the target preset name;

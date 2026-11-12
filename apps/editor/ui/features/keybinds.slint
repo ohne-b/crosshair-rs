@@ -7,6 +7,7 @@ import { PresetPicker } from "../shared/preset-picker.slint";
 component TableHeader inherits Rectangle {
     in property <bool> application: false;
     height: 40px; vertical-stretch: 0; background: Theme.preview;
+    border-top-left-radius: 9px; border-top-right-radius: 9px;
     HorizontalLayout { spacing: 0px;
         if root.application: Rectangle { horizontal-stretch: 1; Text { x: 12px; width: parent.width - 24px; text: "Action"; color: Theme.muted; font-size: 11px * Theme.text-scale; vertical-alignment: center; } }
         if !root.application: Text { text: "Crosshair"; color: Theme.muted; font-size: 11px * Theme.text-scale; width: 88px; vertical-alignment: center; horizontal-alignment: center; }
@@ -17,14 +18,13 @@ component TableHeader inherits Rectangle {
         Rectangle { width: 1px; background: Theme.border; }
         Rectangle { width: 52px; }
     }
-    Rectangle { y: parent.height - 1px; width: parent.width; height: 1px; background: Theme.border; }
 }
 
 component BindingItem inherits Rectangle {
     in property <BindingRow> binding;
     in property <length> viewport-width;
     in property <length> viewport-height;
-    height: max(56px, 12px * Theme.text-scale + 32px); vertical-stretch: 0;
+    height: max(56px, 12px * Theme.text-scale + 32px); vertical-stretch: 0; clip: true;
     HorizontalLayout { spacing: 0px;
         if root.binding.global: Rectangle { horizontal-stretch: 1; Text { x: 12px; width: parent.width - 24px; text: root.binding.action; color: Theme.text; font-size: 12px * Theme.text-scale; vertical-alignment: center; } }
         if root.binding.shortcut: Rectangle { width: 88px;
@@ -55,7 +55,7 @@ component BindingItem inherits Rectangle {
             ActionButton { x: 10px; y: (parent.height - self.height) / 2; width: 32px; icon: @image-url("../../../../assets/icons/trash.svg"); label: root.binding.global ? "Clear visibility shortcut" : "Remove shortcut"; quiet: true; clicked => { Store.action("binding-remove", root.binding.id); } }
         }
     }
-    Rectangle { y: parent.height - 1px; width: parent.width; height: 1px; background: Theme.border; }
+    Rectangle { y: 0px; width: parent.width; height: 1px; background: Theme.border; }
 }
 
 export component Keybinds inherits Rectangle {
@@ -84,15 +84,18 @@ export component Keybinds inherits Rectangle {
                     Rectangle { height: max(56px, 12px * Theme.text-scale + 32px); vertical-stretch: 0;
                         HorizontalLayout { spacing: 0px;
                             Rectangle { width: 88px;
-                                ActionButton { x: 28px; y: (parent.height - self.height) / 2; width: 32px; icon: @image-url("../../../../assets/icons/plus.svg"); label: "Choose crosshair for new shortcut"; quiet: true; clicked => { if Store.capture-id != "new-shortcut" { new-picker.show(); } } }
+                                ActionButton { x: 28px; y: (parent.height - self.height) / 2; width: 32px; icon: @image-url("../../../../assets/icons/plus.svg"); accent-icon: true; label: "Choose crosshair for new shortcut"; quiet: true; clicked => { if Store.capture-id != "new-shortcut" { new-picker.show(); } } }
                             }
                             Rectangle { width: 1px; background: Theme.border; }
-                            Rectangle { horizontal-stretch: 1; Text { x: 12px; width: parent.width - 24px; text: "New shortcut"; color: Theme.muted; font-size: 12px * Theme.text-scale; vertical-alignment: center; } }
+                            Rectangle { horizontal-stretch: 1;
+                                new-shortcut := ActionButton { x: 6px; y: (parent.height - self.height) / 2; width: 64px; text: "New"; label: "New crosshair shortcut"; align-left: true; quiet: true; clicked => { if Store.capture-id != "new-shortcut" { new-picker.show(); } } }
+                            }
                             Rectangle { width: 1px; background: Theme.border; }
                             Rectangle { width: 254px;
                                 shortcut-button := ActionButton { x: 12px; y: (parent.height - self.height) / 2; width: 230px; align-left: true;
-                                    text: Store.capture-id == "new-shortcut" ? "Press a key" : "New"; selected: Store.capture-id == "new-shortcut";
-                                    icon: @image-url("../../../../assets/icons/keyboard.svg"); clicked => { if Store.capture-id != "new-shortcut" { new-picker.show(); } }
+                                    visible: Store.capture-id == "new-shortcut";
+                                    text: "Press a key"; selected: true;
+                                    icon: @image-url("../../../../assets/icons/keyboard.svg");
                                 }
                             }
                             Rectangle { width: 1px; background: Theme.border; }
@@ -100,7 +103,7 @@ export component Keybinds inherits Rectangle {
                                 if Store.capture-id == "new-shortcut": ActionButton { x: 10px; y: (parent.height - self.height) / 2; width: 32px; icon: @image-url("../../../../assets/icons/x.svg"); label: "Cancel recording"; quiet: true; clicked => { Store.action("capture-cancel", ""); } }
                             }
                         }
-                        Rectangle { y: parent.height - 1px; width: parent.width; height: 1px; background: Theme.border; }
+                        Rectangle { y: 0px; width: parent.width; height: 1px; background: Theme.border; }
                     }
                     for binding in Store.bindings: BindingItem { viewport-width: root.width + root.absolute-position.x; viewport-height: root.height + root.absolute-position.y; binding: binding; visible: binding.shortcut; height: binding.shortcut ? max(56px, 12px * Theme.text-scale + 32px) : 0px; }
                 }
@@ -112,6 +115,6 @@ export component Keybinds inherits Rectangle {
         model: Store.selector-presets; total-count: Store.selector-total; favorite-count: Store.selector-favorite-count;
         chosen(id) => { Store.action("shortcut-target", id); Store.capture-region(shortcut-button.absolute-position.x / 1px, shortcut-button.absolute-position.y / 1px, shortcut-button.width / 1px, shortcut-button.height / 1px); Store.action("new-binding", "5"); }
         filter-request(search, favorites) => { Store.action("selector-filter", search); Store.action("selector-favorites", favorites ? "true" : "false"); }
-        dismissed => { shortcut-button.focus(); }
+        dismissed => { new-shortcut.focus(); }
     }
 }

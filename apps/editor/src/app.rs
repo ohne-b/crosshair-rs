@@ -602,6 +602,81 @@ mod tests {
     use super::*;
 
     #[test]
+    fn profile_menu_selects_profiles_and_opens_settings() {
+        use slint::platform::{Key, Platform, WindowAdapter, WindowEvent, software_renderer::*};
+        struct Headless;
+        impl Platform for Headless {
+            fn create_window_adapter(&self) -> Result<Rc<dyn WindowAdapter>, slint::PlatformError> {
+                Ok(MinimalSoftwareWindow::new(RepaintBufferType::NewBuffer))
+            }
+        }
+        fn press(ui: &AppWindow, text: impl Into<SharedString>) {
+            let text = text.into();
+            ui.window()
+                .dispatch_event(WindowEvent::KeyPressed { text: text.clone() });
+            ui.window()
+                .dispatch_event(WindowEvent::KeyReleased { text });
+        }
+        fn click(ui: &AppWindow, x: f32, y: f32) {
+            let position = slint::LogicalPosition::new(x, y);
+            ui.window().dispatch_event(WindowEvent::PointerPressed {
+                position,
+                button: slint::platform::PointerEventButton::Left,
+            });
+            ui.window().dispatch_event(WindowEvent::PointerReleased {
+                position,
+                button: slint::platform::PointerEventButton::Left,
+            });
+        }
+        slint::platform::set_platform(Box::new(Headless)).unwrap();
+        let ui = AppWindow::new().unwrap();
+        ui.window().set_size(slint::LogicalSize::new(1280.0, 800.0));
+        let store = ui.global::<Store>();
+        store.set_connected(true);
+        store.on_commit_focused_input(slint::platform::update_timers_and_animations);
+        store.set_profiles(
+            Rc::new(slint::VecModel::from(vec![
+                "Default".into(),
+                "Second".into(),
+            ]))
+            .into(),
+        );
+        let events = Rc::new(RefCell::new(Vec::new()));
+        let recorded = events.clone();
+        store.on_action(move |action, value| {
+            recorded
+                .borrow_mut()
+                .push((action.to_string(), value.to_string()))
+        });
+        ui.show().unwrap();
+        click(&ui, 900.0, 24.0);
+        press(&ui, Key::DownArrow);
+        press(&ui, Key::Return);
+        assert_eq!(
+            events.borrow().last(),
+            Some(&("select-profile".into(), "1".into()))
+        );
+        events.borrow_mut().clear();
+        click(&ui, 900.0, 24.0);
+        press(&ui, Key::End);
+        press(&ui, Key::Escape);
+        assert!(events.borrow().is_empty());
+        assert_eq!(store.get_settings_category(), 0);
+        click(&ui, 900.0, 24.0);
+        press(&ui, Key::End);
+        press(&ui, Key::Return);
+        assert_eq!(*events.borrow(), [("navigate".into(), "3".into())]);
+        assert_eq!(store.get_settings_category(), 2);
+        events.borrow_mut().clear();
+        store.set_settings_category(0);
+        click(&ui, 900.0, 24.0);
+        click(&ui, 950.0, 168.0);
+        assert_eq!(*events.borrow(), [("navigate".into(), "3".into())]);
+        assert_eq!(store.get_settings_category(), 2);
+        ui.hide().unwrap();
+    }
+
+    #[test]
     fn focused_name_commits_before_save_and_close() {
         use slint::platform::{Key, Platform, WindowAdapter, WindowEvent, software_renderer::*};
         struct Headless;

@@ -9,9 +9,13 @@ export component DropDown inherits Rectangle {
     in property <[image]> icons;
     in property <bool> compact: false;
     in property <string> placeholder;
+    in property <string> menu-title;
+    in property <string> footer-text;
+    in property <image> footer-icon;
     in property <bool> enabled: Store.interactive;
     in-out property <int> current-index: 0;
     callback selected(string);
+    callback footer-clicked;
     property <int> highlighted: root.current-index;
     property <bool> expanded: popup.is-open;
     property <length> item-height: max(32px, 12px * Theme.text-scale + 16px);
@@ -55,34 +59,52 @@ export component DropDown inherits Rectangle {
     }
     touch := TouchArea { enabled: root.enabled; clicked => { focus.focus(); root.open(); } }
     popup := PopupWindow {
-        x: 0; y: root.height + 4px; width: max(root.width, 180px);
-        height: min(8, root.model.length) * root.item-height + 8px;
+        x: 0; y: root.height + 4px; width: max(root.width, root.footer-text != "" ? 220px : 180px);
+        height: min(8, root.model.length) * root.item-height + 8px + (root.menu-title != "" ? 32px : 0px) + (root.footer-text != "" ? root.item-height + 13px : 0px);
         close-policy: close-on-click-outside;
         forward-focus: popup-focus;
-        Rectangle {
-            background: Theme.panel; border-width: 1px; border-color: Theme.border; border-radius: 10px;
-            ListView {
-                x: 4px; y: 4px; width: parent.width - 8px; height: parent.height - 8px;
-                content-y: -max(0, root.highlighted - 7) * root.item-height;
-                for value[index] in root.model: ActionButton {
-                    thumbnail: root.thumbnails[index];
-                    icon: root.icons[index];
-                    text: value; height: root.item-height; align-left: true; quiet: true;
-                    selected: index == root.highlighted; enabled: root.enabled;
-                    clicked => { root.choose(index); root.close(); }
-                }
-            }
-        }
         popup-focus := FocusScope {
             focus-on-click: false;
             key-pressed(event) => {
                 if event.text == Key.Escape { root.close(); return accept; }
-                if event.text == Key.Return || event.text == Key.Space { root.choose(root.highlighted); root.close(); return accept; }
-                if event.text == Key.DownArrow || event.text == Key.UpArrow { root.highlighted = clamp(root.highlighted + (event.text == Key.DownArrow ? 1 : -1), 0, root.model.length - 1); return accept; }
+                if event.text == Key.Return || event.text == Key.Space {
+                    if root.highlighted == root.model.length && root.footer-text != "" { root.close(); root.footer-clicked(); }
+                    else { root.choose(root.highlighted); root.close(); }
+                    return accept;
+                }
+                if event.text == Key.DownArrow || event.text == Key.UpArrow { root.highlighted = clamp(root.highlighted + (event.text == Key.DownArrow ? 1 : -1), 0, root.model.length - (root.footer-text != "" ? 0 : 1)); return accept; }
                 if event.text == Key.Home { root.highlighted = 0; return accept; }
-                if event.text == Key.End { root.highlighted = root.model.length - 1; return accept; }
+                if event.text == Key.End { root.highlighted = root.model.length - (root.footer-text != "" ? 0 : 1); return accept; }
                 if event.text == Key.Tab { root.close(); return reject; }
                 return reject;
+            }
+            Rectangle {
+                background: Theme.panel; border-width: 1px; border-color: Theme.border; border-radius: 10px;
+                if root.menu-title != "": Text { x: 12px; y: 4px; width: parent.width - 24px; height: 32px; text: root.menu-title; color: Theme.muted; font-size: 10px * Theme.text-scale; font-weight: 600; vertical-alignment: center; }
+                ListView {
+                    x: 4px; y: 4px + (root.menu-title != "" ? 32px : 0px); width: parent.width - 8px; height: min(8, root.model.length) * root.item-height;
+                    content-y: -max(0, min(root.highlighted, root.model.length - 1) - 7) * root.item-height;
+                    for value[index] in root.model: ActionButton {
+                        thumbnail: root.thumbnails[index];
+                        icon: root.icons[index];
+                        text: value; height: root.item-height; align-left: true; quiet: true;
+                        selected: index == root.highlighted; enabled: root.enabled;
+                        accent-icon: index == root.current-index;
+                        changed has-focus => { if self.has-focus { root.highlighted = index; } }
+                        clicked => { root.choose(index); root.close(); }
+                    }
+                }
+                if root.footer-text != "": Rectangle {
+                    y: parent.height - root.item-height - 13px; height: root.item-height + 9px;
+                    Rectangle { y: 0px; height: 1px; width: parent.width; background: Theme.border; }
+                    ActionButton {
+                        x: 4px; y: 5px; width: parent.width - 8px; height: root.item-height;
+                        text: root.footer-text; icon: root.footer-icon; align-left: true; quiet: true; enabled: root.enabled;
+                        selected: root.highlighted == root.model.length;
+                        changed has-focus => { if self.has-focus { root.highlighted = root.model.length; } }
+                        clicked => { root.footer-clicked(); root.close(); }
+                    }
+                }
             }
         }
     }

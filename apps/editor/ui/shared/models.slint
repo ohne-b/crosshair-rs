@@ -19,6 +19,7 @@ export global Store {
     in-out property <int> selector-total: 0;
     in-out property <int> selector-favorite-count: 0;
     in-out property <int> page: 0;
+    in-out property <int> settings-category: 0;
     in-out property <bool> connected: false;
     in-out property <bool> read-only: false;
     out property <bool> interactive: !root.read-only && (root.modal-kind == 0 || root.modal-kind == 3 || root.modal-kind == 5);

@@ -34,7 +34,7 @@ component ReleaseNotesLink inherits Rectangle {
 }
 
 export component Settings inherits Rectangle {
-    property <int> category: 0;
+    property <int> category <=> Store.settings-category;
     background: Theme.canvas; border-top-left-radius: 12px;
     VerticalLayout { spacing: 0px;
         Rectangle { height: 48px; background: Theme.panel; border-top-left-radius: 12px;
