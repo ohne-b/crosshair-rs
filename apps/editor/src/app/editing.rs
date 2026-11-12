@@ -10,7 +10,7 @@ impl App {
         );
         if self.group_open || self.inflight.is_some() || self.document.dirty {
             ensure!(
-                self.window()?.global::<Store>().get_connected(),
+                self.window()?.global::<Store>().get_connected() && !self.document.save_paused,
                 "Reconnect and save, or export this draft before opening another crosshair"
             );
             defer_ui(
@@ -39,7 +39,8 @@ impl App {
             !self.document.conflict,
             "This crosshair changed in the engine. Export the draft or discard it before continuing."
         );
-        if !self.window()?.global::<Store>().get_connected() {
+        if !self.window()?.global::<Store>().get_connected() || self.document.save_paused {
+            self.document.save_paused = true;
             self.document.begin_gesture();
             return Ok(());
         }
@@ -68,6 +69,7 @@ impl App {
         if self.inflight.is_some()
             || !self.document.dirty
             || self.document.conflict
+            || self.document.save_paused
             || self.cancel_group
             || self.group_ending
             || self.preview_pending
@@ -95,7 +97,7 @@ impl App {
     }
 
     pub(super) fn finish_edit(&mut self) -> Result<()> {
-        if !self.window()?.global::<Store>().get_connected()
+        if (!self.window()?.global::<Store>().get_connected() || self.document.save_paused)
             && self.finish_group
             && !self.preview_pending
         {

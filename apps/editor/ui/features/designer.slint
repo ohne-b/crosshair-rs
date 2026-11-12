@@ -134,7 +134,7 @@ export component Designer inherits Rectangle {
                 ActionButton { text: "File"; quiet: true; clicked => { Store.action("file-menu", ""); } }
                 Rectangle { horizontal-stretch: 1; }
                 if !Store.document-active: ActionButton { text: "Use"; primary: true; clicked => { Store.action("use-document", ""); } }
-                Text { text: Store.dirty ? "Editing…" : ""; color: Theme.muted; font-size: 11px * Theme.text-scale; vertical-alignment: center; }
+                Text { text: Store.dirty ? (Store.save-paused ? "Unsent changes" : "Saving…") : ""; color: Theme.muted; font-size: 11px * Theme.text-scale; vertical-alignment: center; }
                 ActionButton { enabled: Store.interactive && (Store.can-undo || Store.dirty); icon: @image-url("../../../../assets/icons/arrow-back-up.svg"); label: "Undo (Ctrl+Z)"; quiet: true; clicked => { Store.action("undo", ""); } }
                 ActionButton { enabled: Store.interactive && Store.can-redo; icon: @image-url("../../../../assets/icons/arrow-forward-up.svg"); label: "Redo (Ctrl+Y)"; quiet: true; clicked => { Store.action("redo", ""); } }
                 ActionButton { icon: @image-url("../../../../assets/icons/copy.svg"); label: "Duplicate selection (Ctrl+D)"; quiet: true; clicked => { Store.action("duplicate-layers", ""); } }

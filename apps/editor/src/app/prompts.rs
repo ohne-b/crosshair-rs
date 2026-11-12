@@ -73,6 +73,7 @@ impl App {
                     self.document.cancel_gesture();
                     self.document.dirty = false;
                     self.document.conflict = false;
+                    self.document.save_paused = false;
                     self.preview_pending = false;
                     self.drag = None;
                     self.draw_base = None;
@@ -95,6 +96,7 @@ impl App {
                     if self.document.conflict {
                         self.action("retry-edit", "")?;
                     } else {
+                        self.document.save_paused = false;
                         self.begin_edit()?;
                         self.finish_group = true;
                         self.send_document()?;

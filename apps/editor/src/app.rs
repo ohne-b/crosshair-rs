@@ -31,7 +31,7 @@ use windows::Win32::{
 thread_local! { static APPLICATION: RefCell<Weak<RefCell<App>>> = const { RefCell::new(Weak::new()) }; }
 thread_local! { static EVENTS: RefCell<VecDeque<Event>> = const { RefCell::new(VecDeque::new()) }; }
 enum Event {
-    Engine(client::Event),
+    Engine(u64, client::Event),
     Preview(preview::Event),
     Appearance(crate::platform::accessibility::Appearance),
     WorkArea([f32; 2]),
@@ -196,7 +196,7 @@ pub(crate) struct App {
     closing: bool,
     close_flush_pending: bool,
     recovery_shown: bool,
-    reconnect_attempts: u8,
+    connection_epoch: u64,
     install_requested: bool,
     shutdown_requested: Option<bool>,
     preview_pending: bool,
@@ -232,7 +232,10 @@ pub fn run() -> Result<()> {
         .select()
         .context("Could not initialize the software window backend")?;
     let ui = AppWindow::new().context("Could not create the editor interface")?;
-    let client = Client::start(options, Arc::new(|event| post(Event::Engine(event))));
+    let client = Client::start(
+        options,
+        Arc::new(|epoch, event| post(Event::Engine(epoch, event))),
+    );
     let preview = preview::Preview::start(
         client.clone(),
         Arc::new(|event| post(Event::Preview(event))),
@@ -271,7 +274,7 @@ pub fn run() -> Result<()> {
         closing: false,
         close_flush_pending: false,
         recovery_shown: false,
-        reconnect_attempts: 0,
+        connection_epoch: 0,
         install_requested: false,
         shutdown_requested: None,
         preview_pending: false,
@@ -448,6 +451,9 @@ impl App {
             && !self.document.dirty
             && self.deferred_ui.is_empty()
         {
+            if !self.window()?.global::<Store>().get_connected() {
+                return self.close_now();
+            }
             self.send("close-flush", Command::Flush)?;
             self.close_flush_pending = true;
             self.window()?.global::<Store>().set_read_only(true);

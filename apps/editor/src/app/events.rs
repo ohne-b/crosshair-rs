@@ -2,6 +2,16 @@ use super::*;
 
 impl App {
     pub(super) fn event(&mut self, event: Event) -> Result<()> {
+        if let Event::Engine(epoch, _) = &event {
+            if !self.client.accepts(*epoch) {
+                return Ok(());
+            }
+            if self.connection_epoch != *epoch {
+                self.connection_epoch = *epoch;
+                self.new_connection = true;
+                self.status = EngineStatus::default();
+            }
+        }
         match event {
             Event::Ui(event)
                 if (self.group_ending || (self.group_open && self.finish_group))
@@ -77,12 +87,12 @@ impl App {
                 store.set_work_width(width);
                 store.set_work_height(height);
             }
-            Event::Engine(client::Event::Reused) => self.close_now()?,
-            Event::Engine(client::Event::Activity(activity)) => self
+            Event::Engine(_, client::Event::Reused) => self.close_now()?,
+            Event::Engine(_, client::Event::Activity(activity)) => self
                 .window()?
                 .global::<Store>()
                 .set_activity(activity.unwrap_or_default().into()),
-            Event::Engine(client::Event::Connected) => {
+            Event::Engine(_, client::Event::Connected) => {
                 let ui = self.window()?;
                 ui.global::<Store>().set_connected(true);
                 self.new_connection = true;
@@ -93,9 +103,8 @@ impl App {
                 } else {
                     SharedString::default()
                 });
-                self.reconnect_attempts = 0;
             }
-            Event::Engine(client::Event::State(state)) => {
+            Event::Engine(_, client::Event::State(state)) => {
                 if state.revision < self.state.revision && !self.new_connection {
                     return Ok(());
                 }
@@ -133,12 +142,14 @@ impl App {
                 self.refresh();
                 self.render();
             }
-            Event::Engine(client::Event::Message(message)) => match message {
+            Event::Engine(_, client::Event::Message(message)) => match message {
                 ServerMessage::Changed {
                     revision, status, ..
                 } => {
                     let selection_changed = self.status.selected_preset != status.selected_preset;
-                    self.status = status;
+                    if !accept_status(&mut self.status, status) {
+                        return Ok(());
+                    }
                     self.refresh_status();
                     if selection_changed {
                         self.refresh_library();
@@ -170,8 +181,10 @@ impl App {
                     }
                 }
                 ServerMessage::Update { status } => {
-                    self.status.update = status;
-                    self.refresh_status();
+                    if status.revision >= self.status.update.revision {
+                        self.status.update = status;
+                        self.refresh_status();
+                    }
                 }
                 ServerMessage::FocusEditor => {
                     frame::focus(self.hwnd()?);
@@ -198,7 +211,7 @@ impl App {
                 }
                 ServerMessage::Response(_) => {}
             },
-            Event::Engine(client::Event::Completed { tag, reply }) => {
+            Event::Engine(_, client::Event::Completed { tag, reply }) => {
                 if tag == "document" {
                     if let Some(sent) = self.inflight.take() {
                         let version = match reply {
@@ -289,11 +302,14 @@ impl App {
                     self.client.refresh();
                 }
             }
-            Event::Engine(client::Event::Failed {
-                tag,
-                message,
-                conflict,
-            }) => {
+            Event::Engine(
+                _,
+                client::Event::Failed {
+                    tag,
+                    message,
+                    conflict,
+                },
+            ) => {
                 if tag == "document" || tag == "begin-edit" {
                     self.inflight = None;
                     self.document.dirty = true;
@@ -351,8 +367,11 @@ impl App {
                 self.error(message);
                 self.refresh_document();
             }
-            Event::Engine(client::Event::Disconnected(message)) => {
+            Event::Engine(_, client::Event::Disconnected(message)) => {
+                let close_clean =
+                    self.closing && !self.document.dirty && self.deferred_ui.is_empty();
                 self.window()?.global::<Store>().set_connected(false);
+                self.document.save_paused = self.document.dirty || self.inflight.is_some();
                 self.inflight = None;
                 self.group_open = false;
                 self.group_ending = false;
@@ -380,15 +399,10 @@ impl App {
                     .global::<Store>()
                     .set_capture_id(SharedString::default());
                 self.error(message);
-                if !self.closing && self.reconnect_attempts < 3 {
-                    self.reconnect_attempts += 1;
-                    let client = self.client.clone();
-                    slint::Timer::single_shot(
-                        std::time::Duration::from_millis(250 * (1u64 << self.reconnect_attempts)),
-                        move || {
-                            let _ = client.reconnect();
-                        },
-                    );
+                if close_clean {
+                    self.close_now()?;
+                } else {
+                    self.refresh_document();
                 }
             }
             Event::Preview(preview::Event::Document {
@@ -530,6 +544,10 @@ impl App {
                         self.document.draft = Some(changed);
                         self.document.dirty = true;
                         self.document.conflict = false;
+                        self.document.save_paused = false;
+                        self.window()?
+                            .global::<Store>()
+                            .set_error(SharedString::default());
                         self.group_open = false;
                         self.group_ending = false;
                         self.begin_edit()?;
@@ -545,5 +563,49 @@ impl App {
             }
         }
         Ok(())
+    }
+}
+
+fn accept_status(current: &mut EngineStatus, mut incoming: EngineStatus) -> bool {
+    if incoming.revision < current.revision {
+        return false;
+    }
+    if incoming.update.revision < current.update.revision {
+        incoming.update = current.update.clone();
+    }
+    *current = incoming;
+    true
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn delayed_subscription_status_cannot_undo_live_visibility_or_update_progress() {
+        let mut current = EngineStatus {
+            revision: 4,
+            visible: true,
+            update: UpdateStatus {
+                revision: 8,
+                phase: UpdatePhase::Downloading,
+                downloaded: 4096,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        assert!(!accept_status(&mut current, EngineStatus::default()));
+        assert!(current.visible);
+        assert!(accept_status(
+            &mut current,
+            EngineStatus {
+                revision: 5,
+                visible: false,
+                ..Default::default()
+            }
+        ));
+        assert!(!current.visible);
+        assert_eq!(current.update.phase, UpdatePhase::Downloading);
+        assert_eq!(current.update.downloaded, 4096);
     }
 }

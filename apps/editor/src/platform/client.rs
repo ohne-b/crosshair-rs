@@ -86,6 +86,8 @@ pub enum Event {
     Activity(Option<&'static str>),
 }
 
+type Events = Arc<dyn Fn(u64, Event) + Send + Sync>;
+
 enum Job {
     Command(String, Command),
     Document(String, Preset, u64),
@@ -124,10 +126,11 @@ pub struct Client {
     source_assets: Arc<Mutex<BTreeMap<Id, AssetData>>>,
     pinned_assets: Arc<Mutex<BTreeSet<Id>>>,
     connection_epoch: Arc<AtomicU64>,
+    stopped: Arc<AtomicBool>,
 }
 
 impl Client {
-    pub fn start(options: Options, events: Arc<dyn Fn(Event) + Send + Sync>) -> Self {
+    pub fn start(options: Options, events: Events) -> Self {
         let (jobs, receiver) = mpsc::sync_channel(64);
         let client = Self {
             jobs,
@@ -136,6 +139,7 @@ impl Client {
             source_assets: Arc::new(Mutex::new(BTreeMap::new())),
             pinned_assets: Arc::new(Mutex::new(BTreeSet::new())),
             connection_epoch: Arc::new(AtomicU64::new(0)),
+            stopped: Arc::new(AtomicBool::new(false)),
         };
         let worker_client = client.clone();
         thread::Builder::new()
@@ -145,6 +149,10 @@ impl Client {
         client
     }
     fn send(&self, job: Job) -> Result<()> {
+        ensure!(
+            !self.stopped.load(Ordering::Acquire),
+            "The editor connection has closed"
+        );
         self.jobs
             .try_send(job)
             .context("The engine is busy. Retry after the current operation.")
@@ -231,6 +239,7 @@ impl Client {
             .context("Reading engine state timed out")?
     }
     pub fn stop(&self) {
+        self.stopped.store(true, Ordering::Release);
         self.connection_epoch.fetch_add(1, Ordering::AcqRel);
         let _ = self.jobs.try_send(Job::Stop);
         if let Ok(pipe) = self.pipe.lock()
@@ -238,6 +247,10 @@ impl Client {
         {
             pipe.cancel();
         }
+    }
+    pub fn accepts(&self, epoch: u64) -> bool {
+        !self.stopped.load(Ordering::Acquire)
+            && self.connection_epoch.load(Ordering::Acquire) == epoch
     }
 }
 
@@ -260,14 +273,23 @@ impl Connection {
         options: &Options,
         events: Arc<dyn Fn(Event) + Send + Sync>,
         launch: bool,
+        stopped: &AtomicBool,
     ) -> Result<Self> {
         let identity = Identity::current()?;
         let name = control_pipe_name(&options.scope)?;
         let mut pipe = Pipe::connect(&name, &identity, &["crosshair-engine.exe"]);
         if pipe.is_err() && launch {
+            ensure!(
+                !stopped.load(Ordering::Acquire),
+                "The editor connection has closed"
+            );
             launch_engine(options)?;
             for delay in [100, 200, 400, 800, 1200, 1600] {
                 thread::sleep(Duration::from_millis(delay));
+                ensure!(
+                    !stopped.load(Ordering::Acquire),
+                    "The editor connection has closed"
+                );
                 pipe = Pipe::connect(&name, &identity, &["crosshair-engine.exe"]);
                 if pipe.is_ok() {
                     break;
@@ -299,10 +321,12 @@ impl Connection {
                             }
                         }
                         Err(error) => {
-                            let message = error.to_string();
+                            eprintln!("Engine connection ended: {error:#}");
                             let _ = sender.send(Err(error));
                             if !reader_cancelled.load(Ordering::Acquire) {
-                                events(Event::Disconnected(message));
+                                events(Event::Disconnected(
+                                    "The engine disconnected. Reconnect to continue.".into(),
+                                ));
                             }
                             break;
                         }
@@ -530,15 +554,10 @@ fn launch_engine(options: &Options) -> Result<()> {
     Ok(())
 }
 
-fn worker(
-    options: Options,
-    jobs: Receiver<Job>,
-    client: Client,
-    events: Arc<dyn Fn(Event) + Send + Sync>,
-) {
+fn worker(options: Options, jobs: Receiver<Job>, client: Client, events: Events) {
     let mut connection = connect(&options, &client, &events, true);
     while let Ok(job) = jobs.recv() {
-        if matches!(job, Job::Stop) {
+        if client.stopped.load(Ordering::Acquire) || matches!(job, Job::Stop) {
             break;
         }
         if matches!(job, Job::Reconnect) {
@@ -549,6 +568,8 @@ fn worker(
             connection = connect(&options, &client, &events, true);
             continue;
         }
+        let epoch = client.connection_epoch.load(Ordering::Acquire);
+        let notify = |event| events(epoch, event);
         let Some(current) = &mut connection else {
             match job {
                 Job::Asset { result, .. } => {
@@ -560,7 +581,7 @@ fn worker(
                 Job::ReadState { result } => {
                     let _ = result.send(Err(anyhow::anyhow!("The engine is disconnected")));
                 }
-                _ => events(Event::Failed {
+                _ => notify(Event::Failed {
                     tag: "connection".into(),
                     message: "The engine is disconnected. Reconnect to continue.".into(),
                     conflict: false,
@@ -577,7 +598,7 @@ fn worker(
             _ => None,
         };
         if activity.is_some() {
-            events(Event::Activity(activity));
+            notify(Event::Activity(activity));
         }
         let (tag, result) = match job {
             Job::Command(tag, command) => (tag, current.request(command)),
@@ -595,7 +616,7 @@ fn worker(
                     {
                         client.remember_asset(*id, data, true);
                     }
-                    events(Event::State(state));
+                    notify(Event::State(state));
                 }
                 (tag, result)
             }
@@ -608,11 +629,12 @@ fn worker(
                 current.export_draft(document, destination, png),
             ),
             Job::Refresh => {
-                let result = current.snapshot();
+                // Allow one follow-up snapshot when a change arrives during this transfer.
                 client.refresh_pending.store(false, Ordering::Release);
+                let result = current.snapshot();
                 match result {
-                    Ok(state) => events(Event::State(state)),
-                    Err(error) => events(Event::Failed {
+                    Ok(state) => notify(Event::State(state)),
+                    Err(error) => notify(Event::Failed {
                         tag: "refresh".into(),
                         message: error.to_string(),
                         conflict: false,
@@ -653,22 +675,22 @@ fn worker(
             Job::Reconnect | Job::Stop => unreachable!(),
         };
         if activity.is_some() {
-            events(Event::Activity(None));
+            notify(Event::Activity(None));
         }
         match result {
             Ok(Response {
                 result: Ok(reply), ..
-            }) => events(Event::Completed { tag, reply }),
+            }) => notify(Event::Completed { tag, reply }),
             Ok(Response {
                 result: Err(error), ..
-            }) => events(Event::Failed {
+            }) => notify(Event::Failed {
                 tag,
                 message: error.message,
                 conflict: matches!(error.code, ErrorCode::Conflict),
             }),
             Err(error) => {
                 let message = error.to_string();
-                events(Event::Failed {
+                notify(Event::Failed {
                     tag,
                     message: message.clone(),
                     conflict: false,
@@ -677,7 +699,7 @@ fn worker(
                 if let Ok(mut pipe) = client.pipe.lock() {
                     *pipe = None;
                 }
-                events(Event::Disconnected(message));
+                notify(Event::Disconnected(message));
             }
         }
     }
@@ -700,19 +722,22 @@ fn response_deadline(command: &Command) -> Duration {
 fn connect(
     options: &Options,
     client: &Client,
-    events: &Arc<dyn Fn(Event) + Send + Sync>,
+    events: &Events,
     launch: bool,
 ) -> Option<Connection> {
+    if client.stopped.load(Ordering::Acquire) {
+        return None;
+    }
     let current_epoch = client.connection_epoch.fetch_add(1, Ordering::AcqRel) + 1;
     let epoch = client.connection_epoch.clone();
     let destination = events.clone();
     let events: Arc<dyn Fn(Event) + Send + Sync> = Arc::new(move |event| {
         if epoch.load(Ordering::Acquire) == current_epoch {
-            destination(event);
+            destination(current_epoch, event);
         }
     });
     let result = (|| -> Result<Connection> {
-        let mut connection = Connection::open(options, events.clone(), launch)?;
+        let mut connection = Connection::open(options, events.clone(), launch, &client.stopped)?;
         if let Ok(mut pipe) = client.pipe.lock() {
             *pipe = Some(connection.pipe.clone());
         }
@@ -750,6 +775,36 @@ fn connect(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn closing_invalidates_queued_events_and_rejects_reconnects() {
+        let (jobs, receiver) = mpsc::sync_channel(64);
+        let client = Client {
+            jobs,
+            refresh_pending: Arc::new(AtomicBool::new(false)),
+            pipe: Arc::new(Mutex::new(None)),
+            source_assets: Arc::new(Mutex::new(BTreeMap::new())),
+            pinned_assets: Arc::new(Mutex::new(BTreeSet::new())),
+            connection_epoch: Arc::new(AtomicU64::new(1)),
+            stopped: Arc::new(AtomicBool::new(false)),
+        };
+        assert!(client.accepts(1));
+        client.connection_epoch.fetch_add(1, Ordering::AcqRel);
+        assert!(!client.accepts(1));
+        assert!(client.accepts(2));
+        for _ in 0..100 {
+            client.refresh();
+        }
+        assert!(matches!(receiver.try_recv(), Ok(Job::Refresh)));
+        assert!(receiver.try_recv().is_err());
+        client.reconnect().unwrap();
+        client.stop();
+        assert!(!client.accepts(2));
+        assert!(!client.accepts(3));
+        assert!(client.reconnect().is_err());
+        assert!(client.command("late", Command::ToggleVisibility).is_err());
+        assert!(client.stopped.load(Ordering::Acquire));
+    }
 
     #[test]
     fn portable_io_has_time_to_finish_without_weakening_control_deadlines() {

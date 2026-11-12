@@ -13,6 +13,23 @@ fn application() -> Result<(tempfile::TempDir, Store, App)> {
 }
 
 #[test]
+fn status_notifications_advance_independently_of_persistent_state() -> Result<()> {
+    let (_directory, _store, mut app) = application()?;
+    let config_revision = app.state.revision;
+    let subscription = app.status();
+    app.status.widget.connected = true;
+    app.changed(None, false);
+    let connected = app.status();
+    assert!(connected.revision > subscription.revision);
+    assert!(connected.widget.connected);
+    app.status.widget.connected = false;
+    app.changed(None, false);
+    assert!(app.status().revision > connected.revision);
+    assert_eq!(app.state.revision, config_revision);
+    Ok(())
+}
+
+#[test]
 fn capture_cancel_is_idempotent_but_cannot_cancel_another_owner() -> Result<()> {
     let (_directory, _store, mut app) = application()?;
     let owner = Id::new_v4();

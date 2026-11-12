@@ -520,8 +520,10 @@ pub struct Document {
     pub draft: Option<Preset>,
     pub selected: BTreeSet<Id>,
     pub dirty: bool,
+    pub save_paused: bool,
     pub conflict: bool,
     pub gesture: Option<Preset>,
+    gesture_dirty: bool,
     pub clipboard: Vec<Layer>,
 }
 
@@ -536,6 +538,7 @@ impl Document {
             self.selected.insert(layer.id);
         }
         self.draft = Some(preset);
+        self.save_paused = false;
         self.conflict = false;
         Ok(())
     }
@@ -559,12 +562,13 @@ impl Document {
     pub fn begin_gesture(&mut self) {
         if self.gesture.is_none() {
             self.gesture = self.draft.clone();
+            self.gesture_dirty = self.dirty;
         }
     }
     pub fn cancel_gesture(&mut self) {
         if let Some(before) = self.gesture.take() {
             self.draft = Some(before);
-            self.dirty = false;
+            self.dirty = self.gesture_dirty;
         }
     }
     pub fn selected_layer(&self) -> Option<&Layer> {
@@ -858,6 +862,30 @@ mod tests {
         };
         assert_eq!(crosshair.enabled_arms.len(), 7);
     }
+    #[test]
+    fn cancelling_a_gesture_preserves_an_older_unsent_draft() {
+        let mut document = Document::default();
+        document
+            .open(AppState::default().presets.remove(0))
+            .unwrap();
+        document.draft.as_mut().unwrap().name = "Unsent name".into();
+        document.dirty = true;
+        document.save_paused = true;
+        document.begin_gesture();
+        document.draft.as_mut().unwrap().layers[0].transform.x = 20.0;
+        document.cancel_gesture();
+        assert!(document.dirty);
+        assert!(document.save_paused);
+        let draft = document.draft.as_ref().unwrap();
+        assert_eq!(draft.name, "Unsent name");
+        assert_eq!(draft.layers[0].transform.x, 0.0);
+        let mut saved = draft.clone();
+        saved.name = "A newer saved name".into();
+        saved.revision += 1;
+        document.receive(&saved);
+        assert_eq!(document.draft.as_ref().unwrap().name, "Unsent name");
+    }
+
     #[test]
     fn acknowledgement_preserves_newer_unsent_edit() {
         let mut document = Document::default();

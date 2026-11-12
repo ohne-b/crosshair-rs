@@ -398,10 +398,16 @@ impl App {
                 }
             }
             "retry-edit" => {
+                ensure!(
+                    store.get_connected(),
+                    "Reconnect before retrying this draft"
+                );
                 if self.document.conflict {
                     self.modal = Modal::DraftConflict;
                     self.show_modal(1, "The saved crosshair changed", "Keep the editor open, export this draft, or replace the engine's current design with this draft.", "Replace saved design", "Export draft", "");
                 } else {
+                    self.document.save_paused = false;
+                    store.set_error(SharedString::default());
                     self.begin_edit()?;
                     self.finish_group = true;
                     self.send_document()?;

@@ -105,6 +105,7 @@ impl App {
     }
 
     pub fn changed(&mut self, document: Option<Id>, structure: bool) {
+        self.status.revision = self.status.revision.saturating_add(1);
         self.broadcast(ServerMessage::Changed {
             revision: self.state.revision,
             document,

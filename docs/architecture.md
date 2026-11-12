@@ -227,6 +227,9 @@ preset; a compact Use action appears when editing an inactive one. Autosave is
 quiet except on failure. Keep unsent edits after disconnect; do not replay them
 over a changed revision. Closing with unsent edits offers Retry/Discard/Cancel;
 acknowledged autosaved work needs no save prompt.
+After a disconnect, saving an unsent draft stays paused until Retry. Reconnecting
+or receiving a preview never silently resumes the save. Cancelling a later
+gesture preserves any earlier unsent changes.
 
 ### Keybinds
 
@@ -531,8 +534,10 @@ newest results to its event loop.
 Desktop pipe: current-user logon-session ACL, remote rejection, authenticated
 peer identity. Names include user/session but are not the security boundary.
 Prevent first-instance squatting; verify expected packaged executable identity.
-Handshake verifies build/protocol before accepting commands. Control protocol v2
-adds capture tokens to Begin/Cancel/Captured; both executables must be rebuilt together.
+Handshake verifies build/protocol before accepting commands. Control protocol v3
+has capture tokens and independently ordered engine status. Connection epochs are
+checked when queued events reach the editor, so a retired connection cannot change
+the current UI. Both executables must be rebuilt together.
 
 Length-prefixed UTF-8 JSON, 1 MiB control frames, incomplete-frame deadlines and
 bounded requests. IDs/event revisions prevent stale responses replacing newer
@@ -589,8 +594,11 @@ personal data and shows its contents. No automatic upload.
 Per-session mutex and authenticated handshake enforce one engine per session;
 the additional per-user storage/update locks prevent cross-session writers. Launch
 connects/starts engine, then opens/focuses one editor. Concurrent launches converge.
-Editor close fully exits its process; engine/presentation continue. Editor crash
-does not stop the crosshair.
+Editor close fully exits its process; engine/presentation continue. A clean editor
+can also close while disconnected. Editor crash does not stop the crosshair.
+Only an explicit app launch, tray Open menu or an authorized update restart opens
+the editor. Disconnects preserve drafts and offer an explicit reconnect; they do
+not restart either process automatically.
 
 Tray: Open menu, Show crosshair, compact active-profile preset submenu, Quit. Quit closes
 editor, blanks/releases widget, unregisters input/tray, flushes and exits. No

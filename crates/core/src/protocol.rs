@@ -256,6 +256,7 @@ pub enum ErrorCode {
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct EngineStatus {
+    pub revision: u64,
     pub active_profile: Option<Id>,
     pub selected_preset: Option<Id>,
     pub visible: bool,
