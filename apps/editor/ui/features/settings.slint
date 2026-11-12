@@ -34,13 +34,15 @@ export component Settings inherits Rectangle {
                 VerticalLayout { padding: 12px; spacing: 4px; alignment: start;
                     for category[index] in ["Display", "General", "Data", "Updates", "About"]: ActionButton {
                         text: category; height: 38px; align-left: true; quiet: true; selected: root.category == index; horizontal-stretch: 1;
+                        icon: index == 0 ? @image-url("../../../../assets/icons/device-desktop.svg") : index == 1 ? @image-url("../../../../assets/icons/settings.svg") : index == 2 ? @image-url("../../../../assets/icons/database.svg") : index == 3 ? @image-url("../../../../assets/icons/download.svg") : @image-url("../../../../assets/icons/info-circle.svg");
                         clicked => { root.category = index; }
                     }
                 }
                 Rectangle { x: parent.width - 1px; width: 1px; height: parent.height; background: Theme.border; }
             }
-            ScrollView {
-                VerticalLayout { padding: 24px; spacing: 12px; alignment: start;
+            settings-scroll := ScrollView {
+                horizontal-scrollbar-policy: always-off; content-width: self.visible-width;
+                VerticalLayout { x: 0px; width: min(800px * Theme.text-scale, settings-scroll.visible-width); padding: 24px; spacing: 12px; alignment: start;
                     if root.category == 0: VerticalLayout { spacing: 12px; alignment: start;
                         SectionTitle { text: "DISPLAY"; }
                         Group {
@@ -63,10 +65,10 @@ export component Settings inherits Rectangle {
                                 ActionButton { icon: @image-url("../../../../assets/icons/refresh.svg"); label: "Reset position"; quiet: true; clicked => { Store.action("reset-position", ""); } }
                             }
                             Setting { label: "Saved positions"; last: true;
-                                DropDown { width: 152px; model: Store.positions; current-index <=> Store.position-index; accessible-label: "Saved position"; }
-                                ActionButton { text: "Use"; clicked => { Store.action("position-use", Store.position-index); } }
+                                DropDown { width: 152px; model: Store.positions; placeholder: "No positions"; current-index <=> Store.position-index; accessible-label: "Saved position"; }
+                                ActionButton { text: "Use"; enabled: Store.positions.length > 0 && Store.interactive; clicked => { Store.action("position-use", Store.position-index); } }
                                 ActionButton { icon: @image-url("../../../../assets/icons/plus.svg"); label: "Save position"; quiet: true; clicked => { Store.action("position-save", ""); } }
-                                ActionButton { icon: @image-url("../../../../assets/icons/trash.svg"); label: "Remove saved position"; quiet: true; clicked => { Store.action("position-delete", Store.position-index); } }
+                                ActionButton { icon: @image-url("../../../../assets/icons/trash.svg"); label: "Remove saved position"; enabled: Store.positions.length > 0 && Store.interactive; quiet: true; clicked => { Store.action("position-delete", Store.position-index); } }
                             }
                         }
                         if Store.output-mode == 1: VerticalLayout { spacing: 12px;
@@ -116,7 +118,7 @@ export component Settings inherits Rectangle {
                                     Rectangle { width: 76px; height: 32px; border-radius: 8px; background: Theme.raised; Text { text: "v" + Store.version; color: Theme.text; font-size: 12px * Theme.text-scale; font-weight: 600; horizontal-alignment: center; vertical-alignment: center; } }
                                     ActionButton { text: "Release notes"; quiet: true; clicked => { Store.action("release-notes", ""); } }
                                     Rectangle { horizontal-stretch: 1; }
-                                    ActionButton { text: Store.update-phase == 7 ? "Retry" : "Check for updates"; enabled: Store.modal-kind == 0 && !Store.read-only && Store.update-phase != 1 && Store.update-phase != 4 && Store.update-phase != 6; clicked => { Store.action("check-update", ""); } }
+                                    ActionButton { text: Store.update-phase == 7 ? "Retry" : "Check for updates"; enabled: Store.interactive && Store.update-phase != 1 && Store.update-phase != 4 && Store.update-phase != 6; clicked => { Store.action("check-update", ""); } }
                                     if Store.update-phase == 3: ActionButton { text: "Download"; primary: true; clicked => { Store.action("download-update", ""); } }
                                     if Store.update-phase == 4: ActionButton { text: "Cancel"; clicked => { Store.action("cancel-update", ""); } }
                                     if Store.update-phase == 5: ActionButton { text: "Install and restart"; primary: true; clicked => { Store.action("install-update", ""); } }

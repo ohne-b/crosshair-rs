@@ -63,6 +63,45 @@ fn pinned_edit_and_undo_preserve_global_selection() -> Result<()> {
 }
 
 #[test]
+fn inline_rename_is_atomic_and_undoable_without_changing_the_active_preset() -> Result<()> {
+    let (_directory, _store, mut app) = application()?;
+    let owner = Id::new_v4();
+    let active = app.state.selected_preset().unwrap().id;
+    let original = app.state.presets[1].clone();
+    let mut renamed = original.clone();
+    renamed.name = "Small dot".into();
+    app.command(
+        owner,
+        Command::ReplacePreset {
+            preset: renamed,
+            expected_revision: original.revision,
+        },
+    )?;
+    let stored = app.state.preset(original.id).unwrap();
+    assert_eq!(stored.name, "Small dot");
+    assert_eq!(stored.layers, original.layers);
+    assert_eq!(app.state.selected_preset().unwrap().id, active);
+    let before_invalid = app.state.clone();
+    let mut invalid = stored.clone();
+    invalid.name = " ".into();
+    assert!(
+        app.command(
+            owner,
+            Command::ReplacePreset {
+                expected_revision: invalid.revision,
+                preset: invalid,
+            }
+        )
+        .is_err()
+    );
+    assert_eq!(app.state, before_invalid);
+    app.command(owner, Command::Undo)?;
+    assert_eq!(app.state.preset(original.id).unwrap().name, original.name);
+    assert_eq!(app.state.selected_preset().unwrap().id, active);
+    Ok(())
+}
+
+#[test]
 fn invalid_locked_stale_and_oversized_edits_leave_state_unchanged() -> Result<()> {
     let (_directory, store, mut app) = application()?;
     let owner = Id::new_v4();

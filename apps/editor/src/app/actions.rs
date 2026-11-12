@@ -64,15 +64,15 @@ impl App {
             }
             "input-help" => {
                 self.modal = Modal::None;
-                self.show_modal(4, "Global shortcuts", settings::INPUT_HELP, "", "", "");
+                self.show_modal(5, "Global shortcuts", settings::INPUT_HELP, "", "", "");
             }
             "gamebar-help" => {
                 self.modal = Modal::None;
-                self.show_modal(4, "Game Bar", settings::GAME_BAR_HELP, "", "", "");
+                self.show_modal(5, "Game Bar", settings::GAME_BAR_HELP, "", "", "");
             }
             "interface-help" => {
                 self.modal = Modal::None;
-                self.show_modal(4, "Interface", "The editor follows Windows display and text scaling, supports keyboard navigation, and avoids decorative animations. Windows minimize keeps the editor open; Close exits the editor while the crosshair engine stays running.", "", "", "");
+                self.show_modal(5, "Interface", "The editor follows Windows display and text scaling, supports keyboard navigation, and avoids decorative animations. Windows minimize keeps the editor open; Close exits the editor while the crosshair engine stays running.", "", "", "");
             }
             "dismiss-error" => store.set_error(SharedString::default()),
             "reconnect" => self.client.reconnect()?,
@@ -191,6 +191,20 @@ impl App {
                     .context("This crosshair no longer exists")?;
                 self.modal = Modal::RenamePreset(preset.id);
                 self.show_modal(2, "Rename crosshair", "", "Rename", "", &preset.name);
+            }
+            "commit-preset-name" => {
+                let (id, name) = value.split_once(':').context("Invalid crosshair name")?;
+                let mut preset = self
+                    .state
+                    .preset(id.parse()?)
+                    .context("This crosshair no longer exists")?
+                    .clone();
+                let name = name.trim();
+                if preset.name != name {
+                    preset.name = name.into();
+                    let revision = preset.revision;
+                    self.client.document("rename", preset, revision)?;
+                }
             }
             "delete-preset" => {
                 let id = value.parse()?;
@@ -692,6 +706,7 @@ fn requires_finished_edit(action: &str) -> bool {
         "new-preset"
             | "duplicate-preset"
             | "favorite"
+            | "commit-preset-name"
             | "preset-order"
             | "preset-drop"
             | "export-preset"

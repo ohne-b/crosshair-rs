@@ -6,13 +6,16 @@ import { ActionButton } from "controls.slint";
 export component DropDown inherits Rectangle {
     in property <[string]> model;
     in property <[image]> thumbnails;
-    in property <bool> enabled: Store.modal-kind == 0 && !Store.read-only;
+    in property <[image]> icons;
+    in property <bool> compact: false;
+    in property <string> placeholder;
+    in property <bool> enabled: Store.interactive;
     in-out property <int> current-index: 0;
     callback selected(string);
     property <int> highlighted: root.current-index;
-    property <bool> expanded: false;
+    property <bool> expanded: popup.is-open;
     property <length> item-height: max(32px, 12px * Theme.text-scale + 16px);
-    min-width: 0px; preferred-width: 150px;
+    min-width: 0px; preferred-width: root.compact ? selected-label.preferred-width + 40px + (root.icons.length > 0 ? 24px : 0px) : 150px;
     height: root.item-height; vertical-stretch: 0;
     background: touch.has-hover || focus.has-focus || root.expanded ? Theme.hover : Theme.field;
     border-radius: Theme.radius;
@@ -27,17 +30,18 @@ export component DropDown inherits Rectangle {
     forward-focus: focus;
 
     function open() {
-        if root.enabled && root.model.length > 0 { root.highlighted = root.current-index; popup.show(); root.expanded = true; }
+        if root.enabled && root.model.length > 0 { root.highlighted = root.current-index; popup.show(); }
     }
-    function close() { popup.close(); root.expanded = false; focus.focus(); }
+    function close() { popup.close(); focus.focus(); }
     function choose(index: int) {
         if root.enabled && index >= 0 && index < root.model.length {
             root.current-index = index; root.selected(root.model[index]);
         }
     }
     HorizontalLayout { padding-left: 10px; padding-right: 10px; spacing: 8px;
-        if root.thumbnails.length > 0: Rectangle { width: 24px; Image { y: (parent.height - 24px) / 2; width: 24px; height: 24px; source: root.thumbnails[root.current-index]; image-fit: contain; } }
-        Text { text: root.model[root.current-index]; color: Theme.text; font-size: 12px * Theme.text-scale; overflow: elide; vertical-alignment: center; horizontal-stretch: 1; }
+        if root.thumbnails.length > 0: Rectangle { width: 24px; Image { x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2; width: min(24px, self.source.width * 1px); height: min(24px, self.source.height * 1px); source: root.thumbnails[root.current-index]; image-fit: contain; } }
+        if root.icons.length > 0: Rectangle { width: 16px; Image { y: (parent.height - 16px) / 2; width: 16px; height: 16px; source: root.icons[root.current-index]; colorize: Theme.muted; } }
+        selected-label := Text { text: root.model.length > 0 ? root.model[root.current-index] : root.placeholder; color: root.model.length > 0 ? Theme.text : Theme.muted; font-size: 12px * Theme.text-scale; overflow: elide; vertical-alignment: center; horizontal-stretch: 1; }
         Rectangle { width: 12px; Image { y: (parent.height - 12px) / 2; width: 12px; height: 12px; source: @image-url("../../../../assets/icons/chevron-down.svg"); colorize: Theme.muted; } }
     }
     focus := FocusScope { enabled: root.enabled;
@@ -62,6 +66,7 @@ export component DropDown inherits Rectangle {
                 content-y: -max(0, root.highlighted - 7) * root.item-height;
                 for value[index] in root.model: ActionButton {
                     thumbnail: root.thumbnails[index];
+                    icon: root.icons[index];
                     text: value; height: root.item-height; align-left: true; quiet: true;
                     selected: index == root.highlighted; enabled: root.enabled;
                     clicked => { root.choose(index); root.close(); }
@@ -70,7 +75,6 @@ export component DropDown inherits Rectangle {
         }
         popup-focus := FocusScope {
             focus-on-click: false;
-            focus-changed-event => { root.expanded = self.has-focus; }
             key-pressed(event) => {
                 if event.text == Key.Escape { root.close(); return accept; }
                 if event.text == Key.Return || event.text == Key.Space { root.choose(root.highlighted); root.close(); return accept; }

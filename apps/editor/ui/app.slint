@@ -2,9 +2,11 @@ import "../../../assets/fonts/Manrope.ttf";
 import { Store } from "shared/models.slint";
 import { Theme } from "shared/tokens.slint";
 import { ActionButton } from "shared/controls.slint";
+import { ScrollView } from "std-widgets.slint";
 import { TitleBar } from "shell/titlebar.slint";
 import { Navigation } from "shell/navigation.slint";
 import { Modal } from "shell/modal.slint";
+import { MenuPanel } from "shared/menu.slint";
 import { Library } from "features/library.slint";
 import { Designer } from "features/designer.slint";
 import { Keybinds } from "features/keybinds.slint";
@@ -20,6 +22,42 @@ export component AppWindow inherits Window {
     background: transparent;
     default-font-family: "Manrope"; default-font-size: 13px * Theme.text-scale;
     forward-focus: keys;
+    property <int> modal-kind: Store.modal-kind;
+    property <bool> menu-open: menu.is-open;
+    property <bool> help-open: help.is-open;
+    changed modal-kind => {
+        if root.modal-kind == 3 { menu.show(); } else { menu.close(); }
+        if root.modal-kind == 5 { help.show(); } else { help.close(); }
+    }
+    changed menu-open => { if !root.menu-open && Store.modal-kind == 3 { Store.action("modal-cancel", ""); } }
+    changed help-open => { if !root.help-open && Store.modal-kind == 5 { Store.action("modal-cancel", ""); } }
+    menu := PopupWindow {
+        x: clamp(Store.menu-x * 1px, 8px, root.width - self.width - 8px);
+        y: clamp(Store.menu-y * 1px, 48px, root.height - self.height - 8px);
+        width: min(240px * Theme.text-scale, root.width - 16px);
+        height: min(root.height - 64px, Store.modal-options.length * max(32px, 12px * Theme.text-scale + 16px) + 8px);
+        close-policy: close-on-click-outside;
+        forward-focus: menu-panel;
+        menu-panel := MenuPanel {}
+    }
+    help := PopupWindow {
+        x: clamp(Store.menu-x * 1px, 8px, root.width - self.width - 8px);
+        y: clamp(Store.menu-y * 1px, 48px, root.height - self.height - 8px);
+        width: min(360px * Theme.text-scale, root.width - 16px);
+        height: min(root.height - 64px, help-text.preferred-height + 56px);
+        close-policy: close-on-click-outside;
+        forward-focus: help-keys;
+        Rectangle {
+            background: Theme.panel; border-radius: 10px; border-width: 1px; border-color: Theme.border;
+            Text { x: 16px; y: 12px; width: parent.width - 32px; height: 20px; text: Store.modal-title; color: Theme.text; font-size: 12px * Theme.text-scale; font-weight: 600; }
+            help-scroll := ScrollView {
+                x: 16px; y: 40px; width: parent.width - 32px; height: parent.height - 56px;
+                horizontal-scrollbar-policy: always-off; content-width: self.visible-width;
+                help-text := Text { width: help-scroll.visible-width - 8px; text: Store.modal-message; color: Theme.muted; font-size: 12px * Theme.text-scale; wrap: word-wrap; }
+            }
+            help-keys := FocusScope { focus-on-click: false; key-pressed(event) => { if event.text == Key.Escape { Store.action("modal-cancel", ""); return accept; } return reject; } }
+        }
+    }
     changed width => { Store.wide = root.width > 1056px; }
     Rectangle { x: 0px; y: 48px; width: root.width; height: root.height - 48px; background: Theme.panel; }
     keys := FocusScope {
@@ -59,6 +97,6 @@ export component AppWindow inherits Window {
             if Store.shortcut(event.text, event.modifiers.control, event.modifiers.shift, event.modifiers.alt) { return accept; }
             return reject;
         }
-    if Store.modal-kind != 0: Modal {}
+    if Store.modal-kind == 1 || Store.modal-kind == 2 || Store.modal-kind == 4: Modal {}
     }
 }

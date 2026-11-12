@@ -123,6 +123,14 @@ impl App {
             return;
         };
         let store = ui.global::<Store>();
+        store.set_total_presets(self.state.presets.len() as i32);
+        store.set_favorite_presets(
+            self.state
+                .presets
+                .iter()
+                .filter(|preset| preset.favorite)
+                .count() as i32,
+        );
         store.set_preset_thumbnails(model(
             self.state
                 .presets
@@ -509,6 +517,7 @@ impl App {
     }
     pub(super) fn menu(&mut self, title: &str, choices: Vec<(&str, String, String)>) {
         let labels = strings(choices.iter().map(|(label, _, _)| (*label).to_owned()));
+        let actions = strings(choices.iter().map(|(_, action, _)| action.clone()));
         self.modal = Modal::Menu(
             choices
                 .into_iter()
@@ -518,6 +527,7 @@ impl App {
         self.show_modal(3, title, "", "", "", "");
         if let Some(ui) = self.ui.upgrade() {
             ui.global::<Store>().set_modal_options(labels);
+            ui.global::<Store>().set_modal_actions(actions);
         }
     }
 }

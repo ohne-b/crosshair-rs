@@ -88,7 +88,7 @@ pub enum Event {
 
 enum Job {
     Command(String, Command),
-    Document(Preset, u64),
+    Document(String, Preset, u64),
     StageFile {
         path: PathBuf,
         purpose: StagingPurpose,
@@ -152,8 +152,8 @@ impl Client {
     pub fn command(&self, tag: impl Into<String>, command: Command) -> Result<()> {
         self.send(Job::Command(tag.into(), command))
     }
-    pub fn document(&self, preset: Preset, revision: u64) -> Result<()> {
-        self.send(Job::Document(preset, revision))
+    pub fn document(&self, tag: &str, preset: Preset, revision: u64) -> Result<()> {
+        self.send(Job::Document(tag.into(), preset, revision))
     }
     pub fn stage_file(
         &self,
@@ -581,9 +581,7 @@ fn worker(
         }
         let (tag, result) = match job {
             Job::Command(tag, command) => (tag, current.request(command)),
-            Job::Document(preset, revision) => {
-                ("document".into(), current.document(preset, revision))
-            }
+            Job::Document(tag, preset, revision) => (tag, current.document(preset, revision)),
             Job::StageFile { path, purpose, tag } => {
                 let result = current.stage(path, purpose);
                 if let Ok(Response {

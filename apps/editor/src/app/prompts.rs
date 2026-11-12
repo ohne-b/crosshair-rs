@@ -6,8 +6,7 @@ impl App {
         self.hide_modal();
         match modal {
             Modal::RenamePreset(id) => {
-                self.open_document(id)?;
-                self.layer_action("rename-document", value)?;
+                self.action("commit-preset-name", &format!("{id}:{value}"))?;
             }
             Modal::RenameLayer(id) => {
                 self.document.select(id, false);

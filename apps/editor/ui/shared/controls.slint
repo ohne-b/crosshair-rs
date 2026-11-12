@@ -10,9 +10,10 @@ export component ActionButton inherits Rectangle {
     in property <bool> primary: false;
     in property <bool> quiet: false;
     in property <bool> selected: false;
-    in property <bool> enabled: Store.modal-kind == 0 && !Store.read-only;
+    in property <bool> enabled: Store.interactive;
     in property <bool> danger: false;
     in property <bool> align-left: false;
+    out property <bool> has-focus: focus.has-focus;
     callback clicked;
     height: root.text == "" ? 32px : max(32px, 12px * Theme.text-scale + 16px);
     preferred-width: root.text == "" ? 32px : content.preferred-width;
@@ -25,29 +26,73 @@ export component ActionButton inherits Rectangle {
     accessible-role: button;
     accessible-label: root.label;
     accessible-enabled: root.enabled;
-    accessible-action-default => { if root.enabled { root.clicked(); } }
+    accessible-action-default => { root.activate(); }
     forward-focus: focus;
+    function activate() {
+        if root.enabled {
+            Store.menu-x = root.absolute-position.x / 1px;
+            Store.menu-y = (root.absolute-position.y + root.height + 4px) / 1px;
+            focus.focus(); root.clicked();
+        }
+    }
     content := HorizontalLayout {
         padding-left: root.text == "" ? 7px : 10px; padding-right: root.text == "" ? 7px : 10px; spacing: 8px; alignment: root.align-left ? start : center;
-        if root.thumbnail.width > 0: Rectangle { width: 26px; Image { y: (parent.height - 26px) / 2; source: root.thumbnail; width: 26px; height: 26px; image-fit: contain; } }
+        if root.thumbnail.width > 0: Rectangle { width: 26px; Image { x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2; source: root.thumbnail; width: min(26px, root.thumbnail.width * 1px); height: min(26px, root.thumbnail.height * 1px); image-fit: contain; } }
         if root.icon.width > 0: Rectangle { width: 18px; Image { y: (parent.height - 18px) / 2; source: root.icon; width: 18px; height: 18px; colorize: root.primary ? Theme.on-accent : root.selected || root.accent-icon ? Theme.orange : Theme.muted; } }
         if root.text != "": Text { text: root.text; color: root.primary ? Theme.on-accent : Theme.text; font-size: 12px * Theme.text-scale; font-weight: root.primary ? 600 : 500; vertical-alignment: center; overflow: elide; }
     }
     focus := FocusScope {
         enabled: root.enabled;
         key-pressed(event) => {
-            if event.text == "\n" || event.text == " " { root.clicked(); return accept; }
+            if event.text == "\n" || event.text == " " { root.activate(); return accept; }
             return reject;
         }
     }
     touch := TouchArea {
         enabled: root.enabled;
-        clicked => { focus.focus(); root.clicked(); }
+        clicked => { root.activate(); }
     }
     Tooltip {
         Rectangle {
             background: Theme.raised; border-radius: 8px; border-width: 1px; border-color: Theme.border;
             HorizontalLayout { padding-left: 8px; padding-right: 8px; padding-top: 6px; padding-bottom: 6px; Text { text: root.label; color: Theme.text; font-size: 11px * Theme.text-scale; } }
+        }
+    }
+}
+
+export component RenameField inherits Rectangle {
+    in property <string> value;
+    in property <string> label: "Rename crosshair";
+    in property <bool> centered: false;
+    in property <bool> enabled: Store.connected && Store.interactive;
+    out property <bool> has-focus: input.has-focus;
+    callback committed(string);
+    callback finished;
+    property <bool> modified: false;
+    changed value => { if !root.modified { input.text = root.value; } }
+    changed has-focus => { if !root.has-focus { root.commit(); } }
+    init => { input.text = root.value; }
+    public function edit() { input.focus(); input.select-all(); }
+    function commit() {
+        if root.modified { root.modified = false; root.committed(input.text); }
+    }
+    height: max(30px, 12px * Theme.text-scale + 16px);
+    min-width: 0px; vertical-stretch: 0;
+    background: input.has-focus ? Theme.field : Theme.panel;
+    border-radius: 6px; border-width: input.has-focus ? 1px : 0px; border-color: Theme.orange;
+    forward-focus: input;
+    input := TextInput {
+        x: 8px; width: parent.width - 16px; height: parent.height;
+        enabled: root.enabled; single-line: true;
+        font-size: 12px * Theme.text-scale; color: Theme.text;
+        horizontal-alignment: root.centered ? center : left; vertical-alignment: center;
+        selection-background-color: Theme.orange; selection-foreground-color: Theme.on-accent;
+        accessible-label: root.label;
+        edited => { root.modified = true; }
+        accepted => { root.commit(); root.finished(); }
+        key-pressed(event) => {
+            if event.text == Key.Escape { root.modified = false; self.text = root.value; root.finished(); return accept; }
+            return reject;
         }
     }
 }
@@ -58,7 +103,7 @@ export component EditField inherits Rectangle {
     in-out property <string> text;
     in property <string> placeholder;
     in property <string> label: root.placeholder;
-    in property <bool> enabled: Store.modal-kind == 0 && !Store.read-only;
+    in property <bool> enabled: Store.interactive;
     in property <bool> numeric: false;
     callback edited(string);
     callback committed(string);
@@ -99,7 +144,7 @@ export component EditField inherits Rectangle {
 export component Switch inherits Rectangle {
     in property <bool> checked;
     in property <string> label;
-    in property <bool> enabled: Store.modal-kind == 0 && !Store.read-only;
+    in property <bool> enabled: Store.interactive;
     callback toggled;
     width: 34px; height: 32px; vertical-stretch: 0; horizontal-stretch: 0;
     background: focus.has-focus ? Theme.hover : transparent; border-radius: 8px;
@@ -121,7 +166,7 @@ export component Divider inherits Rectangle { height: 1px; vertical-stretch: 0; 
 export component SectionTitle inherits Text { color: Theme.muted; font-size: 11px * Theme.text-scale; font-weight: 600; height: 36px; vertical-stretch: 0; vertical-alignment: center; }
 
 export component NumericSlider inherits Rectangle {
-    in property <bool> enabled: Store.modal-kind == 0 && !Store.read-only;
+    in property <bool> enabled: Store.interactive;
     in property <float> minimum: 0;
     in property <float> maximum: 100;
     in-out property <float> value: 0;

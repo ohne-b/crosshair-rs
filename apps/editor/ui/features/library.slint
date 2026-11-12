@@ -2,7 +2,7 @@ import { DropDown } from "../shared/dropdown.slint";
 import { ListView } from "std-widgets.slint";
 import { Store } from "../shared/models.slint";
 import { Theme } from "../shared/tokens.slint";
-import { ActionButton, EditField, Divider } from "../shared/controls.slint";
+import { ActionButton, EditField, RenameField, Divider } from "../shared/controls.slint";
 
 export component Library inherits Rectangle {
     background: Theme.canvas; border-top-left-radius: 12px;
@@ -22,20 +22,37 @@ export component Library inherits Rectangle {
             HorizontalLayout { padding-left: 20px; padding-right: 20px; padding-top: 18px; padding-bottom: 18px; spacing: 12px;
                 EditField { text: Store.search; placeholder: "Search crosshairs"; horizontal-stretch: 1; edited(value) => { Store.action("search", value); } }
                 Text { text: "Sort"; color: Theme.muted; font-size: 11px * Theme.text-scale; vertical-alignment: center; }
-                DropDown { width: 150px; model: ["Manual", "Name", "Recently edited"]; current-index: Store.sort; accessible-label: "Sort crosshairs"; selected(value) => { Store.action("sort", self.current-index); } }
+                DropDown {
+                    compact: true; horizontal-stretch: 0;
+                    model: ["Manual", "Name", "Recently edited"];
+                    icons: [@image-url("../../../../assets/icons/grip-vertical.svg"), @image-url("../../../../assets/icons/sort-ascending-letters.svg"), @image-url("../../../../assets/icons/clock.svg")];
+                    current-index: Store.sort; accessible-label: "Sort crosshairs";
+                    selected(value) => { Store.action("sort", self.current-index); }
+                }
             }
             Divider { y: parent.height - 1px; }
         }
         HorizontalLayout { spacing: 0px;
             Rectangle { width: 180px; background: Theme.panel;
                 VerticalLayout { padding: 12px; spacing: 4px; alignment: start;
-                    ActionButton { text: "All crosshairs"; icon: @image-url("../../../../assets/icons/crosshair.svg"); align-left: true; height: 38px; quiet: true; selected: !Store.favorites; horizontal-stretch: 1; clicked => { Store.action("favorites", "false"); } }
-                    ActionButton { text: "Favorites"; icon: @image-url("../../../../assets/icons/star.svg"); align-left: true; height: 38px; quiet: true; selected: Store.favorites; horizontal-stretch: 1; clicked => { Store.action("favorites", "true"); } }
+                    Rectangle { height: 38px; vertical-stretch: 0;
+                        ActionButton { width: parent.width; text: "All"; icon: @image-url("../../../../assets/icons/crosshair.svg"); align-left: true; height: 38px; quiet: true; selected: !Store.favorites; clicked => { Store.action("favorites", "false"); } }
+                        Text { x: parent.width - 36px; width: 24px; text: Store.total-presets; color: Theme.muted; font-size: 11px * Theme.text-scale; horizontal-alignment: right; vertical-alignment: center; }
+                    }
+                    Rectangle { height: 38px; vertical-stretch: 0;
+                        ActionButton { width: parent.width; text: "Favorites"; icon: @image-url("../../../../assets/icons/star.svg"); align-left: true; height: 38px; quiet: true; selected: Store.favorites; clicked => { Store.action("favorites", "true"); } }
+                        Text { x: parent.width - 36px; width: 24px; text: Store.favorite-presets; color: Theme.muted; font-size: 11px * Theme.text-scale; horizontal-alignment: right; vertical-alignment: center; }
+                    }
                 }
                 Text { y: parent.height - 42px; width: parent.width; height: 32px; text: Store.presets.length + " crosshairs"; color: Theme.muted; font-size: 11px * Theme.text-scale; horizontal-alignment: center; vertical-alignment: center; }
                 Rectangle { x: parent.width - 1px; width: 1px; height: parent.height; background: Theme.border; }
             }
             Rectangle {
+                if Store.presets.length == 0: Text {
+                    text: Store.search != "" ? "No crosshairs found" : "No favorites yet";
+                    color: Theme.muted; font-size: 13px * Theme.text-scale;
+                    horizontal-alignment: center; vertical-alignment: center;
+                }
                 ListView { x: 20px; y: 20px; width: parent.width - 40px; height: parent.height - 40px;
 
             for group[row-index] in Store.preset-groups: Rectangle {
@@ -45,12 +62,11 @@ export component Library inherits Rectangle {
                 property <length> stride: (parent.width - 12px) / root.columns;
                 x: column-index * self.stride;
                 width: (parent.width - 12px) / root.columns - 12px; height: 170px;
-                background: card-focus.has-focus ? Theme.hover : Theme.field; border-radius: 12px; border-width: preset.selected || Store.preset-drop-index == self.index ? 1px : 0px; border-color: preset.selected || Store.preset-drop-index == self.index ? Theme.orange : Theme.border;
+                background: card-focus.has-focus || card-touch.has-hover ? Theme.raised : Theme.field; border-radius: 12px; border-width: preset.selected || Store.preset-drop-index == self.index ? 1px : 0px; border-color: preset.selected || Store.preset-drop-index == self.index ? Theme.orange : Theme.border;
                 accessible-role: button; accessible-label: preset.name; accessible-action-default => { Store.action("select-preset", preset.id); }
-                Rectangle { x: 1px; y: 1px; width: parent.width - 2px; height: 122px; background: transparent; border-radius: 12px;
-                    Image { x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2; width: min(80px, preset.thumbnail.width * 1px); height: min(80px, preset.thumbnail.height * 1px); source: preset.thumbnail; image-fit: contain; image-rendering: pixelated; }
-                    card-touch := TouchArea {
-                        enabled: Store.modal-kind == 0 && !Store.read-only;
+                card-touch := TouchArea {
+                        enabled: Store.interactive;
+                        property <bool> show-actions: self.has-hover || card-focus.has-focus || name.has-focus || favorite.has-focus || trash.has-focus;
                         property <bool> dragging: false;
                         property <length> start-x;
                         property <length> start-y;
@@ -63,7 +79,11 @@ export component Library inherits Rectangle {
                                 else { Store.action("select-preset", preset.id); }
                                 self.dragging = false; Store.dragged-preset = ""; Store.preset-drop-index = -1;
                             }
-                            if event.kind == PointerEventKind.down && event.button == PointerEventButton.right { Store.action("preset-menu", preset.id); }
+                            if event.kind == PointerEventKind.down && event.button == PointerEventButton.right {
+                                Store.menu-x = (self.absolute-position.x + self.mouse-x) / 1px;
+                                Store.menu-y = (self.absolute-position.y + self.mouse-y) / 1px;
+                                Store.action("preset-menu", preset.id);
+                            }
                         }
                         moved => {
                             if self.pressed && Store.sort == 0 && (self.dragging || abs(self.mouse-x - self.start-x) + abs(self.mouse-y - self.start-y) > 6px) {
@@ -73,15 +93,40 @@ export component Library inherits Rectangle {
                                 Store.preset-drop-index = clamp(row * root.columns + column, 0, Store.presets.length - 1);
                             }
                         }
+                    Image { x: (parent.width - self.width) / 2; y: 62px - self.height / 2; width: min(80px, preset.thumbnail.width * 1px); height: min(80px, preset.thumbnail.height * 1px); source: preset.thumbnail; image-fit: contain; image-rendering: pixelated; }
+                    favorite := ActionButton {
+                        x: 6px; y: 6px; width: 32px; opacity: preset.favorite || card-touch.show-actions ? 1 : 0;
+                        icon: preset.favorite ? @image-url("../../../../assets/icons/star-filled.svg") : @image-url("../../../../assets/icons/star.svg");
+                        accent-icon: preset.favorite; label: preset.favorite ? "Remove favorite" : "Favorite"; quiet: true;
+                        clicked => { Store.action("favorite", preset.id); }
+                    }
+                    trash := ActionButton {
+                        x: parent.width - 38px; y: 6px; width: 32px; opacity: card-touch.show-actions ? 1 : 0;
+                        icon: @image-url("../../../../assets/icons/trash.svg"); label: "Delete " + preset.name; quiet: true;
+                        clicked => { Store.action("delete-preset", preset.id); }
+                    }
+                    name := RenameField {
+                        x: 20px; y: 128px; width: parent.width - 40px;
+                        value: preset.name; centered: true; label: "Rename " + preset.name;
+                        committed(value) => { Store.action("commit-preset-name", preset.id + ":" + value); }
+                        finished => { card-focus.focus(); }
+                    }
+                    card-focus := FocusScope {
+                        enabled: Store.interactive; focus-on-click: false;
+                        key-pressed(event) => {
+                            if event.text == Key.Return { Store.action("edit-preset", preset.id); return accept; }
+                            if event.text == Key.Space { Store.action("select-preset", preset.id); return accept; }
+                            if event.text == Key.F2 { name.edit(); return accept; }
+                            if event.text == Key.Delete { Store.action("delete-preset", preset.id); return accept; }
+                            if event.text == Key.Menu || (event.text == Key.F10 && event.modifiers.shift) {
+                                Store.menu-x = card.absolute-position.x / 1px;
+                                Store.menu-y = (card.absolute-position.y + 34px) / 1px;
+                                Store.action("preset-menu", preset.id); return accept;
+                            }
+                            return reject;
+                        }
                     }
                 }
-                HorizontalLayout {
-                    y: 128px; height: 32px; padding-left: 12px; padding-right: 6px; spacing: 4px;
-                    Text { text: preset.name; color: Theme.text; font-size: 12px * Theme.text-scale; overflow: elide; vertical-alignment: center; horizontal-stretch: 1; }
-                    ActionButton { icon: preset.favorite ? @image-url("../../../../assets/icons/star-filled.svg") : @image-url("../../../../assets/icons/star.svg"); accent-icon: preset.favorite; label: preset.favorite ? "Remove favorite" : "Favorite"; quiet: true; clicked => { Store.action("favorite", preset.id); } }
-                    ActionButton { icon: @image-url("../../../../assets/icons/dots.svg"); label: "Crosshair actions"; quiet: true; clicked => { Store.action("preset-menu", preset.id); } }
-                }
-                card-focus := FocusScope { enabled: Store.modal-kind == 0 && !Store.read-only; focus-on-click: false; key-pressed(event) => { if event.text == "\n" { Store.action("edit-preset", preset.id); return accept; } if event.text == " " { Store.action("select-preset", preset.id); return accept; } return reject; } }
             }
             }
         }

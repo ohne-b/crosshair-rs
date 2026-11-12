@@ -88,7 +88,8 @@ impl App {
             .as_ref()
             .context("Open a crosshair first")?
             .clone();
-        self.client.document(document.clone(), document.revision)?;
+        self.client
+            .document("document", document.clone(), document.revision)?;
         self.inflight = Some(document);
         Ok(())
     }

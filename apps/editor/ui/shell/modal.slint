@@ -10,7 +10,7 @@ export component Modal inherits Rectangle {
     focus-on-click: false; focus-on-tab-navigation: false;
     key-pressed(event) => {
         if event.text == Key.Escape { Store.action("modal-cancel", ""); return accept; }
-        if event.text == Key.Return && Store.modal-kind != 3 && Store.modal-kind != 4 { Store.action("modal-confirm", Store.modal-text); return accept; }
+        if event.text == Key.Return && Store.modal-kind != 4 { Store.action("modal-confirm", Store.modal-text); return accept; }
         return reject;
     }
     TouchArea { clicked => { if Store.modal-kind == 4 { Store.action("modal-cancel", ""); } } }
@@ -23,17 +23,12 @@ export component Modal inherits Rectangle {
             Text { text: Store.modal-title; color: Theme.text; font-size: 16px * Theme.text-scale; font-weight: 600; height: 24px * Theme.text-scale; vertical-stretch: 0; }
             if Store.modal-message != "": message-scroll := ScrollView { horizontal-scrollbar-policy: always-off; content-width: self.visible-width; height: min(message.preferred-height + 4px, root.height - 240px); message := Text { width: message-scroll.visible-width - 12px; text: Store.modal-message; color: Theme.muted; font-size: 12px * Theme.text-scale; wrap: word-wrap; } }
             if Store.modal-kind == 2: EditField { enabled: true; text <=> Store.modal-text; label: Store.modal-title; accepted(value) => { Store.action("modal-confirm", value); } }
-            if Store.modal-kind == 3: ScrollView {
-                height: min(400px, Store.modal-options.length * 37px);
-                VerticalLayout { spacing: 4px; for option[index] in Store.modal-options: ActionButton { enabled: true; text: option; align-left: true; quiet: true; horizontal-stretch: 1; clicked => { Store.action("modal-option", index); } } }
-            }
-            if Store.modal-kind != 3: HorizontalLayout {
+            HorizontalLayout {
                 Rectangle { horizontal-stretch: 1; }
                 if Store.modal-alternate != "": ActionButton { enabled: true; text: Store.modal-alternate; clicked => { Store.action("modal-alternate", ""); } }
                 ActionButton { enabled: true; text: Store.modal-kind == 4 ? "Close" : "Cancel"; clicked => { Store.action("modal-cancel", ""); } }
                 if Store.modal-kind != 4: ActionButton { enabled: true; text: Store.modal-confirm; primary: true; clicked => { Store.action("modal-confirm", Store.modal-text); } }
             }
-            if Store.modal-kind == 3: ActionButton { enabled: true; text: "Cancel"; clicked => { Store.action("modal-cancel", ""); } }
         }
     }
     }

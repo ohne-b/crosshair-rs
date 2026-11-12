@@ -1,0 +1,53 @@
+import { Store } from "models.slint";
+import { Theme } from "tokens.slint";
+import { ActionButton } from "controls.slint";
+import { ScrollView } from "std-widgets.slint";
+
+export component MenuPanel inherits Rectangle {
+    property <int> highlighted: 0;
+    background: Theme.panel; border-radius: 10px; border-width: 1px; border-color: Theme.border;
+    forward-focus: keys;
+    keys := FocusScope {
+        focus-on-click: false;
+        key-pressed(event) => {
+            if event.text == Key.Escape { Store.action("modal-cancel", ""); return accept; }
+            if event.text == Key.Return || event.text == Key.Space { Store.action("modal-option", root.highlighted); return accept; }
+            if event.text == Key.UpArrow || event.text == Key.DownArrow { root.highlighted = clamp(root.highlighted + (event.text == Key.DownArrow ? 1 : -1), 0, Store.modal-options.length - 1); return accept; }
+            if event.text == Key.Home { root.highlighted = 0; return accept; }
+            if event.text == Key.End { root.highlighted = Store.modal-options.length - 1; return accept; }
+            return reject;
+        }
+        ScrollView {
+            x: 4px; y: 4px; width: parent.width - 8px; height: parent.height - 8px;
+            horizontal-scrollbar-policy: always-off; content-width: self.visible-width;
+            VerticalLayout { spacing: 0px; alignment: start;
+                for option[index] in Store.modal-options: ActionButton {
+                    property <string> action: Store.modal-actions[index];
+                    enabled: true; text: option; align-left: true; quiet: true;
+                    height: max(32px, 12px * Theme.text-scale + 16px); horizontal-stretch: 1;
+                    selected: index == root.highlighted;
+                    icon: option == "Crosshair" ? @image-url("../../../../assets/icons/crosshair.svg")
+                        : option == "Rectangle" ? @image-url("../../../../assets/icons/square.svg")
+                        : option == "Ellipse" ? @image-url("../../../../assets/icons/circle.svg")
+                        : option == "Triangle" ? @image-url("../../../../assets/icons/triangle.svg")
+                        : self.action == "add-image" ? @image-url("../../../../assets/icons/photo.svg")
+                        : self.action == "new-preset" || self.action == "new-profile" ? @image-url("../../../../assets/icons/plus.svg")
+                        : self.action == "import" ? @image-url("../../../../assets/icons/download.svg")
+                        : self.action == "export-preset" || self.action == "export-draft" || self.action == "export-png" || self.action == "export-profile" ? @image-url("../../../../assets/icons/file-export.svg")
+                        : self.action == "duplicate-preset" || self.action == "duplicate-profile" || self.action == "duplicate-layers" || self.action == "copy-layers" ? @image-url("../../../../assets/icons/copy.svg")
+                        : self.action == "delete-preset" || self.action == "delete-profile" || self.action == "delete-layers" ? @image-url("../../../../assets/icons/trash.svg")
+                        : self.action == "preset-keybind" ? @image-url("../../../../assets/icons/keyboard.svg")
+                        : self.action == "cut-layers" ? @image-url("../../../../assets/icons/scissors.svg")
+                        : self.action == "paste-layers" ? @image-url("../../../../assets/icons/clipboard.svg")
+                        : self.action == "unlock-layers" ? @image-url("../../../../assets/icons/lock-open.svg")
+                        : option == "Move earlier" || option == "Move up" ? @image-url("../../../../assets/icons/arrow-up.svg")
+                        : option == "Move later" || option == "Move down" ? @image-url("../../../../assets/icons/arrow-down.svg")
+                        : option == "Bring to front" ? @image-url("../../../../assets/icons/arrow-bar-to-up.svg")
+                        : option == "Send to back" ? @image-url("../../../../assets/icons/arrow-bar-to-down.svg")
+                        : @image-url("../../../../assets/icons/pencil.svg");
+                    clicked => { Store.action("modal-option", index); }
+                }
+            }
+        }
+    }
+}

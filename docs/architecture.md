@@ -131,9 +131,13 @@ describe the available choices.
 
 ### Crosshairs and profiles
 
-Local thumbnail grid: search, All/Favorites, sort Manual/Name/Recently edited,
-New and Import. Items show thumbnail/name, selected state, favorite and a menu:
-Edit, Rename, Duplicate, Export, Create keybind, Delete. No discovery tabs.
+Local thumbnail grid: search, All/Favorites with counts, a compact icon sort picker
+for Manual/Name/Recently edited, New and Import. Names rename in place on Enter or
+focus loss; Escape cancels. Favorite and trash appear on hover or keyboard focus;
+filled favorites stay visible. Right-click/Shift+F10 opens the compact card menu:
+Edit, Rename, Duplicate, Export, Create keybind, order and Delete. Menus and help
+popovers anchor to their controls, dismiss outside/on Escape and return focus.
+No discovery tabs.
 Single-click activates; double-click/Edit opens Designer. Manual order supports
 drag and keyboard alternatives. Cache thumbnails and virtualize larger lists.
 Ship a small original preset set, never reference artwork.
