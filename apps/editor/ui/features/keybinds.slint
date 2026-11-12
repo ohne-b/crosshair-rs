@@ -22,8 +22,14 @@ component TableHeader inherits Rectangle {
 
 component BindingItem inherits Rectangle {
     in property <BindingRow> binding;
+    in property <bool> pending: false;
     in property <length> viewport-width;
     in property <length> viewport-height;
+    public function record() {
+        capture-button.focus();
+        Store.capture-region(capture-button.absolute-position.x / 1px, capture-button.absolute-position.y / 1px, capture-button.width / 1px, capture-button.height / 1px);
+        Store.action(root.pending ? "new-binding" : "capture", root.pending ? "5" : root.binding.id);
+    }
     height: max(56px, 12px * Theme.text-scale + 32px); vertical-stretch: 0; clip: true;
     HorizontalLayout { spacing: 0px;
         if root.binding.global: Rectangle { horizontal-stretch: 1; Text { x: 12px; width: parent.width - 24px; text: root.binding.action; color: Theme.text; font-size: 12px * Theme.text-scale; vertical-alignment: center; } }
@@ -33,26 +39,27 @@ component BindingItem inherits Rectangle {
                 viewport-width: root.viewport-width; viewport-height: root.viewport-height;
                 model: Store.selector-presets; selected-id: root.binding.target;
                 total-count: Store.selector-total; favorite-count: Store.selector-favorite-count;
-                chosen(id) => { Store.action("binding-target-id", root.binding.id + ":" + id); }
+                chosen(id) => { Store.action(root.pending ? "preset-keybind" : "binding-target-id", root.pending ? id : root.binding.id + ":" + id); }
                 filter-request(search, favorites) => { Store.action("selector-filter", search); Store.action("selector-favorites", favorites ? "true" : "false"); }
                 dismissed => { trigger.focus(); }
             }
         }
         if root.binding.shortcut: Rectangle { width: 1px; background: Theme.border; }
         if root.binding.shortcut: Rectangle { horizontal-stretch: 1;
-            RenameField { x: 6px; y: (parent.height - self.height) / 2; width: parent.width - 12px; value: root.binding.name; label: "Rename shortcut"; committed(value) => { Store.action("binding-name", root.binding.id + ":" + value); } }
+            if root.pending: Text { x: 14px; width: parent.width - 28px; text: root.binding.name; color: Theme.text; font-size: 12px * Theme.text-scale; vertical-alignment: center; overflow: elide; }
+            if !root.pending: RenameField { x: 6px; y: (parent.height - self.height) / 2; width: parent.width - 12px; value: root.binding.name; label: "Rename shortcut"; committed(value) => { Store.action("binding-name", root.binding.id + ":" + value); } }
         }
         Rectangle { width: 1px; background: Theme.border; }
         Rectangle { width: 254px;
-            ActionButton { x: 12px; y: (parent.height - self.height) / 2; width: 230px; align-left: true;
-                text: Store.capture-id == root.binding.id ? "Press a key" : !root.binding.global && !root.binding.enabled ? "Disabled: " + root.binding.chord : root.binding.chord;
+            capture-button := ActionButton { x: 12px; y: (parent.height - self.height) / 2; width: 230px; align-left: true;
+                text: root.pending || Store.capture-id == root.binding.id ? "Press a key" : !root.binding.global && !root.binding.enabled ? "Disabled: " + root.binding.chord : root.binding.chord;
                 icon: @image-url("../../../../assets/icons/keyboard.svg"); selected: Store.capture-id == root.binding.id;
-                clicked => { if Store.capture-id != root.binding.id { Store.capture-region(self.absolute-position.x / 1px, self.absolute-position.y / 1px, self.width / 1px, self.height / 1px); Store.action("capture", root.binding.id); } }
+                clicked => { if Store.capture-id != root.binding.id { root.record(); } }
             }
         }
         Rectangle { width: 1px; background: Theme.border; }
         Rectangle { width: 52px;
-            ActionButton { x: 10px; y: (parent.height - self.height) / 2; width: 32px; icon: @image-url("../../../../assets/icons/trash.svg"); label: root.binding.global ? "Clear visibility shortcut" : "Remove shortcut"; quiet: true; clicked => { Store.action("binding-remove", root.binding.id); } }
+            ActionButton { x: 10px; y: (parent.height - self.height) / 2; width: 32px; icon: root.pending ? @image-url("../../../../assets/icons/x.svg") : @image-url("../../../../assets/icons/trash.svg"); label: root.pending ? "Cancel recording" : root.binding.global ? "Clear visibility shortcut" : "Remove shortcut"; quiet: true; clicked => { Store.action(root.pending ? "capture-cancel" : "binding-remove", root.pending ? "" : root.binding.id); } }
         }
     }
     Rectangle { y: 0px; width: parent.width; height: 1px; background: Theme.border; }
@@ -61,7 +68,7 @@ component BindingItem inherits Rectangle {
 export component Keybinds inherits Rectangle {
     background: Theme.canvas; border-top-left-radius: 12px;
     Timer { interval: 16ms; running: Store.request-shortcut;
-        triggered => { Store.request-shortcut = false; Store.capture-region(shortcut-button.absolute-position.x / 1px, shortcut-button.absolute-position.y / 1px, shortcut-button.width / 1px, shortcut-button.height / 1px); Store.action("new-binding", "5"); }
+        triggered => { pending-shortcut.record(); Store.request-shortcut = false; }
     }
     ScrollView { horizontal-scrollbar-policy: always-off; content-width: self.visible-width;
         VerticalLayout { padding: 24px; spacing: 12px; alignment: start;
@@ -84,26 +91,25 @@ export component Keybinds inherits Rectangle {
                     Rectangle { height: max(56px, 12px * Theme.text-scale + 32px); vertical-stretch: 0;
                         HorizontalLayout { spacing: 0px;
                             Rectangle { width: 88px;
-                                ActionButton { x: 28px; y: (parent.height - self.height) / 2; width: 32px; icon: @image-url("../../../../assets/icons/plus.svg"); accent-icon: true; label: "Choose crosshair for new shortcut"; quiet: true; clicked => { if Store.capture-id != "new-shortcut" { new-picker.show(); } } }
+                                ActionButton { x: 28px; y: (parent.height - self.height) / 2; width: 32px; icon: @image-url("../../../../assets/icons/plus.svg"); accent-icon: true; label: "Choose crosshair for new shortcut"; quiet: true; clicked => { new-picker.show(); } }
                             }
                             Rectangle { width: 1px; background: Theme.border; }
                             Rectangle { horizontal-stretch: 1;
-                                new-shortcut := ActionButton { x: 6px; y: (parent.height - self.height) / 2; width: 64px; text: "New"; label: "New crosshair shortcut"; align-left: true; quiet: true; clicked => { if Store.capture-id != "new-shortcut" { new-picker.show(); } } }
+                                new-shortcut := ActionButton { x: 6px; y: (parent.height - self.height) / 2; width: 64px; text: "New"; label: "New crosshair shortcut"; align-left: true; quiet: true; clicked => { new-picker.show(); } }
                             }
                             Rectangle { width: 1px; background: Theme.border; }
-                            Rectangle { width: 254px;
-                                shortcut-button := ActionButton { x: 12px; y: (parent.height - self.height) / 2; width: 230px; align-left: true;
-                                    visible: Store.capture-id == "new-shortcut";
-                                    text: "Press a key"; selected: true;
-                                    icon: @image-url("../../../../assets/icons/keyboard.svg");
-                                }
-                            }
+                            Rectangle { width: 254px; }
                             Rectangle { width: 1px; background: Theme.border; }
-                            Rectangle { width: 52px;
-                                if Store.capture-id == "new-shortcut": ActionButton { x: 10px; y: (parent.height - self.height) / 2; width: 32px; icon: @image-url("../../../../assets/icons/x.svg"); label: "Cancel recording"; quiet: true; clicked => { Store.action("capture-cancel", ""); } }
-                            }
+                            Rectangle { width: 52px; }
                         }
                         Rectangle { y: 0px; width: parent.width; height: 1px; background: Theme.border; }
+                    }
+                    pending-shortcut := BindingItem {
+                        pending: true;
+                        visible: Store.request-shortcut || Store.capture-id == "new-shortcut";
+                        height: self.visible ? max(56px, 12px * Theme.text-scale + 32px) : 0px;
+                        viewport-width: root.width + root.absolute-position.x; viewport-height: root.height + root.absolute-position.y;
+                        binding: { id: "new-shortcut", name: Store.preset-names[Store.target-index], action: "", target: "", target-index: Store.target-index, chord: "", enabled: true, shortcut: true, global: false };
                     }
                     for binding in Store.bindings: BindingItem { viewport-width: root.width + root.absolute-position.x; viewport-height: root.height + root.absolute-position.y; binding: binding; visible: binding.shortcut; height: binding.shortcut ? max(56px, 12px * Theme.text-scale + 32px) : 0px; }
                 }
@@ -113,7 +119,7 @@ export component Keybinds inherits Rectangle {
     new-picker := PresetPicker {
         viewport-width: root.width + root.absolute-position.x; viewport-height: root.height + root.absolute-position.y;
         model: Store.selector-presets; total-count: Store.selector-total; favorite-count: Store.selector-favorite-count;
-        chosen(id) => { Store.action("shortcut-target", id); Store.capture-region(shortcut-button.absolute-position.x / 1px, shortcut-button.absolute-position.y / 1px, shortcut-button.width / 1px, shortcut-button.height / 1px); Store.action("new-binding", "5"); }
+        chosen(id) => { Store.action("preset-keybind", id); }
         filter-request(search, favorites) => { Store.action("selector-filter", search); Store.action("selector-favorites", favorites ? "true" : "false"); }
         dismissed => { new-shortcut.focus(); }
     }

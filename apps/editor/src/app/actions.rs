@@ -44,15 +44,6 @@ impl App {
                 store.set_selector_favorites(value.parse()?);
                 self.refresh_library();
             }
-            "shortcut-target" => {
-                store.set_target_index(
-                    self.state
-                        .presets
-                        .iter()
-                        .position(|preset| preset.id.to_string() == value)
-                        .context("The crosshair was deleted")? as i32,
-                );
-            }
             "binding-name" => {
                 let (id, name) = value.split_once(':').context("Invalid shortcut name")?;
                 let mut profile = self.active_profile()?;

@@ -241,9 +241,10 @@ enters durable state or engine edit history.
 
 One application table owns Toggle visibility; a separate full-width shortcut
 table has Crosshair, Shortcut name and Keyboard / mouse columns plus trash.
-Headers and body share column borders. The first row contains only the plus
-button and New until a crosshair is chosen; either opens the picker, then the
-keyboard/mouse cell asks for a key and offers cancellation.
+Headers and body share column borders. The first row always contains only the
+plus button and New; either opens the picker. Choosing a crosshair inserts a
+separate row below New with its thumbnail, name, key recording and cancellation.
+The completed shortcut stays in that row; cancellation removes the pending row.
 The thumbnail opens a reusable picker with search, All/Favorites counts and
 named cards; clicking a card chooses immediately. Escape/outside dismisses and
 returns focus. Shortcut names edit inline and default to the target preset name;

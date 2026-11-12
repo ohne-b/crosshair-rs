@@ -159,7 +159,7 @@ impl App {
             }
             Capture::New(action) => {
                 if let Some(chord) = chord {
-                    profile.bindings.push(Binding::new(chord, action));
+                    profile.bindings.insert(0, Binding::new(chord, action));
                 }
             }
         }

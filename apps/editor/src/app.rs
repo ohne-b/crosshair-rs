@@ -602,6 +602,130 @@ mod tests {
     use super::*;
 
     #[test]
+    fn new_shortcut_records_in_its_own_row_and_can_be_cancelled() {
+        use crate::{BindingRow, PresetRow};
+        use slint::Model;
+        use slint::platform::{Platform, WindowAdapter, WindowEvent, software_renderer::*};
+        use std::time::Duration;
+        struct Headless;
+        impl Platform for Headless {
+            fn create_window_adapter(&self) -> Result<Rc<dyn WindowAdapter>, slint::PlatformError> {
+                Ok(MinimalSoftwareWindow::new(RepaintBufferType::NewBuffer))
+            }
+        }
+        fn click(ui: &AppWindow, x: f32, y: f32) {
+            let position = slint::LogicalPosition::new(x, y);
+            for event in [
+                WindowEvent::PointerPressed {
+                    position,
+                    button: slint::platform::PointerEventButton::Left,
+                },
+                WindowEvent::PointerReleased {
+                    position,
+                    button: slint::platform::PointerEventButton::Left,
+                },
+            ] {
+                ui.window().dispatch_event(event);
+            }
+        }
+        slint::platform::set_platform(Box::new(Headless)).unwrap();
+        let ui = AppWindow::new().unwrap();
+        ui.window().set_size(slint::LogicalSize::new(1280.0, 800.0));
+        let store = ui.global::<Store>();
+        store.set_connected(true);
+        store.set_page(2);
+        store.set_bindings(
+            Rc::new(slint::VecModel::from(vec![BindingRow {
+                id: "global".into(),
+                global: true,
+                action: "Toggle visibility".into(),
+                ..Default::default()
+            }]))
+            .into(),
+        );
+        store.set_preset_names(
+            Rc::new(slint::VecModel::from(vec!["Classic".into(), "Dot".into()])).into(),
+        );
+        store.set_selector_presets(
+            Rc::new(slint::VecModel::from(vec![
+                PresetRow {
+                    id: "classic".into(),
+                    name: "Classic".into(),
+                    ..Default::default()
+                },
+                PresetRow {
+                    id: "dot".into(),
+                    name: "Dot".into(),
+                    ..Default::default()
+                },
+            ]))
+            .into(),
+        );
+        let events = Rc::new(RefCell::new(Vec::new()));
+        let recorded = events.clone();
+        let weak = ui.as_weak();
+        store.on_action(move |action, value| {
+            recorded
+                .borrow_mut()
+                .push((action.to_string(), value.to_string()));
+            let ui = weak.upgrade().unwrap();
+            let store = ui.global::<Store>();
+            match action.as_str() {
+                "preset-keybind" => {
+                    assert_eq!(value, "dot");
+                    store.set_target_index(1);
+                    store.set_request_shortcut(true);
+                }
+                "new-binding" => store.set_capture_id("new-shortcut".into()),
+                "capture-cancel" => store.set_capture_id("".into()),
+                _ => {}
+            }
+        });
+        let region = Rc::new(RefCell::new(None));
+        let captured_region = region.clone();
+        store.on_capture_region(move |x, y, width, height| {
+            *captured_region.borrow_mut() = Some([x, y, width, height])
+        });
+        ui.show().unwrap();
+        click(&ui, 200.0, 392.0);
+        assert!(
+            events
+                .borrow()
+                .iter()
+                .any(|(action, _)| action == "selector-filter")
+        );
+        click(&ui, 710.0, 300.0);
+        assert_eq!(store.get_target_index(), 1);
+        slint::platform::update_timers_and_animations();
+        std::thread::sleep(Duration::from_millis(20));
+        slint::platform::update_timers_and_animations();
+        assert_eq!(store.get_capture_id(), "new-shortcut");
+        let [x, y, width, height] = region.borrow().unwrap();
+        assert!(y > 420.0, "recording must be below the New row: {y}");
+        events.borrow_mut().clear();
+        for text in [
+            slint::SharedString::from(slint::platform::Key::Return),
+            " ".into(),
+        ] {
+            ui.window()
+                .dispatch_event(WindowEvent::KeyPressed { text: text.clone() });
+            ui.window()
+                .dispatch_event(WindowEvent::KeyReleased { text });
+        }
+        assert!(
+            events.borrow().is_empty(),
+            "recording must not reopen the New picker"
+        );
+        click(&ui, x + width / 2.0, y + height / 2.0);
+        // The engine captures Mouse 1 on press; release must not replace its token.
+        assert!(events.borrow().is_empty());
+        click(&ui, x + width + 38.0, y + height / 2.0);
+        assert_eq!(store.get_capture_id(), "");
+        assert_eq!(store.get_bindings().row_count(), 1);
+        ui.hide().unwrap();
+    }
+
+    #[test]
     fn profile_menu_selects_profiles_and_opens_settings() {
         use slint::platform::{Key, Platform, WindowAdapter, WindowEvent, software_renderer::*};
         struct Headless;
