@@ -12,6 +12,7 @@ test('notices follow reachable normal/build edges and exclude dev/unreachable cr
   const metadata = { packages, workspace_members: ['0', '1', '2'], resolve: { nodes: packages.map(value => ({ id: value.id, deps:
     value.id === '0' ? [dep(2), dep(5, 'dev')] : value.id === '1' ? [dep(4, 'build')] : value.id === '2' ? [dep(3)] : [] })) } };
   assert.deepEqual(reachablePackages(metadata).map(value => value.name), ['build-tool', 'runtime']);
+  assert.deepEqual(reachablePackages(metadata, new Set(['crosshair-core@1.0.0', 'runtime@1.0.0'])).map(value => value.name), ['runtime']);
   assert.throws(() => reachablePackages({ ...metadata, workspace_members: ['0'] }));
 });
 

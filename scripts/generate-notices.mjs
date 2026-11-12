@@ -7,7 +7,7 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const order = (left, right) => left < right ? -1 : left > right ? 1 : 0;
 const normalized = path => path.replaceAll('\\', '/');
 
-export function reachablePackages(metadata) {
+export function reachablePackages(metadata, compiled) {
   if (!metadata.resolve?.nodes || !metadata.packages || !metadata.workspace_members) throw new Error('Cargo metadata has no resolved dependency graph.');
   const nodes = new Map(metadata.resolve.nodes.map(value => [value.id, value]));
   const packages = new Map(metadata.packages.map(value => [value.id, value]));
@@ -25,7 +25,10 @@ export function reachablePackages(metadata) {
     const node = nodes.get(id);
     if (!node || !packages.has(id)) throw new Error('Cargo dependency graph is incomplete.');
     for (const dependency of node.deps) {
-      if (dependency.dep_kinds.some(value => value.kind === null || value.kind === 'build')) pending.push(dependency.pkg);
+      const pkg = packages.get(dependency.pkg);
+      if (!pkg) throw new Error('Cargo dependency graph is incomplete.');
+      if ((!compiled || compiled.has(`${pkg.name}@${pkg.version}`)) &&
+          dependency.dep_kinds.some(value => value.kind === null || value.kind === 'build')) pending.push(dependency.pkg);
     }
   }
   return [...seen].filter(id => !workspace.has(id)).map(id => packages.get(id))
@@ -127,7 +130,16 @@ export function generate(output, overrideFile) {
     { cwd: root, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024, stdio: ['ignore', 'pipe', 'pipe'] }));
   const overrides = overrideFile ? JSON.parse(readFileSync(overrideFile, 'utf8')) : {};
   if (typeof overrides !== 'object' || overrides === null || Array.isArray(overrides)) throw new Error('License overrides must be an object keyed by exact crate@version.');
-  const packages = reachablePackages(metadata);
+  // Metadata also resolves optional feature combinations which the application does not build.
+  const tree = execFileSync('cargo', ['tree', '--locked', '--color', 'never', '--target', 'x86_64-pc-windows-msvc',
+    '--edges', 'normal,build', '--prefix', 'none', '--format', '{p}', '-p', 'crosshair-engine', '-p', 'crosshair-editor'],
+    { cwd: root, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024, stdio: ['ignore', 'pipe', 'pipe'] });
+  const compiled = new Set(tree.trim().split(/\r?\n/).filter(Boolean).map(line => {
+    const match = /^([A-Za-z0-9_-]+) v([^ ]+)(?: |$)/.exec(line);
+    if (!match) throw new Error('Unexpected Cargo build tree entry.');
+    return `${match[1]}@${match[2]}`;
+  }));
+  const packages = reachablePackages(metadata, compiled);
   const text = renderNotices(packages, overrides);
   mkdirSync(dirname(resolve(output)), { recursive: true });
   writeFileSync(output, text);
