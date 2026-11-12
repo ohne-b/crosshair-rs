@@ -470,7 +470,7 @@ impl App {
                 if self.draw_base.is_some() {
                     self.drag = None;
                     self.draw_base = None;
-                    self.document.cancel_gesture();
+                    self.cancel_document_gesture();
                     self.cancel_group = true;
                     self.finish_group = true;
                     self.finish_edit()?;

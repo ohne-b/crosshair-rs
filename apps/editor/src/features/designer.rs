@@ -569,11 +569,24 @@ impl Document {
             self.gesture_dirty = self.dirty;
         }
     }
-    pub fn cancel_gesture(&mut self) {
+    pub fn cancel_gesture(&mut self, state: &AppState) {
         if let Some(before) = self.gesture.take() {
             self.draft = Some(before);
             self.dirty = self.gesture_dirty;
             self.save_paused &= self.dirty;
+            if !self.dirty && self.conflict {
+                self.draft = self
+                    .draft
+                    .as_ref()
+                    .and_then(|draft| state.preset(draft.id))
+                    .cloned();
+                self.selected.retain(|id| {
+                    self.draft
+                        .as_ref()
+                        .is_some_and(|draft| draft.layers.iter().any(|layer| layer.id == *id))
+                });
+                self.conflict = false;
+            }
         }
     }
     pub fn selected_layer(&self) -> Option<&Layer> {
@@ -878,7 +891,7 @@ mod tests {
         document.save_paused = true;
         document.begin_gesture();
         document.draft.as_mut().unwrap().layers[0].transform.x = 20.0;
-        document.cancel_gesture();
+        document.cancel_gesture(&AppState::default());
         assert!(document.dirty);
         assert!(document.save_paused);
         let draft = document.draft.as_ref().unwrap();
@@ -903,7 +916,7 @@ mod tests {
         document.begin_gesture();
         document.draft.as_mut().unwrap().layers[0].transform.x = 20.0;
         document.dirty = true;
-        document.cancel_gesture();
+        document.cancel_gesture(&AppState::default());
         assert!(!document.dirty);
         document.reconnected();
         assert!(!document.save_paused);
@@ -913,7 +926,7 @@ mod tests {
         document.dirty = true;
         document.reconnected();
         assert!(document.save_paused);
-        document.cancel_gesture();
+        document.cancel_gesture(&AppState::default());
         assert!(!document.dirty && !document.save_paused);
     }
 
@@ -928,6 +941,36 @@ mod tests {
         document.acknowledge(&sent, 4);
         assert!(document.dirty);
         assert_eq!(document.draft.unwrap().revision, 4);
+    }
+
+    #[test]
+    fn cancelling_a_reconnected_conflict_reconciles_only_a_clean_starting_draft() {
+        for earlier_unsent in [false, true] {
+            let mut state = AppState::default();
+            let mut document = Document::default();
+            document.open(state.presets[0].clone()).unwrap();
+            if earlier_unsent {
+                document.draft.as_mut().unwrap().name = "Earlier unsent edit".into();
+                document.dirty = true;
+            }
+            document.begin_gesture();
+            document.draft.as_mut().unwrap().layers[0].transform.x = 20.0;
+            document.dirty = true;
+            document.reconnected();
+            state.presets[0].revision += 1;
+            state.presets[0].layers[0].transform.x = 10.0;
+            document.conflict = true;
+            document.receive(&state.presets[0]);
+            document.cancel_gesture(&state);
+            if earlier_unsent {
+                assert!(document.dirty && document.save_paused && document.conflict);
+                assert_eq!(document.draft.as_ref().unwrap().name, "Earlier unsent edit");
+                assert_eq!(document.draft.as_ref().unwrap().layers[0].transform.x, 0.0);
+            } else {
+                assert!(!document.dirty && !document.save_paused && !document.conflict);
+                assert_eq!(document.draft.as_ref(), Some(&state.presets[0]));
+            }
+        }
     }
     #[test]
     fn image_aspect_is_preserved_without_changing_crop() {
@@ -1037,7 +1080,7 @@ mod tests {
             .transform
             .rotation = 90.0;
         document.dirty = true;
-        document.cancel_gesture();
+        document.cancel_gesture(&AppState::default());
         assert_eq!(document.draft, before);
         assert!(!document.dirty);
     }

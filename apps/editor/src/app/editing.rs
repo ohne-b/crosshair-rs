@@ -3,6 +3,17 @@ use crate::features::designer::{self, FieldKind};
 use anyhow::{bail, ensure};
 
 impl App {
+    pub(super) fn cancel_document_gesture(&mut self) {
+        let conflicted = self.document.conflict;
+        self.document.cancel_gesture(&self.state);
+        if conflicted
+            && !self.document.conflict
+            && let Some(ui) = self.ui.upgrade()
+        {
+            ui.global::<Store>().set_error(SharedString::default());
+        }
+    }
+
     pub(super) fn open_document(&mut self, id: Id) -> Result<()> {
         ensure!(
             !self.document.conflict,
@@ -714,7 +725,7 @@ impl App {
         {
             self.draw_base = None;
             self.preview_pending = false;
-            self.document.cancel_gesture();
+            self.cancel_document_gesture();
             self.cancel_group = true;
             self.finish_group = true;
             self.finish_edit()?;
@@ -785,7 +796,7 @@ impl App {
                 self.drag = None;
                 self.draw_base = None;
                 self.preview_pending = false;
-                self.document.cancel_gesture();
+                self.cancel_document_gesture();
                 self.cancel_group = true;
                 self.finish_group = true;
                 self.finish_edit()?;

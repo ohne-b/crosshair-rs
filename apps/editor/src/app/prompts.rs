@@ -70,7 +70,7 @@ impl App {
             )?,
             Modal::Close => {
                 if alternate {
-                    self.document.cancel_gesture();
+                    self.cancel_document_gesture();
                     self.document.dirty = false;
                     self.document.conflict = false;
                     self.document.save_paused = false;
