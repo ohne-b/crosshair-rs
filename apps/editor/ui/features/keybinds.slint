@@ -23,6 +23,7 @@ component TableHeader inherits Rectangle {
 component BindingItem inherits Rectangle {
     in property <BindingRow> binding;
     in property <bool> pending: false;
+    property <bool> saving: root.pending && Store.pending-shortcut != "new-shortcut";
     in property <length> viewport-width;
     in property <length> viewport-height;
     public function record() {
@@ -34,7 +35,7 @@ component BindingItem inherits Rectangle {
     HorizontalLayout { spacing: 0px;
         if root.binding.global: Rectangle { horizontal-stretch: 1; Text { x: 12px; width: parent.width - 24px; text: root.binding.action; color: Theme.text; font-size: 12px * Theme.text-scale; vertical-alignment: center; } }
         if root.binding.shortcut: Rectangle { width: 88px;
-            trigger := ActionButton { x: 12px; y: (parent.height - self.height) / 2; width: 64px; thumbnail: Store.preset-thumbnails[root.binding.target-index]; label: "Choose crosshair for " + root.binding.name; clicked => { picker.show(); } }
+            trigger := ActionButton { x: 12px; y: (parent.height - self.height) / 2; width: 64px; enabled: Store.connected && Store.interactive && !root.saving; thumbnail: Store.preset-thumbnails[root.binding.target-index]; label: "Choose crosshair for " + root.binding.name; clicked => { picker.show(); } }
             picker := PresetPicker {
                 viewport-width: root.viewport-width; viewport-height: root.viewport-height;
                 model: Store.selector-presets; selected-id: root.binding.target;
@@ -52,14 +53,15 @@ component BindingItem inherits Rectangle {
         Rectangle { width: 1px; background: Theme.border; }
         Rectangle { width: 254px;
             capture-button := ActionButton { x: 12px; y: (parent.height - self.height) / 2; width: 230px; align-left: true;
-                text: root.pending || Store.capture-id == root.binding.id ? "Press a key" : !root.binding.global && !root.binding.enabled ? "Disabled: " + root.binding.chord : root.binding.chord;
+                enabled: Store.connected && Store.interactive && !root.saving;
+                text: root.saving ? "Saving…" : root.pending || Store.capture-id == root.binding.id ? "Press a key" : !root.binding.global && !root.binding.enabled ? "Disabled: " + root.binding.chord : root.binding.chord;
                 icon: @image-url("../../../../assets/icons/keyboard.svg"); selected: Store.capture-id == root.binding.id;
                 clicked => { if Store.capture-id != root.binding.id { root.record(); } }
             }
         }
         Rectangle { width: 1px; background: Theme.border; }
         Rectangle { width: 52px;
-            ActionButton { x: 10px; y: (parent.height - self.height) / 2; width: 32px; icon: root.pending ? @image-url("../../../../assets/icons/x.svg") : @image-url("../../../../assets/icons/trash.svg"); label: root.pending ? "Cancel recording" : root.binding.global ? "Clear visibility shortcut" : "Remove shortcut"; quiet: true; clicked => { Store.action(root.pending ? "capture-cancel" : "binding-remove", root.pending ? "" : root.binding.id); } }
+            ActionButton { x: 10px; y: (parent.height - self.height) / 2; width: 32px; enabled: Store.connected && Store.interactive && !root.saving; icon: root.pending ? @image-url("../../../../assets/icons/x.svg") : @image-url("../../../../assets/icons/trash.svg"); label: root.pending ? "Discard new shortcut" : root.binding.global ? "Clear visibility shortcut" : "Remove shortcut"; quiet: true; clicked => { Store.action(root.pending ? "discard-shortcut" : "binding-remove", root.pending ? "" : root.binding.id); } }
         }
     }
     Rectangle { y: 0px; width: parent.width; height: 1px; background: Theme.border; }
@@ -106,7 +108,7 @@ export component Keybinds inherits Rectangle {
                     }
                     pending-shortcut := BindingItem {
                         pending: true;
-                        visible: Store.request-shortcut || Store.capture-id == "new-shortcut";
+                        visible: Store.pending-shortcut != "";
                         height: self.visible ? max(56px, 12px * Theme.text-scale + 32px) : 0px;
                         viewport-width: root.width + root.absolute-position.x; viewport-height: root.height + root.absolute-position.y;
                         binding: { id: "new-shortcut", name: Store.preset-names[Store.target-index], action: "", target: "", target-index: Store.target-index, chord: "", enabled: true, shortcut: true, global: false };

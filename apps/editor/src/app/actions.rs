@@ -99,6 +99,7 @@ impl App {
                 store.set_page(value.parse()?);
                 if store.get_page() != 2 {
                     store.set_request_shortcut(false);
+                    store.set_pending_shortcut("".into());
                 }
                 if store.get_page() == 1 && self.document.draft.is_none() {
                     let id = self
@@ -151,6 +152,8 @@ impl App {
             "reconnect" => self.client.reconnect()?,
             "toggle-visible" => self.send("visibility", Command::ToggleVisibility)?,
             "select-profile" => {
+                store.set_pending_shortcut("".into());
+                store.set_request_shortcut(false);
                 let id = self
                     .state
                     .profiles
@@ -689,7 +692,16 @@ impl App {
                 Capture::Existing(value.parse()?)
             })?,
             "capture-cancel" => self.cancel_capture()?,
+            "discard-shortcut" => {
+                self.cancel_capture()?;
+                store.set_pending_shortcut("".into());
+                store.set_request_shortcut(false);
+            }
             "new-binding" => {
+                ensure!(
+                    store.get_pending_shortcut() == "new-shortcut",
+                    "Wait for the shortcut to finish saving"
+                );
                 let index: usize = store.get_target_index().try_into()?;
                 let preset = self
                     .state
@@ -700,6 +712,11 @@ impl App {
                 self.begin_capture(Capture::New(keybinds::action(value.parse()?, preset)))?;
             }
             "preset-keybind" => {
+                ensure!(
+                    store.get_pending_shortcut().is_empty()
+                        || store.get_pending_shortcut() == "new-shortcut",
+                    "Wait for the shortcut to finish saving"
+                );
                 let preset: Id = value.parse()?;
                 store.set_target_index(
                     self.state
@@ -709,6 +726,7 @@ impl App {
                         .context("This crosshair was deleted")? as i32,
                 );
                 store.set_page(2);
+                store.set_pending_shortcut("new-shortcut".into());
                 store.set_request_shortcut(true);
             }
             "binding-remove" => {

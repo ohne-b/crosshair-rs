@@ -215,6 +215,7 @@ pub(crate) struct App {
     capture: Option<Capture>,
     capture_token: Option<Id>,
     capture_region: Option<[f32; 4]>,
+    failed_shortcut: Option<Id>,
     modal: Modal,
     drag: Option<Drag>,
     draw_base: Option<Layer>,
@@ -302,6 +303,7 @@ pub fn run() -> Result<()> {
         capture: None,
         capture_token: None,
         capture_region: None,
+        failed_shortcut: None,
         modal: Modal::None,
         drag: None,
         draw_base: None,
@@ -635,12 +637,21 @@ mod tests {
         store.set_connected(true);
         store.set_page(2);
         store.set_bindings(
-            Rc::new(slint::VecModel::from(vec![BindingRow {
-                id: "global".into(),
-                global: true,
-                action: "Toggle visibility".into(),
-                ..Default::default()
-            }]))
+            Rc::new(slint::VecModel::from(vec![
+                BindingRow {
+                    id: "global".into(),
+                    global: true,
+                    action: "Toggle visibility".into(),
+                    ..Default::default()
+                },
+                BindingRow {
+                    id: "saved".into(),
+                    shortcut: true,
+                    name: "Saved".into(),
+                    chord: "J".into(),
+                    ..Default::default()
+                },
+            ]))
             .into(),
         );
         store.set_preset_names(
@@ -674,10 +685,14 @@ mod tests {
                 "preset-keybind" => {
                     assert_eq!(value, "dot");
                     store.set_target_index(1);
+                    store.set_pending_shortcut("new-shortcut".into());
                     store.set_request_shortcut(true);
                 }
                 "new-binding" => store.set_capture_id("new-shortcut".into()),
-                "capture-cancel" => store.set_capture_id("".into()),
+                "discard-shortcut" => {
+                    store.set_capture_id("".into());
+                    store.set_pending_shortcut("".into());
+                }
                 _ => {}
             }
         });
@@ -719,9 +734,39 @@ mod tests {
         click(&ui, x + width / 2.0, y + height / 2.0);
         // The engine captures Mouse 1 on press; release must not replace its token.
         assert!(events.borrow().is_empty());
+        store.set_capture_id("".into());
+        click(&ui, x + width / 2.0, y + height / 2.0);
+        assert_eq!(*events.borrow(), [("new-binding".into(), "5".into())]);
+        // Capture cancellation can arrive before the UI press or between press/release.
+        for before_press in [true, false] {
+            store.set_pending_shortcut("new-shortcut".into());
+            store.set_capture_id("new-shortcut".into());
+            events.borrow_mut().clear();
+            let position = slint::LogicalPosition::new(x + width + 38.0, y + height / 2.0);
+            if before_press {
+                store.set_capture_id("".into());
+            }
+            ui.window().dispatch_event(WindowEvent::PointerPressed {
+                position,
+                button: slint::platform::PointerEventButton::Left,
+            });
+            store.set_capture_id("".into());
+            ui.window().dispatch_event(WindowEvent::PointerReleased {
+                position,
+                button: slint::platform::PointerEventButton::Left,
+            });
+            assert_eq!(*events.borrow(), [("discard-shortcut".into(), "".into())]);
+            assert_eq!(store.get_pending_shortcut(), "");
+            assert_eq!(store.get_bindings().row_count(), 2);
+        }
+        store.set_pending_shortcut("saving-binding-id".into());
+        events.borrow_mut().clear();
+        click(&ui, x + width / 2.0, y + height / 2.0);
         click(&ui, x + width + 38.0, y + height / 2.0);
-        assert_eq!(store.get_capture_id(), "");
-        assert_eq!(store.get_bindings().row_count(), 1);
+        assert!(
+            events.borrow().is_empty(),
+            "saving must not resubmit or discard the row"
+        );
         ui.hide().unwrap();
     }
 

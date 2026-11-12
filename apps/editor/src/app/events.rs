@@ -120,6 +120,22 @@ impl App {
                 if state.revision < self.state.revision && !self.new_connection {
                     return Ok(());
                 }
+                let ui = self.window()?;
+                let store = ui.global::<Store>();
+                let pending = store.get_pending_shortcut();
+                let failed_shortcut = self.failed_shortcut.take();
+                if (self.new_connection
+                    || failed_shortcut.is_some_and(|id| pending == id.to_string()))
+                    && !pending.is_empty()
+                    && pending != "new-shortcut"
+                    && !state
+                        .profiles
+                        .iter()
+                        .flat_map(|profile| &profile.bindings)
+                        .any(|binding| pending == binding.id.to_string())
+                {
+                    store.set_pending_shortcut("new-shortcut".into());
+                }
                 self.new_connection = false;
                 if let Some(id) = self.document.draft.as_ref().map(|preset| preset.id) {
                     if let Some(preset) = state.preset(id) {
@@ -333,6 +349,14 @@ impl App {
                     conflict,
                 },
             ) => {
+                if let Some(id) = tag.strip_prefix("new-shortcut:") {
+                    let ui = self.window()?;
+                    let store = ui.global::<Store>();
+                    if store.get_pending_shortcut() == id {
+                        self.failed_shortcut = id.parse().ok();
+                        self.client.refresh();
+                    }
+                }
                 if tag == "preview" {
                     let failed = self.preview_inflight.take();
                     self.preview_sent = failed;

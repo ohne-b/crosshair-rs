@@ -572,8 +572,14 @@ impl App {
             }));
         }
         let store = ui.global::<Store>();
+        let pending_saved = rows
+            .iter()
+            .any(|row| row.id == store.get_pending_shortcut());
         if !update_rows(&store.get_bindings(), &rows, |a, b| a.id == b.id) {
             store.set_bindings(model(rows));
+        }
+        if pending_saved {
+            store.set_pending_shortcut("".into());
         }
     }
 

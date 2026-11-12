@@ -244,7 +244,9 @@ table has Crosshair, Shortcut name and Keyboard / mouse columns plus trash.
 Headers and body share column borders. The first row always contains only the
 plus button and New; either opens the picker. Choosing a crosshair inserts a
 separate row below New with its thumbnail, name, key recording and cancellation.
-The completed shortcut stays in that row; cancellation removes the pending row.
+The completed shortcut stays in that row. Stopping recording leaves the pending
+row available to retry; its X discards it. Keep the row until the saved binding
+arrives, so asynchronous capture results cannot move another control under a click.
 The thumbnail opens a reusable picker with search, All/Favorites counts and
 named cards; clicking a card chooses immediately. Escape/outside dismisses and
 returns focus. Shortcut names edit inline and default to the target preset name;

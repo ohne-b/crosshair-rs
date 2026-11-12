@@ -119,6 +119,7 @@ impl App {
         replace: Option<Option<Id>>,
     ) -> Result<()> {
         let mut profiles = self.state.profiles.clone();
+        let mut created = None;
         if replace.is_some()
             && matches!(target, Capture::Global)
             && let Some(chord) = &chord
@@ -159,13 +160,15 @@ impl App {
             }
             Capture::New(action) => {
                 if let Some(chord) = chord {
-                    profile.bindings.insert(0, Binding::new(chord, action));
+                    let binding = Binding::new(chord, action);
+                    created = Some(binding.id);
+                    profile.bindings.insert(0, binding);
                 }
             }
         }
         validation::validate_binding_conflicts(&profile.bindings, settings.global_toggle.as_ref())?;
         self.send(
-            "bindings",
+            &created.map_or_else(|| "bindings".into(), |id| format!("new-shortcut:{id}")),
             Command::SetBindings {
                 profiles: profiles
                     .into_iter()
@@ -177,6 +180,12 @@ impl App {
                 global_toggle: settings.global_toggle,
                 expected_revision: self.state.revision,
             },
-        )
+        )?;
+        if let Some(id) = created {
+            self.window()?
+                .global::<Store>()
+                .set_pending_shortcut(id.to_string().into());
+        }
+        Ok(())
     }
 }
