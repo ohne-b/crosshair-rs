@@ -42,7 +42,8 @@ $sdk = Join-Path ${env:ProgramFiles(x86)} 'Windows Kits/10'
 $sdkVersion = '10.0.26100.0'
 $metadata = Join-Path $sdk "UnionMetadata/$sdkVersion/Windows.winmd"
 if (!(Test-Path -LiteralPath $metadata)) { throw "Windows SDK $sdkVersion is required." }
-& (Join-Path $cppwinrt 'bin/cppwinrt.exe') -input (Join-Path $gamebar 'lib/uap10.0/Microsoft.Gaming.XboxGameBar.winmd') -reference $metadata -output $generated
+# Generate Windows, Game Bar and base headers together; installed SDK headers can use another tool version.
+& (Join-Path $cppwinrt 'bin/cppwinrt.exe') -input $metadata (Join-Path $gamebar 'lib/uap10.0/Microsoft.Gaming.XboxGameBar.winmd') -base -output $generated
 if ($LASTEXITCODE -ne 0) { throw 'Game Bar C++/WinRT projection failed.' }
 
 $source = Join-Path $repoRoot 'apps/gamebar/CrosshairWidget'
