@@ -240,7 +240,7 @@ enters durable state or engine edit history.
 
 One application table owns Toggle visibility; a separate full-width shortcut
 table has Crosshair, Shortcut name and Keyboard / mouse columns plus trash.
-Headers and body share column borders. New sits above the shortcut table.
+Headers and body share column borders. New is the first row below the header.
 The thumbnail opens a reusable picker with search, All/Favorites counts and
 named cards; clicking a card chooses immediately. Escape/outside dismisses and
 returns focus. Shortcut names edit inline and default to the target preset name;

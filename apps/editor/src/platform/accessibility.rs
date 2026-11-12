@@ -12,6 +12,7 @@ use windows::{
 #[derive(Clone)]
 pub struct Appearance {
     pub text_scale: f32,
+    pub animations: bool,
     pub colors: Option<[u32; 4]>,
 }
 
@@ -94,6 +95,9 @@ fn read(settings: &UISettings, accessibility: &AccessibilitySettings) -> Result<
         None
     };
     Ok(Appearance {
+        animations: settings
+            .AnimationsEnabled()
+            .context("Reading animation preference")?,
         text_scale: (settings.TextScaleFactor().context("Reading text scale")? as f32)
             .clamp(1.0, 2.25),
         colors,

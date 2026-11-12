@@ -89,7 +89,7 @@ component LayerList inherits Rectangle {
                 for layer[index] in Store.layers: Rectangle {
                     x: 0px; width: parent.width;
                     y: index * (root.row-height + 3px) + (root.drop-index < 0 ? 0px : index == root.drag-index ? root.drag-offset : root.drag-index < root.drop-index && index > root.drag-index && index <= root.drop-index ? -(root.row-height + 3px) : root.drag-index > root.drop-index && index >= root.drop-index && index < root.drag-index ? root.row-height + 3px : 0px);
-                    animate y { duration: root.drag-index == index ? 0ms : 100ms; }
+                    animate y { duration: !Theme.animations || root.drag-index == index ? 0ms : 100ms; }
                     height: root.row-height; vertical-stretch: 0;
                     background: layer.selected ? Theme.raised : transparent; border-radius: 8px;
                     accessible-role: list-item; accessible-label: layer.name + (layer.selected ? ", selected" : "");
@@ -148,7 +148,7 @@ component LayerList inherits Rectangle {
 }
 
 export component Designer inherits Rectangle {
-    property <bool> show-layers: true;
+    property <bool> show-layers: Store.wide;
     background: Theme.canvas; border-top-left-radius: 12px;
     VerticalLayout {
         spacing: 0px;

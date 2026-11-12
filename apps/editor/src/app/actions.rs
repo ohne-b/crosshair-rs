@@ -35,6 +35,7 @@ impl App {
             self.cancel_capture()?;
         }
         match action {
+            "request-close" => self.request_close()?,
             "selector-filter" => {
                 store.set_selector_search(value.into());
                 self.refresh_library();

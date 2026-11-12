@@ -85,6 +85,7 @@ export component NumericField inherits Rectangle {
         accepted => { root.commit(); focus.focus(); }
         key-pressed(event) => {
             if event.text == Key.Escape { root.editing = false; focus.focus(); return accept; }
+            if event.modifiers.control && !event.modifiers.alt && (event.text == "s" || event.text == "S") { root.commit(); focus.focus(); }
             return reject;
         }
     }

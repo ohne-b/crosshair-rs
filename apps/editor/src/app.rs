@@ -106,6 +106,12 @@ fn dispatch(action: impl FnOnce(&mut App) -> Result<()>) {
     drain_events();
 }
 
+fn finish_input(ui: &AppWindow) {
+    ui.invoke_finish_input();
+    // Focus-loss handlers are deferred until Slint updates its property trackers.
+    slint::platform::update_timers_and_animations();
+}
+
 #[derive(Clone)]
 enum Capture {
     Global,
@@ -316,6 +322,8 @@ pub fn run() -> Result<()> {
     ui.global::<Store>()
         .set_version(env!("CARGO_PKG_VERSION").into());
     ui.global::<Store>()
+        .on_commit_focused_input(slint::platform::update_timers_and_animations);
+    ui.global::<Store>()
         .on_action(|action, value| ui_event(UiEvent::Action(action.into(), value.into())));
     ui.global::<Store>()
         .on_format_number(|value| crate::features::designer::format_number(value).into());
@@ -367,8 +375,15 @@ pub fn run() -> Result<()> {
             });
             handled
         });
-    ui.window().on_close_requested(|| {
-        dispatch(|app| app.request_close());
+    let close_ui = ui.as_weak();
+    ui.window().on_close_requested(move || {
+        let close_ui = close_ui.clone();
+        let _ = slint::invoke_from_event_loop(move || {
+            if let Some(ui) = close_ui.upgrade() {
+                finish_input(&ui);
+            }
+            ui_event(UiEvent::Action("request-close".into(), String::new()));
+        });
         slint::CloseRequestResponse::KeepWindowShown
     });
     use slint::winit_030::{EventResult, WinitWindowAccessor};
@@ -585,6 +600,108 @@ fn defer_ui(queue: &mut VecDeque<UiEvent>, event: UiEvent) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn focused_name_commits_before_save_and_close() {
+        use slint::platform::{Key, Platform, WindowAdapter, WindowEvent, software_renderer::*};
+        struct Headless;
+        impl Platform for Headless {
+            fn create_window_adapter(&self) -> Result<Rc<dyn WindowAdapter>, slint::PlatformError> {
+                Ok(MinimalSoftwareWindow::new(RepaintBufferType::NewBuffer))
+            }
+        }
+        fn press(ui: &AppWindow, text: impl Into<SharedString>) {
+            let text = text.into();
+            ui.window()
+                .dispatch_event(WindowEvent::KeyPressed { text: text.clone() });
+            ui.window()
+                .dispatch_event(WindowEvent::KeyReleased { text });
+        }
+        fn click(ui: &AppWindow, x: f32, y: f32) {
+            let position = slint::LogicalPosition::new(x, y);
+            ui.window().dispatch_event(WindowEvent::PointerPressed {
+                position,
+                button: slint::platform::PointerEventButton::Left,
+            });
+            ui.window().dispatch_event(WindowEvent::PointerReleased {
+                position,
+                button: slint::platform::PointerEventButton::Left,
+            });
+        }
+        fn replace_name(ui: &AppWindow, name: &str) {
+            click(ui, 160.0, 70.0);
+            ui.window().dispatch_event(WindowEvent::KeyPressed {
+                text: Key::Control.into(),
+            });
+            press(ui, "a");
+            ui.window().dispatch_event(WindowEvent::KeyReleased {
+                text: Key::Control.into(),
+            });
+            press(ui, name);
+        }
+        slint::platform::set_platform(Box::new(Headless)).unwrap();
+        let ui = AppWindow::new().unwrap();
+        ui.window().set_size(slint::LogicalSize::new(1280.0, 800.0));
+        let store = ui.global::<Store>();
+        store.set_connected(true);
+        store.set_page(1);
+        store.set_document_name("Classic".into());
+        store.on_commit_focused_input(slint::platform::update_timers_and_animations);
+        let events = Rc::new(RefCell::new(Vec::new()));
+        let committed = events.clone();
+        store.on_action(move |action, value| {
+            committed
+                .borrow_mut()
+                .push((action.to_string(), value.to_string()))
+        });
+        let saved = events.clone();
+        store.on_shortcut(move |text, control, _, _| {
+            if control && text == "s" {
+                saved.borrow_mut().push(("save".into(), String::new()));
+                true
+            } else {
+                false
+            }
+        });
+        ui.show().unwrap();
+        slint::platform::update_timers_and_animations();
+        replace_name(&ui, "Typed name");
+        assert!(events.borrow().is_empty());
+        ui.window().dispatch_event(WindowEvent::KeyPressed {
+            text: Key::Control.into(),
+        });
+        press(&ui, "s");
+        ui.window().dispatch_event(WindowEvent::KeyReleased {
+            text: Key::Control.into(),
+        });
+        assert_eq!(
+            *events.borrow(),
+            [
+                ("rename-document".into(), "Typed name".into()),
+                ("save".into(), String::new())
+            ]
+        );
+        events.borrow_mut().clear();
+        replace_name(&ui, "Clicked save");
+        assert!(events.borrow().is_empty());
+        click(&ui, 1000.0, 70.0);
+        assert_eq!(
+            *events.borrow(),
+            [
+                ("rename-document".into(), "Clicked save".into()),
+                ("save".into(), String::new())
+            ]
+        );
+        events.borrow_mut().clear();
+        replace_name(&ui, "Pending close");
+        assert!(events.borrow().is_empty());
+        finish_input(&ui);
+        assert_eq!(
+            *events.borrow(),
+            [("rename-document".into(), "Pending close".into())]
+        );
+        ui.hide().unwrap();
+    }
 
     #[test]
     fn queued_pointer_moves_keep_gesture_boundaries_and_the_latest_position() {

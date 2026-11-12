@@ -32,7 +32,7 @@ export component ActionButton inherits Rectangle {
         if root.enabled {
             Store.menu-x = root.absolute-position.x / 1px;
             Store.menu-y = (root.absolute-position.y + root.height + 4px) / 1px;
-            focus.focus(); root.clicked();
+            focus.focus(); Store.commit-focused-input(); root.clicked();
         }
     }
     content := HorizontalLayout {
@@ -92,6 +92,7 @@ export component RenameField inherits Rectangle {
         accepted => { root.commit(); root.finished(); }
         key-pressed(event) => {
             if event.text == Key.Escape { root.modified = false; self.text = root.value; root.finished(); return accept; }
+            if event.modifiers.control && !event.modifiers.alt && (event.text == "s" || event.text == "S") { root.commit(); }
             return reject;
         }
     }
@@ -134,7 +135,7 @@ export component EditField inherits Rectangle {
         edited => { root.modified = true; root.edited(self.text); }
         accepted => { root.modified = false; root.committed(self.text); root.accepted(self.text); }
         key-pressed(event) => {
-            if event.text == Key.Tab && root.modified { root.modified = false; root.committed(self.text); }
+            if root.modified && (event.text == Key.Tab || (event.modifiers.control && !event.modifiers.alt && (event.text == "s" || event.text == "S"))) { root.modified = false; root.committed(self.text); }
             return reject;
         }
     }
@@ -164,44 +165,3 @@ export component Switch inherits Rectangle {
 
 export component Divider inherits Rectangle { height: 1px; vertical-stretch: 0; background: Theme.border; horizontal-stretch: 1; }
 export component SectionTitle inherits Text { color: Theme.muted; font-size: 11px * Theme.text-scale; font-weight: 600; height: 36px; vertical-stretch: 0; vertical-alignment: center; }
-
-export component NumericSlider inherits Rectangle {
-    in property <bool> enabled: Store.interactive;
-    in property <float> minimum: 0;
-    in property <float> maximum: 100;
-    in-out property <float> value: 0;
-    in property <string> label;
-    callback changed(float);
-    callback released;
-    height: 20px;
-    property <float> fraction: (root.value - root.minimum) / max(0.00001, root.maximum - root.minimum);
-    property <float> step: root.maximum - root.minimum <= 1 ? 0.01 : root.maximum - root.minimum <= 10 ? 0.1 : 1;
-    accessible-role: slider; accessible-label: root.label;
-    accessible-enabled: root.enabled;
-    accessible-value: root.value; accessible-value-minimum: root.minimum; accessible-value-maximum: root.maximum; accessible-value-step: root.step;
-    accessible-action-set-value(value) => { if root.enabled && value.is-float() { root.value = clamp(value.to-float(), root.minimum, root.maximum); root.changed(root.value); root.released(); } }
-    accessible-action-increment => { if root.enabled { root.value = min(root.maximum, root.value + root.step); root.changed(root.value); root.released(); } }
-    accessible-action-decrement => { if root.enabled { root.value = max(root.minimum, root.value - root.step); root.changed(root.value); root.released(); } }
-    Rectangle { visible: touch.has-hover || touch.pressed || focus.has-focus; x: 5px; y: parent.height / 2 - 1px; width: parent.width - 10px; height: 2px; background: Theme.border; }
-    Rectangle { visible: touch.has-hover || touch.pressed || focus.has-focus; x: 5px; y: parent.height / 2 - 1px; width: root.fraction * (parent.width - 10px); height: 2px; background: Theme.orange; }
-    Rectangle { visible: touch.has-hover || touch.pressed || focus.has-focus; x: root.fraction * (parent.width - 10px); y: parent.height / 2 - 4px; width: 8px; height: 8px; border-radius: 4px; background: Theme.orange; }
-    forward-focus: focus;
-    focus := FocusScope { enabled: root.enabled; key-pressed(event) => {
-        if event.text == Key.LeftArrow || event.text == Key.RightArrow {
-            root.value = clamp(root.value + (event.text == Key.RightArrow ? root.step : -root.step), root.minimum, root.maximum);
-            root.changed(root.value); root.released(); return accept;
-        }
-        return reject;
-    } }
-    touch := TouchArea {
-        enabled: root.enabled;
-        pointer-event(event) => {
-            if event.kind == PointerEventKind.cancel { root.released(); }
-            if event.button == PointerEventButton.left {
-                if event.kind == PointerEventKind.down { focus.focus(); root.value = clamp(round((root.minimum + clamp((self.mouse-x - 5px) / max(1px, self.width - 10px), 0, 1) * (root.maximum - root.minimum)) / root.step) * root.step, root.minimum, root.maximum); root.changed(root.value); }
-                if event.kind == PointerEventKind.up { root.released(); }
-            }
-        }
-        moved => { if self.pressed { root.value = clamp(round((root.minimum + clamp((self.mouse-x - 5px) / max(1px, self.width - 10px), 0, 1) * (root.maximum - root.minimum)) / root.step) * root.step, root.minimum, root.maximum); root.changed(root.value); } }
-    }
-}

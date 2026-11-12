@@ -102,6 +102,7 @@ export global Store {
     in-out property <float> menu-x: 0;
     in-out property <float> menu-y: 0;
     in-out property <int> modal-index: 0;
+    callback commit-focused-input;
     callback action(string, string);
     pure callback format-number(float) -> string;
     callback property-edit(string, string, string, int);

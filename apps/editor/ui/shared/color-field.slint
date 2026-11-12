@@ -89,8 +89,8 @@ export component ColorField inherits Rectangle {
         }
     }
     popup := PopupWindow {
-        x: clamp(0px, 8px - root.absolute-position.x, max(8px - root.absolute-position.x, root.window-width - self.width - root.absolute-position.x - 8px));
-        y: clamp(root.height + 4px, 8px - root.absolute-position.y, max(8px - root.absolute-position.y, root.window-height - self.height - root.absolute-position.y - 8px));
+        x: clamp(-self.width - 8px, 8px - root.absolute-position.x, max(8px - root.absolute-position.x, root.window-width - self.width - root.absolute-position.x - 8px));
+        y: clamp(0px, 8px - root.absolute-position.y, max(8px - root.absolute-position.y, root.window-height - self.height - root.absolute-position.y - 8px));
         width: 260px; height: 348px;
         close-policy: close-on-click-outside;
         forward-focus: popup-focus;

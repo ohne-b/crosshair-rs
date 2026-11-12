@@ -22,6 +22,7 @@ export component AppWindow inherits Window {
     background: transparent;
     default-font-family: "Manrope"; default-font-size: 13px * Theme.text-scale;
     forward-focus: keys;
+    public function finish-input() { keys.focus(); }
     property <int> modal-kind: Store.modal-kind;
     property <bool> menu-open: menu.is-open;
     property <bool> help-open: help.is-open;
