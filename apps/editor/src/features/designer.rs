@@ -573,6 +573,7 @@ impl Document {
         if let Some(before) = self.gesture.take() {
             self.draft = Some(before);
             self.dirty = self.gesture_dirty;
+            self.save_paused &= self.dirty;
         }
     }
     pub fn selected_layer(&self) -> Option<&Layer> {
@@ -906,6 +907,14 @@ mod tests {
         assert!(!document.dirty);
         document.reconnected();
         assert!(!document.save_paused);
+
+        document.begin_gesture();
+        document.draft.as_mut().unwrap().layers[0].transform.x = 20.0;
+        document.dirty = true;
+        document.reconnected();
+        assert!(document.save_paused);
+        document.cancel_gesture();
+        assert!(!document.dirty && !document.save_paused);
     }
 
     #[test]
