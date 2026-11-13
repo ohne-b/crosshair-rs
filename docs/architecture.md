@@ -132,7 +132,8 @@ describe the available choices.
 
 ### Crosshairs and profiles
 
-Saved and Browse tabs use bookmark and search icons. Saved contains the local
+Saved and Browse tabs sit beside the Crosshairs heading and use bookmark and
+search icons. Saved contains the local
 thumbnail grid: search, All/Favorites with counts, a compact icon sort picker
 for Manual/Name/Recently edited, New and Import. Names rename in place on Enter or
 focus loss; Escape cancels. Favorite and trash appear on hover or keyboard focus;
@@ -140,7 +141,7 @@ favorites use a filled gray star, without changing the card border. Both star
 states hide when neither hovered nor focused. Right-click/Shift+F10 opens the compact card menu:
 Edit, Rename, Duplicate, Export, Create keybind, order and Delete. Menus and help
 popovers anchor to their controls, dismiss outside/on Escape and return focus.
-Browse contains seven built-in designs made from editable native layers, based on
+Browse contains built-in designs made from editable native layers, based on
 the supplied references. Names are fixed; a bookmark appears on hover or keyboard
 focus. Save adds an independent copy to Saved without activating it or removing
 the original. Saved copies use the existing edit, favorite and delete controls.
@@ -654,6 +655,13 @@ editor, blanks/releases widget, unregisters input/tray, flushes and exits. No
 orphan helper or respawn after deliberate Quit. An open editor offers Restart on
 engine failure while preserving local edits; headless failures do not spawn a
 surprise editor or a restart loop.
+
+Windows draws the tray menus, including checkmarks, submenus, focus and keyboard
+navigation. The engine opts into Common Controls v6 visual styles. A small Windows
+11 theme adapter requests dark menus through optional `uxtheme.dll` exports;
+missing exports or contrast themes retain system styling. It loads only from
+System32, stays on the tray thread and adds no renderer, polling or dashboard
+dependency. Menus release their native handles when dismissed, including on errors.
 
 One packaged StartupTask, off by default, starts only engine mode. Honor Windows
 DisabledByUser. Activation uses stable app IDs, not versioned WindowsApps paths.

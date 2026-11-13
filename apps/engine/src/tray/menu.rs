@@ -1,296 +1,226 @@
-use std::mem::size_of;
+use std::mem::{size_of, transmute};
 
-use anyhow::{Result, ensure};
-use windows::Win32::{
-    Foundation::{COLORREF, HWND, LPARAM, LRESULT, RECT},
-    Graphics::Gdi::*,
-    UI::{
-        Accessibility::{HCF_HIGHCONTRASTON, HIGHCONTRASTW},
-        Controls::{DRAWITEMSTRUCT, MEASUREITEMSTRUCT, ODS_DISABLED, ODS_SELECTED, ODT_MENU},
-        HiDpi::{GetDpiForWindow, SystemParametersInfoForDpi},
-        WindowsAndMessaging::*,
+use anyhow::Result;
+use crosshair_platform::identity::wide;
+use windows::{
+    Win32::{
+        Foundation::{FreeLibrary, HMODULE, HWND},
+        System::LibraryLoader::{GetProcAddress, LOAD_LIBRARY_SEARCH_SYSTEM32, LoadLibraryExW},
+        UI::{
+            Accessibility::{HCF_HIGHCONTRASTON, HIGHCONTRASTW},
+            WindowsAndMessaging::*,
+        },
     },
+    core::{PCSTR, PCWSTR, w},
 };
 
-struct Item {
-    text: Vec<u16>,
-    font: HFONT,
-    width: u32,
-    height: u32,
-    inset: i32,
-    checked: bool,
-    separator: bool,
-    submenu: bool,
+use super::MenuState;
+
+type SetPreferredAppMode = unsafe extern "system" fn(i32) -> i32;
+type AllowDarkModeForWindow = unsafe extern "system" fn(HWND, bool) -> bool;
+type FlushMenuThemes = unsafe extern "system" fn();
+
+pub(super) struct Theme {
+    library: HMODULE,
+    set_mode: SetPreferredAppMode,
+    allow_window: AllowDarkModeForWindow,
+    flush: FlushMenuThemes,
 }
 
-pub(super) struct Style {
-    background: HBRUSH,
-    font: HFONT,
-    scale: f32,
-    // Menu item data points into these allocations for the entire native menu loop.
-    #[allow(clippy::vec_box)]
-    items: Vec<Box<Item>>,
-}
+impl Theme {
+    pub fn new() -> Option<Self> {
+        unsafe {
+            let library =
+                LoadLibraryExW(w!("uxtheme.dll"), None, LOAD_LIBRARY_SEARCH_SYSTEM32).ok()?;
+            // shortcut: Windows 11 dark menus need ordinal exports; replace when a public API exists.
+            let exports = (
+                GetProcAddress(library, PCSTR(135 as *const u8)),
+                GetProcAddress(library, PCSTR(133 as *const u8)),
+                GetProcAddress(library, PCSTR(136 as *const u8)),
+            );
+            if let (Some(set_mode), Some(allow_window), Some(flush)) = exports {
+                Some(Self {
+                    library,
+                    set_mode: transmute::<unsafe extern "system" fn() -> isize, SetPreferredAppMode>(
+                        set_mode,
+                    ),
+                    allow_window: transmute::<
+                        unsafe extern "system" fn() -> isize,
+                        AllowDarkModeForWindow,
+                    >(allow_window),
+                    flush: transmute::<unsafe extern "system" fn() -> isize, FlushMenuThemes>(
+                        flush,
+                    ),
+                })
+            } else {
+                let _ = FreeLibrary(library);
+                None
+            }
+        }
+    }
 
-impl Style {
-    pub fn new(hwnd: HWND) -> Result<Option<Self>> {
+    pub fn prepare(&self, hwnd: HWND) {
         unsafe {
             let mut contrast = HIGHCONTRASTW {
                 cbSize: size_of::<HIGHCONTRASTW>() as u32,
                 ..Default::default()
             };
-            SystemParametersInfoW(
+            let dark = SystemParametersInfoW(
                 SPI_GETHIGHCONTRAST,
                 contrast.cbSize,
                 Some((&mut contrast as *mut HIGHCONTRASTW).cast()),
                 SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS(0),
-            )?;
-            if contrast.dwFlags.contains(HCF_HIGHCONTRASTON) {
-                return Ok(None);
-            }
-            let dpi = GetDpiForWindow(hwnd).max(96);
-            let mut metrics = NONCLIENTMETRICSW {
-                cbSize: size_of::<NONCLIENTMETRICSW>() as u32,
-                ..Default::default()
-            };
-            SystemParametersInfoForDpi(
-                SPI_GETNONCLIENTMETRICS.0,
-                metrics.cbSize,
-                Some((&mut metrics as *mut NONCLIENTMETRICSW).cast()),
-                0,
-                dpi,
-            )?;
-            let mut style = Self {
-                background: HBRUSH::default(),
-                font: HFONT::default(),
-                scale: dpi as f32 / 96.0,
-                items: Vec::new(),
-            };
-            style.background = CreateSolidBrush(COLORREF(0x202020));
-            style.font = CreateFontIndirectW(&metrics.lfMenuFont);
-            ensure!(
-                !style.background.is_invalid() && !style.font.is_invalid(),
-                "Could not create tray menu resources"
-            );
-            Ok(Some(style))
+            )
+            .is_ok()
+                && !contrast.dwFlags.contains(HCF_HIGHCONTRASTON);
+            (self.set_mode)(if dark { 2 } else { 0 }); // ForceDark / Default
+            (self.allow_window)(hwnd, dark);
+            (self.flush)();
         }
-    }
-
-    pub fn apply(&mut self, menu: HMENU) -> Result<()> {
-        unsafe {
-            SetMenuInfo(
-                menu,
-                &MENUINFO {
-                    cbSize: size_of::<MENUINFO>() as u32,
-                    fMask: MIM_BACKGROUND | MIM_STYLE,
-                    hbrBack: self.background,
-                    dwStyle: MNS_NOCHECK,
-                    ..Default::default()
-                },
-            )?;
-            for index in 0..GetMenuItemCount(Some(menu)) {
-                let mut text = [0u16; 256];
-                let mut info = MENUITEMINFOW {
-                    cbSize: size_of::<MENUITEMINFOW>() as u32,
-                    fMask: MIIM_FTYPE | MIIM_STATE | MIIM_SUBMENU | MIIM_STRING,
-                    dwTypeData: windows::core::PWSTR(text.as_mut_ptr()),
-                    cch: text.len() as u32,
-                    ..Default::default()
-                };
-                GetMenuItemInfoW(menu, index as u32, true, &mut info)?;
-                if !info.hSubMenu.is_invalid() {
-                    self.apply(info.hSubMenu)?;
-                }
-                let text: Vec<u16> = text[..(info.cch as usize).min(text.len())].to_vec();
-                let separator = info.fType.contains(MFT_SEPARATOR);
-                let mut bounds = RECT::default();
-                let dc = GetDC(None);
-                let previous = SelectObject(dc, self.font.into());
-                let mut measured = text.clone();
-                // Empty Rust slices use a dangling pointer that DrawTextW still reads at count 0.
-                if !measured.is_empty() {
-                    DrawTextW(dc, &mut measured, &mut bounds, DT_CALCRECT | DT_SINGLELINE);
-                }
-                SelectObject(dc, previous);
-                ReleaseDC(None, dc);
-                let item = Box::new(Item {
-                    text,
-                    font: self.font,
-                    width: ((bounds.right - bounds.left) as f32 + 72.0 * self.scale)
-                        .max(210.0 * self.scale) as u32,
-                    height: ((if separator { 9.0 } else { 34.0 }) * self.scale) as u32,
-                    inset: (28.0 * self.scale) as i32,
-                    checked: info.fState.contains(MFS_CHECKED),
-                    separator,
-                    submenu: !info.hSubMenu.is_invalid(),
-                });
-                info.fMask = MIIM_FTYPE | MIIM_DATA;
-                info.fType |= MFT_OWNERDRAW;
-                info.dwItemData = item.as_ref() as *const Item as usize;
-                self.items.push(item);
-                SetMenuItemInfoW(menu, index as u32, true, &info)?;
-            }
-        }
-        Ok(())
     }
 }
 
-impl Drop for Style {
+impl Drop for Theme {
     fn drop(&mut self) {
         unsafe {
-            let _ = DeleteObject(self.font.into());
-            let _ = DeleteObject(self.background.into());
+            let _ = FreeLibrary(self.library);
         }
     }
 }
 
-pub(super) unsafe fn message(message: u32, lparam: LPARAM) -> Option<LRESULT> {
-    unsafe {
-        if message == WM_MEASUREITEM {
-            let measure = &mut *(lparam.0 as *mut MEASUREITEMSTRUCT);
-            if measure.CtlType != ODT_MENU || measure.itemData == 0 {
-                return None;
+pub(super) struct Popup(pub HMENU);
+
+impl Popup {
+    pub fn new(state: &MenuState) -> Result<Self> {
+        unsafe {
+            let menu = Self(CreatePopupMenu()?);
+            let append =
+                |flags, id, name: &str| AppendMenuW(menu.0, flags, id, PCWSTR(wide(name).as_ptr()));
+            append(MF_STRING, 1, "Open menu")?;
+            append(
+                MF_STRING | if state.visible { MF_CHECKED } else { MF_STRING },
+                2,
+                "Show crosshair",
+            )?;
+            let presets = CreatePopupMenu()?;
+            if let Err(error) = append(MF_POPUP, presets.0 as usize, "Crosshairs") {
+                let _ = DestroyMenu(presets);
+                return Err(error.into());
             }
-            let item = &*(measure.itemData as *const Item);
-            measure.itemWidth = item.width;
-            measure.itemHeight = item.height;
-            return Some(LRESULT(1));
+            for (index, (id, name)) in state.presets.iter().enumerate() {
+                let flags = MF_STRING
+                    | if state.selected == Some(*id) {
+                        MF_CHECKED
+                    } else {
+                        MF_STRING
+                    };
+                AppendMenuW(
+                    presets,
+                    flags,
+                    100 + index,
+                    PCWSTR(wide(&name.replace('&', "&&")).as_ptr()),
+                )?;
+            }
+            append(MF_SEPARATOR, 0, "")?;
+            append(MF_STRING, 3, "Quit")?;
+            Ok(menu)
         }
-        if message != WM_DRAWITEM {
-            return None;
+    }
+}
+
+impl Drop for Popup {
+    fn drop(&mut self) {
+        unsafe {
+            let _ = DestroyMenu(self.0);
         }
-        let draw = &*(lparam.0 as *const DRAWITEMSTRUCT);
-        if draw.CtlType != ODT_MENU || draw.itemData == 0 {
-            return None;
-        }
-        let item = &*(draw.itemData as *const Item);
-        let background = CreateSolidBrush(COLORREF(if draw.itemState.0 & ODS_SELECTED.0 != 0 {
-            0x333333
-        } else {
-            0x202020
-        }));
-        FillRect(draw.hDC, &draw.rcItem, background);
-        let _ = DeleteObject(background.into());
-        if item.separator {
-            let line = CreateSolidBrush(COLORREF(0x383838));
-            let center = (draw.rcItem.top + draw.rcItem.bottom) / 2;
-            FillRect(
-                draw.hDC,
-                &RECT {
-                    left: draw.rcItem.left + 10,
-                    right: draw.rcItem.right - 10,
-                    top: center,
-                    bottom: center + 1,
-                },
-                line,
-            );
-            let _ = DeleteObject(line.into());
-            return Some(LRESULT(1));
-        }
-        let saved = SaveDC(draw.hDC);
-        SelectObject(draw.hDC, item.font.into());
-        SetBkMode(draw.hDC, TRANSPARENT);
-        SetTextColor(
-            draw.hDC,
-            COLORREF(if draw.itemState.0 & ODS_DISABLED.0 != 0 {
-                0x808080
-            } else {
-                0xeeeeee
-            }),
-        );
-        let mut text = item.text.clone();
-        let mut bounds = draw.rcItem;
-        bounds.left += item.inset;
-        bounds.right -= item.inset;
-        if !text.is_empty() {
-            DrawTextW(
-                draw.hDC,
-                &mut text,
-                &mut bounds,
-                DT_SINGLELINE | DT_VCENTER | DT_END_ELLIPSIS,
-            );
-        }
-        if item.checked {
-            SetTextColor(draw.hDC, COLORREF(0x1678f9));
-            let mut check: Vec<u16> = "✓".encode_utf16().collect();
-            let mut bounds = draw.rcItem;
-            bounds.right = bounds.left + item.inset;
-            DrawTextW(
-                draw.hDC,
-                &mut check,
-                &mut bounds,
-                DT_SINGLELINE | DT_VCENTER | DT_CENTER,
-            );
-        }
-        if item.submenu {
-            let mut arrow: Vec<u16> = "›".encode_utf16().collect();
-            let mut bounds = draw.rcItem;
-            bounds.left = bounds.right - item.inset;
-            DrawTextW(
-                draw.hDC,
-                &mut arrow,
-                &mut bounds,
-                DT_SINGLELINE | DT_VCENTER | DT_CENTER,
-            );
-        }
-        let _ = RestoreDC(draw.hDC, saved);
-        Some(LRESULT(1))
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crosshair_platform::identity::wide;
-    use windows::core::PCWSTR;
+    use crosshair_core::Id;
 
     #[test]
-    fn native_menu_measures_separators_and_empty_labels_without_crashing() -> Result<()> {
+    fn native_theme_applies_without_an_editor_or_visible_window() -> Result<()> {
         unsafe {
-            let menu = CreatePopupMenu()?;
-            let result = (|| -> Result<()> {
-                for (index, (flags, label)) in [
-                    (MF_STRING, "Open menu"),
-                    (MF_SEPARATOR, ""),
-                    (MF_STRING, ""),
-                ]
-                .into_iter()
-                .enumerate()
-                {
-                    AppendMenuW(menu, flags, index + 1, PCWSTR(wide(label).as_ptr()))?;
-                }
-                // Force the custom path even when the machine uses high contrast.
-                let mut style = Style {
-                    background: CreateSolidBrush(COLORREF(0x202020)),
-                    font: CreateFontIndirectW(&LOGFONTW {
-                        lfHeight: -12,
-                        ..Default::default()
-                    }),
-                    scale: 1.0,
-                    items: Vec::new(),
-                };
-                style.apply(menu)?;
-                assert_eq!(style.items.len(), 3);
-                for (index, item) in style.items.iter().enumerate() {
-                    let mut measure = MEASUREITEMSTRUCT {
-                        CtlType: ODT_MENU,
-                        itemData: item.as_ref() as *const Item as usize,
-                        ..Default::default()
-                    };
-                    assert_eq!(
-                        message(
-                            WM_MEASUREITEM,
-                            LPARAM((&mut measure as *mut MEASUREITEMSTRUCT) as isize)
-                        ),
-                        Some(LRESULT(1))
-                    );
-                    assert_eq!(measure.itemHeight, if index == 1 { 9 } else { 34 });
-                    assert!(measure.itemWidth >= 210);
-                }
-                Ok(())
-            })();
-            let _ = DestroyMenu(menu);
-            result
+            let theme = Theme::new().expect("Supported Windows builds provide native menu theming");
+            let owner = CreateWindowExW(
+                WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE,
+                w!("STATIC"),
+                w!("Tray theme test"),
+                WS_POPUP,
+                0,
+                0,
+                0,
+                0,
+                None,
+                None,
+                None,
+                None,
+            )?;
+            theme.prepare(owner);
+            let themed = windows::Win32::UI::Controls::IsAppThemed().as_bool();
+            let themes_available = windows::Win32::UI::Controls::IsThemeActive().as_bool();
+            assert!(!IsWindowVisible(owner).as_bool());
+            DestroyWindow(owner)?;
+            assert!(
+                !themes_available || themed,
+                "Native visual styles must be enabled when available"
+            );
         }
+        Ok(())
+    }
+
+    fn item(menu: HMENU, position: u32) -> Result<(MENUITEMINFOW, String)> {
+        let mut text = [0u16; 256];
+        let mut info = MENUITEMINFOW {
+            cbSize: size_of::<MENUITEMINFOW>() as u32,
+            fMask: MIIM_FTYPE | MIIM_STATE | MIIM_SUBMENU | MIIM_STRING | MIIM_ID | MIIM_DATA,
+            dwTypeData: windows::core::PWSTR(text.as_mut_ptr()),
+            cch: text.len() as u32,
+            ..Default::default()
+        };
+        unsafe {
+            GetMenuItemInfoW(menu, position, true, &mut info)?;
+        }
+        Ok((info, String::from_utf16_lossy(&text[..info.cch as usize])))
+    }
+
+    #[test]
+    fn windows_owns_menu_labels_checks_and_submenus() -> Result<()> {
+        let first = Id::new_v4();
+        let second = Id::new_v4();
+        for visible in [false, true] {
+            let popup = Popup::new(&MenuState {
+                presets: vec![(first, "Dot & ring".into()), (second, "白い点".into())],
+                selected: Some(second),
+                visible,
+                ..Default::default()
+            })?;
+            for position in 0..5 {
+                let (info, _) = item(popup.0, position)?;
+                assert!(!info.fType.contains(MFT_OWNERDRAW));
+                assert_eq!(info.dwItemData, 0);
+            }
+            assert_eq!(item(popup.0, 0)?.0.wID, 1);
+            let toggle = item(popup.0, 1)?.0;
+            assert_eq!(toggle.wID, 2);
+            assert_eq!(toggle.fState.contains(MFS_CHECKED), visible);
+            let submenu = item(popup.0, 2)?.0.hSubMenu;
+            let (unselected, name) = item(submenu, 0)?;
+            assert_eq!(name, "Dot && ring");
+            assert_eq!(unselected.wID, 100);
+            assert!(!unselected.fState.contains(MFS_CHECKED));
+            let (selected, name) = item(submenu, 1)?;
+            assert_eq!(name, "白い点");
+            assert_eq!(selected.wID, 101);
+            assert!(selected.fState.contains(MFS_CHECKED));
+            assert!(item(popup.0, 3)?.0.fType.contains(MFT_SEPARATOR));
+            assert_eq!(item(popup.0, 4)?.0.wID, 3);
+            drop(popup);
+            assert!(!unsafe { IsMenu(submenu) }.as_bool());
+        }
+        Ok(())
     }
 }

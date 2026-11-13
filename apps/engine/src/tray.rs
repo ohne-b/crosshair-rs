@@ -221,9 +221,6 @@ unsafe extern "system" fn window_proc(
     wparam: WPARAM,
     lparam: LPARAM,
 ) -> LRESULT {
-    if let Some(result) = unsafe { menu::message(message, lparam) } {
-        return result;
-    }
     let pointer = unsafe { GetWindowLongPtrW(hwnd, GWLP_USERDATA) } as *const Context;
     let Some(context) = (unsafe { pointer.as_ref() }) else {
         return unsafe { DefWindowProcW(hwnd, message, wparam, lparam) };
@@ -301,6 +298,7 @@ unsafe extern "system" fn window_proc(
 struct Tray {
     data: NOTIFYICONDATAW,
     icon: HICON,
+    theme: Option<menu::Theme>,
 }
 
 impl Tray {
@@ -326,7 +324,11 @@ impl Tray {
         };
         let tip = wide("crosshair-rs");
         data.szTip[..tip.len()].copy_from_slice(&tip);
-        let tray = Self { data, icon };
+        let tray = Self {
+            data,
+            icon,
+            theme: menu::Theme::new(),
+        };
         tray.restore()?;
         Ok(tray)
     }
@@ -343,68 +345,44 @@ impl Tray {
 
     fn menu(&self, state: &MenuState) -> Result<Option<Action>> {
         unsafe {
-            let mut style = menu::Style::new(self.data.hWnd)?;
-            let menu = CreatePopupMenu()?;
-            let result = (|| -> Result<Option<Action>> {
-                let append = |flags, id, name: &str| {
-                    AppendMenuW(menu, flags, id, PCWSTR(wide(name).as_ptr()))
-                };
-                append(MF_STRING, 1, "Open menu")?;
-                append(
-                    MF_STRING | if state.visible { MF_CHECKED } else { MF_STRING },
-                    2,
-                    "Show crosshair",
-                )?;
-                let presets = CreatePopupMenu()?;
-                if let Err(error) = append(MF_POPUP, presets.0 as usize, "Crosshairs") {
-                    let _ = DestroyMenu(presets);
-                    return Err(error.into());
-                }
-                for (index, (id, name)) in state.presets.iter().enumerate() {
-                    let flags = MF_STRING
-                        | if state.selected == Some(*id) {
-                            MF_CHECKED
-                        } else {
-                            MF_STRING
-                        };
-                    AppendMenuW(
-                        presets,
-                        flags,
-                        100 + index,
-                        PCWSTR(wide(&name.replace('&', "&&")).as_ptr()),
-                    )?;
-                }
-                append(MF_SEPARATOR, 0, "")?;
-                append(MF_STRING, 3, "Quit")?;
-                if let Some(style) = &mut style {
-                    style.apply(menu)?;
-                }
-                let mut point = POINT::default();
-                GetCursorPos(&mut point)?;
-                let _ = SetForegroundWindow(self.data.hWnd);
-                let selected = TrackPopupMenu(
-                    menu,
-                    TPM_RETURNCMD | TPM_RIGHTBUTTON,
-                    point.x,
-                    point.y,
-                    None,
-                    self.data.hWnd,
-                    None,
-                )
-                .0;
-                Ok(match selected {
-                    1 => Some(Action::Open),
-                    2 => Some(Action::Toggle),
-                    3 => Some(Action::Quit),
-                    index if index >= 100 => state
-                        .presets
-                        .get(index as usize - 100)
-                        .map(|p| Action::Preset(p.0)),
-                    _ => None,
-                })
-            })();
-            let _ = DestroyMenu(menu);
-            result
+            let mut point = POINT::default();
+            GetCursorPos(&mut point)?;
+            // Place the hidden owner on the tray's monitor so Windows uses its DPI.
+            SetWindowPos(
+                self.data.hWnd,
+                None,
+                point.x,
+                point.y,
+                0,
+                0,
+                SWP_NOACTIVATE | SWP_NOZORDER | SWP_NOSIZE,
+            )?;
+            if let Some(theme) = &self.theme {
+                theme.prepare(self.data.hWnd);
+            }
+            let menu = menu::Popup::new(state)?;
+            let _ = SetForegroundWindow(self.data.hWnd);
+            let selected = TrackPopupMenu(
+                menu.0,
+                TPM_RETURNCMD | TPM_RIGHTBUTTON,
+                point.x,
+                point.y,
+                None,
+                self.data.hWnd,
+                None,
+            )
+            .0;
+            let _ = PostMessageW(Some(self.data.hWnd), WM_NULL, WPARAM(0), LPARAM(0));
+            Ok(match selected {
+                1 => Some(Action::Open),
+                2 => Some(Action::Toggle),
+                3 => Some(Action::Quit),
+                index if index >= 100 => state
+                    .presets
+                    .get(index as usize - 100)
+                    .map(|p| Action::Preset(p.0)),
+                _ => None,
+            })
         }
     }
 }

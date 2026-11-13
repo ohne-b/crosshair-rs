@@ -1,5 +1,15 @@
 # Changelog
 
+## [v0.1.0-alpha.4](https://github.com/ohne-b/crosshair-rs/releases/tag/v0.1.0-alpha.4) 2026-11-13
+
+- Move Saved and Browse beside the Crosshairs heading and remove gaps between
+  their hover backgrounds.
+- Give delete and unsaved-edit dialogs more space between buttons.
+- Replace the custom tray styling with Windows-rendered dark menus and native
+  checkmarks, submenus and keyboard navigation. Respect Windows contrast themes.
+- Update Shotgun and add Small white to Browse, both with editable native layers.
+  ([#11](https://github.com/ohne-b/crosshair-rs/pull/11))
+
 ## [v0.1.0-alpha.3](https://github.com/ohne-b/crosshair-rs/releases/tag/v0.1.0-alpha.3) 2026-11-13
 
 - Install directly through Windows with the normal administrator prompt and no
