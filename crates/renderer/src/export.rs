@@ -47,6 +47,10 @@ pub(crate) fn svg(
                         erase,
                         antialias,
                     } => {
+                        let aligned = (!*antialias)
+                            .then(|| crate::composite::align_rectangles(path))
+                            .flatten();
+                        let path = aligned.as_ref().unwrap_or(path);
                         let mut data = String::new();
                         for segment in path.segments() {
                             match segment {
@@ -64,12 +68,8 @@ pub(crate) fn svg(
                             }
                             check_size(data.len(), MAX_SVG_BYTES)?;
                         }
-                        let rendering = if *antialias {
-                            "geometricPrecision"
-                        } else {
-                            "crispEdges"
-                        };
-                        let shape = format!(r#"<path d="{data}" shape-rendering="{rendering}""#);
+                        let shape =
+                            format!(r#"<path d="{data}" shape-rendering="geometricPrecision""#);
                         if *erase {
                             id += 1;
                             write!(

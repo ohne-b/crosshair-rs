@@ -1,5 +1,15 @@
 # Changelog
 
+## [v0.1.0-alpha.5](https://github.com/ohne-b/crosshair-rs/releases/tag/v0.1.0-alpha.5) 2026-11-14
+
+- Keep small whole-pixel crosshair strokes solid when resizing or changing overlay
+  scale. Preserve smooth fractional and rotated edges.
+  ([#13](https://github.com/ohne-b/crosshair-rs/pull/13))
+- Keep header crosshair previews centered across sizes and display scaling.
+- Add TeloqR (CS Pro) to Browse as an editable crosshair.
+- Reduce the Slint attribution badge in the README.
+  ([#12](https://github.com/ohne-b/crosshair-rs/pull/12))
+
 ## [v0.1.0-alpha.4](https://github.com/ohne-b/crosshair-rs/releases/tag/v0.1.0-alpha.4) 2026-11-13
 
 - Move Saved and Browse beside the Crosshairs heading and remove gaps between
