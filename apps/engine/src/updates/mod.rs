@@ -131,7 +131,13 @@ impl Updates {
 
     pub fn installation_failed(&self, message: String) {
         self.change(|state| {
-            state.status.phase = if state.ready.is_some() {
+            state.status.phase = if state.ready.as_ref().is_some_and(|ready| {
+                state
+                    .available
+                    .as_ref()
+                    .is_some_and(|available| available.version == ready.manifest.version)
+                    && state.status.version.as_deref() == Some(ready.manifest.version.as_str())
+            }) {
                 UpdatePhase::Ready
             } else {
                 UpdatePhase::Failed
