@@ -656,6 +656,13 @@ orphan helper or respawn after deliberate Quit. An open editor offers Restart on
 engine failure while preserving local edits; headless failures do not spawn a
 surprise editor or a restart loop.
 
+Windows draws the tray menus, including checkmarks, submenus, focus and keyboard
+navigation. The engine opts into Common Controls v6 visual styles. A small Windows
+11 theme adapter requests dark menus through optional `uxtheme.dll` exports;
+missing exports or contrast themes retain system styling. It loads only from
+System32, stays on the tray thread and adds no renderer, polling or dashboard
+dependency. Menus release their native handles when dismissed, including on errors.
+
 One packaged StartupTask, off by default, starts only engine mode. Honor Windows
 DisabledByUser. Activation uses stable app IDs, not versioned WindowsApps paths.
 Settings/recovery publication captures the actual Windows startup state, verifies

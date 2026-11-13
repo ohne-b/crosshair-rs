@@ -5,6 +5,8 @@
 - Move Saved and Browse beside the Crosshairs heading and remove gaps between
   their hover backgrounds.
 - Give delete and unsaved-edit dialogs more space between buttons.
+- Replace the custom tray styling with Windows-rendered dark menus and native
+  checkmarks, submenus and keyboard navigation. Respect Windows contrast themes.
 - Update Shotgun and add Small white to Browse, both with editable native layers.
   ([#11](https://github.com/ohne-b/crosshair-rs/pull/11))
 
