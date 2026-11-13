@@ -700,14 +700,20 @@ identity and dependency failures block installation before the app stops.
 ### Install and restart
 
 One NSIS setup EXE bundles the unsigned MSIX and its Microsoft framework. The
-embedded installer checks pinned payload hashes and identity before using Windows
-`Add-AppxPackage -AllowUnsigned`, with no `.appinstaller` update association.
+native installer checks pinned payload hashes (binding the build-validated identity)
+before using Windows `PackageManager.AddPackageByUriAsync` with `AllowUnsigned`,
+with no `.appinstaller` update association. It reuses a healthy installed x64
+VCLibs runtime meeting the minimum version, supplying the bundled dependency only
+when needed. This avoids redeploying a shared runtime used by other running apps.
 Initial installation trusts the setup obtained from the project's GitHub release;
 it does not claim Windows code signing or a self-authenticating executable.
 [Microsoft's unsigned-package
 deployment][unsigned-msix] requires Windows 11 and administrator privileges for
-this executable package. A temporary elevated Windows PowerShell process deploys;
-the engine, editor, widget and recovery coordinator stay unelevated. No Windows
+this executable package. Setup uses a temporary native helper elevated through
+the normal UAC prompt; it verifies the same user, stages and rechecks payloads in
+an administrator/SYSTEM-only directory, and reports Windows errors directly.
+The existing in-app update coordinator still uses its separate PowerShell deployment
+path. The engine, editor, widget and recovery coordinator stay unelevated. No Windows
 App SDK dependency just for deployment.
 
 1. Verify before stopping anything. Install and restart acquires update lock,

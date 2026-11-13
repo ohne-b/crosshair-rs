@@ -4,7 +4,7 @@ $paths = @((Get-ChildItem -LiteralPath $PSScriptRoot -Filter '*.ps1' -File).Full
 $paths += Join-Path $repoRoot 'apps/engine/src/updates/deploy.ps1'
 $snippets = Join-Path $repoRoot 'target/workflow-scripts'
 if (Test-Path -LiteralPath $snippets) { $paths += @((Get-ChildItem -LiteralPath $snippets -Filter '*.ps1' -File).FullName) }
-foreach ($path in $paths) {
+foreach ($path in ($paths | Where-Object { $_ })) {
     $tokens = $null; $errors = $null
     [void][Management.Automation.Language.Parser]::ParseFile($path, [ref]$tokens, [ref]$errors)
     if ($errors.Count) { throw "$([IO.Path]::GetFileName($path)): $($errors.Message -join '; ')" }

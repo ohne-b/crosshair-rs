@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.0-alpha.3 (unreleased)
+
+- Install through native Windows package deployment with the normal administrator
+  prompt, without launching PowerShell. Show Windows installation errors directly.
+- Reuse a suitable installed Microsoft runtime instead of redeploying it while
+  unrelated applications are using it.
+
 ## [v0.1.0-alpha.2](https://github.com/ohne-b/crosshair-rs/releases/tag/v0.1.0-alpha.2) 2026-11-13
 
 - Install from one Windows setup EXE with the Game Bar package and Microsoft

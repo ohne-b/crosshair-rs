@@ -234,7 +234,8 @@ identity and have updates disabled.
 
 For a release, download and run its setup EXE from the project's GitHub Releases
 page. It checks embedded package identity and hashes, requests administrator
-approval in the same Windows account, and calls `Add-AppxPackage -AllowUnsigned`.
+approval in the same Windows account, and calls the native Windows package
+deployment API. Setup runs no PowerShell script or console window.
 It requires x64 Windows 11 and never imports a certificate, enables Developer Mode
 or installs a service. The EXE and MSIX are not Windows-signed. In-app updates
 verify the project signatures before extraction and deployment.
