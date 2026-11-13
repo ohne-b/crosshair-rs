@@ -1,37 +1,26 @@
 # Changelog
 
-## 0.1.0-alpha.7 (unreleased)
+## [v0.1.0-alpha.3](https://github.com/ohne-b/crosshair-rs/releases/tag/v0.1.0-alpha.3) 2026-11-13
 
-- Add Saved and Browse tabs with seven built-in crosshairs that save as editable copies.
-- Show gray favorite stars on hover or keyboard focus, filled when favorited.
-- Keep the sort picker in sync with manual ordering and make shortcut thumbnails square.
-- Fix odd resize dimensions rounding up, transform position jumps and dragging past the center.
-- Cancel numeric drags with Escape and stop canvas drags on Undo or keyboard edits.
-- Apply the final pointer position when releasing a canvas or numeric drag.
-- Keep dropdown choices in sync after Undo, layer changes and external updates.
-
-## 0.1.0-alpha.6 (unreleased)
-
-- Fix the tray right-click crash caused by measuring empty menu labels.
-- Remove the background behind the packaged taskbar icon and include transparent
-  icons for light and dark taskbars at standard sizes.
-
-## 0.1.0-alpha.5 (unreleased)
-
-- Add optional Discord Rich Presence, enabled by default, with Simple and Soldier: 76 Quote styles,
-  an app logo, and a Download button. It continues with the
-  dashboard closed and never shares crosshair names or designs.
-
-## 0.1.0-alpha.4 (unreleased)
-
-- Install through native Windows package deployment with the normal administrator
-  prompt, without launching PowerShell. Show Windows installation errors directly.
-- Reuse a suitable installed Microsoft runtime instead of redeploying it while
-  unrelated applications are using it.
-- Embed the logo in the engine and dashboard executables and preserve transparency
-  in the dashboard taskbar icon.
-- Hide the visibility tooltip when the pointer leaves the switch, including
-  after clicking it.
+- Install directly through Windows with the normal administrator prompt and no
+  PowerShell window. Reuse a suitable installed Microsoft runtime.
+  ([#5](https://github.com/ohne-b/crosshair-rs/pull/5))
+- Add optional Discord Rich Presence, enabled by default, with an app logo,
+  Simple and Soldier: 76 Quote styles, and a Download button. It keeps working
+  with the dashboard closed and never shares crosshair names or designs.
+  ([#6](https://github.com/ohne-b/crosshair-rs/pull/6))
+- Fix the tray right-click crash and add transparent taskbar icons and process
+  icons. Dismiss the visibility tooltip when the pointer leaves the switch.
+  ([#5](https://github.com/ohne-b/crosshair-rs/pull/5), [#7](https://github.com/ohne-b/crosshair-rs/pull/7))
+- Add Saved and Browse tabs with seven built-in crosshairs that save as editable
+  copies. Improve favorite stars, sorting, search and shortcut thumbnails.
+  ([#8](https://github.com/ohne-b/crosshair-rs/pull/8))
+- Fix odd resize dimensions rounding up, transform position jumps, drag release
+  and cancellation, and Undo during a drag. Preserve freehand stroke positions
+  when keyboard edits arrive before the preview finishes.
+  ([#9](https://github.com/ohne-b/crosshair-rs/pull/9))
+- Keep dropdowns and text fields in sync after Undo and selection changes.
+  Stop an opacity drag from affecting a newly selected layer.
 
 ## [v0.1.0-alpha.2](https://github.com/ohne-b/crosshair-rs/releases/tag/v0.1.0-alpha.2) 2026-11-13
 
