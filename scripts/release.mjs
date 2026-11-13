@@ -49,9 +49,10 @@ export function releaseBody(notes, version, previous = null) {
 export function validateBuild(build, version, commit, publicKey, publisher) {
   releaseVersion(version);
   if (build.schemaVersion !== 1 || build.version !== version || build.packageVersion !== packageVersion(version) ||
-      build.commit !== commit || build.dirty !== false || build.platform !== 'windows-x86_64-msix' ||
+      build.commit !== commit || build.dirty !== false || build.platform !== 'windows-x86_64-nsis' ||
       build.signed !== false || build.releaseCandidate !== true || !/^[a-f0-9]{64}$/.test(build.sha256) ||
       build.package !== `crosshair-rs-${version}-windows-x64.unsigned.msix` ||
+      build.setup !== `crosshair-rs-${version}-windows-x64-setup.exe` || !/^[a-f0-9]{64}$/.test(build.setupSha256) ||
       build.configuration?.updatesConfigured !== true || build.configuration.version !== version ||
       build.configuration.packageName !== 'OhneB.crosshair-rs' || !publicKey || !publisher ||
       build.configuration.updatePublicKey !== publicKey || build.configuration.packagePublisher !== publisher) {
@@ -75,19 +76,22 @@ export function validateRun(selected, candidates, main, expectedArtifact) {
   return artifact;
 }
 
-export function manifest(version, signature, date) {
+export function manifest(version, signature, date, packageSignature) {
   releaseVersion(version);
-  const lines = signature.trimEnd().split(/\r?\n/);
-  if (signature.length > 3072 || lines.length !== 4 || lines[2] !== `trusted comment: version:${version}` ||
-      !lines[0].startsWith('untrusted comment: ') || Buffer.from(lines[1], 'base64').length !== 74 ||
-      Buffer.from(lines[3], 'base64').length !== 64 || Buffer.from(lines[1], 'base64').subarray(0, 2).toString() !== 'ED') {
-    throw new Error('Expected a prehashed Minisign signature authenticating the exact release version.');
+  for (const value of [signature, packageSignature]) {
+    if (typeof value !== 'string') throw new Error('Setup and package signatures are required.');
+    const lines = value.trimEnd().split(/\r?\n/);
+    if (value.length > 3072 || lines.length !== 4 || lines[2] !== `trusted comment: version:${version}` ||
+        !lines[0].startsWith('untrusted comment: ') || Buffer.from(lines[1], 'base64').length !== 74 ||
+        Buffer.from(lines[3], 'base64').length !== 64 || Buffer.from(lines[1], 'base64').subarray(0, 2).toString() !== 'ED') {
+      throw new Error('Expected a prehashed Minisign signature authenticating the exact release version.');
+    }
   }
   if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/.test(date) || !Number.isFinite(Date.parse(date)) ||
       new Date(date).toISOString().replace('.000Z', 'Z') !== date) throw new Error('Invalid publication date.');
   return { schemaVersion: 1, version, notes: `[Check release notes on GitHub](${url}/releases/tag/v${version})`, pub_date: date,
-    platforms: { 'windows-x86_64-msix': { url: `${url}/releases/download/v${version}/crosshair-rs-${version}-windows-x64.msix`,
-      signature: Buffer.from(signature).toString('base64') } } };
+    platforms: { 'windows-x86_64-nsis': { url: `${url}/releases/download/v${version}/crosshair-rs-${version}-windows-x64-setup.exe`,
+      signature: Buffer.from(signature).toString('base64'), package_signature: Buffer.from(packageSignature).toString('base64') } } };
 }
 
 function version() {
@@ -153,19 +157,19 @@ function gate(requested, expectedArtifact, phase) {
   writeFileSync(process.env.GITHUB_OUTPUT, `artifact=${artifact}\ncommit=${main}\nrun=${id}\nprerelease=${semver.prerelease(requested) !== null}\n`, { flag: 'a' });
 }
 
-export function metadata(directory, value) {
+export function metadata(directory, value, setupSignature, packageSignature) {
   releaseVersion(value);
-  const filename = `crosshair-rs-${value}-windows-x64.msix`;
-  const signature = readFileSync(join(directory, `${filename}.minisig`), 'utf8');
-  writeJson(join(directory, 'latest.json'), manifest(value, signature, new Date().toISOString().replace(/\.\d{3}Z$/, 'Z')));
-  const files = [filename, `${filename}.minisig`, 'latest.json', 'Microsoft.VCLibs.x64.14.00.appx', 'Install.ps1', 'minisign.exe', 'Minisign-LICENSE.txt'];
+  const filename = `crosshair-rs-${value}-windows-x64-setup.exe`;
+  writeJson(join(directory, 'latest.json'), manifest(value, readFileSync(setupSignature, 'utf8'),
+    new Date().toISOString().replace(/\.\d{3}Z$/, 'Z'), readFileSync(packageSignature, 'utf8')));
+  const files = [filename, 'latest.json'];
   writeFileSync(join(directory, 'SHA256SUMS'), files.map(name => `${digest(readFileSync(join(directory, name)))}  ${name}\n`).join(''));
 }
 
 export function verifyAssets(directory, value) {
   releaseVersion(value);
-  const filename = `crosshair-rs-${value}-windows-x64.msix`;
-  const expected = [filename, `${filename}.minisig`, 'latest.json', 'Microsoft.VCLibs.x64.14.00.appx', 'Install.ps1', 'minisign.exe', 'Minisign-LICENSE.txt'].sort();
+  const filename = `crosshair-rs-${value}-windows-x64-setup.exe`;
+  const expected = [filename, 'latest.json'].sort();
   const lines = readFileSync(join(directory, 'SHA256SUMS'), 'utf8').trimEnd().split('\n');
   const names = [];
   for (const line of lines) {
@@ -176,7 +180,9 @@ export function verifyAssets(directory, value) {
   if (JSON.stringify(names.sort()) !== JSON.stringify(expected) ||
       JSON.stringify(readdirSync(directory).sort()) !== JSON.stringify([...expected, 'SHA256SUMS'].sort())) throw new Error('Unexpected or missing release assets.');
   const actual = json(join(directory, 'latest.json'));
-  const generated = manifest(value, readFileSync(join(directory, `${filename}.minisig`), 'utf8'), actual.pub_date);
+  const artifact = actual.platforms?.['windows-x86_64-nsis'];
+  const generated = manifest(value, Buffer.from(artifact.signature, 'base64').toString('utf8'), actual.pub_date,
+    Buffer.from(artifact.package_signature, 'base64').toString('utf8'));
   if (JSON.stringify(actual) !== JSON.stringify(generated)) throw new Error('Updater metadata does not match the signed release.');
 }
 
@@ -195,7 +201,8 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
         const [directory, requested, commit] = args;
         const build = json(join(directory, 'build.json'));
         validateBuild(build, requested, commit, process.env.CROSSHAIR_UPDATE_PUBLIC_KEY, process.env.CROSSHAIR_PACKAGE_PUBLISHER);
-        if (digest(readFileSync(join(directory, build.package))) !== build.sha256) throw new Error('Immutable package hash mismatch.');
+        if (digest(readFileSync(join(directory, build.package))) !== build.sha256 ||
+            digest(readFileSync(join(directory, build.setup))) !== build.setupSha256) throw new Error('Immutable package or setup hash mismatch.');
         break;
       }
       default: throw new Error('Unknown release command.');

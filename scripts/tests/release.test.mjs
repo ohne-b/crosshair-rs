@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { releaseVersion, packageVersion, releaseNotes, releaseBody, notesFor, validateBuild, validateRun, manifest, metadata, verifyAssets } from '../release.mjs';
@@ -32,13 +32,15 @@ test('notes have a single generated comparison and issue footer', () => {
 });
 test('artifact promotion binds clean source, compiled trust and package hash', () => {
   const build = { schemaVersion: 1, version: '1.2.3', packageVersion: '1.2.3.65535', commit: 'a'.repeat(40), dirty: false,
-    platform: 'windows-x86_64-msix', signed: false, releaseCandidate: true, sha256: 'b'.repeat(64),
+    platform: 'windows-x86_64-nsis', signed: false, releaseCandidate: true, sha256: 'b'.repeat(64),
+    setup: 'crosshair-rs-1.2.3-windows-x64-setup.exe', setupSha256: 'c'.repeat(64),
     package: 'crosshair-rs-1.2.3-windows-x64.unsigned.msix', configuration: { version: '1.2.3', packageName: 'OhneB.crosshair-rs',
       updatesConfigured: true, updatePublicKey: 'fixture', packagePublisher: 'CN=fixture' } };
   const validate = value => validateBuild(value, '1.2.3', 'a'.repeat(40), 'fixture', 'CN=fixture');
   validate(build);
   for (const patch of [{ dirty: true }, { signed: true }, { commit: 'c'.repeat(40) }, { releaseCandidate: false }, { sha256: 'wrong' },
-    { configuration: { ...build.configuration, updatePublicKey: 'wrong' } }, { package: '../elsewhere.msix' }]) assert.throws(() => validate({ ...build, ...patch }));
+    { configuration: { ...build.configuration, updatePublicKey: 'wrong' } }, { package: '../elsewhere.msix' },
+    { setup: '../elsewhere.exe' }, { setupSha256: 'wrong' }]) assert.throws(() => validate({ ...build, ...patch }));
 });
 test('only latest successful canonical-main validation can be promoted', () => {
   const run = { id: 42, run_number: 5, run_attempt: 2, repository: { full_name: 'ohne-b/crosshair-rs' },
@@ -56,38 +58,46 @@ test('only latest successful canonical-main validation can be promoted', () => {
 test('latest manifest rejects wrong signed version and legacy signatures', () => {
   const data = Buffer.alloc(74); data.write('ED');
   const signature = `untrusted comment: fixture\n${data.toString('base64')}\ntrusted comment: version:1.2.3\n${Buffer.alloc(64).toString('base64')}\n`;
-  const result = manifest('1.2.3', signature, '2026-11-11T12:00:00Z');
+  const result = manifest('1.2.3', signature, '2026-11-11T12:00:00Z', signature);
   assert.equal(result.notes, '[Check release notes on GitHub](https://github.com/ohne-b/crosshair-rs/releases/tag/v1.2.3)');
-  assert.equal(Buffer.from(result.platforms['windows-x86_64-msix'].signature, 'base64').toString(), signature);
-  assert.throws(() => manifest('1.2.4', signature, result.pub_date));
-  assert.throws(() => manifest('1.2.3', signature, '2026-02-31T12:00:00Z'));
+  assert.equal(Buffer.from(result.platforms['windows-x86_64-nsis'].signature, 'base64').toString(), signature);
+  assert.equal(Buffer.from(result.platforms['windows-x86_64-nsis'].package_signature, 'base64').toString(), signature);
+  assert.throws(() => manifest('1.2.3', signature, result.pub_date));
+  assert.throws(() => manifest('1.2.4', signature, result.pub_date, signature));
+  assert.throws(() => manifest('1.2.3', signature, '2026-02-31T12:00:00Z', signature));
+  assert.throws(() => manifest('1.2.3', signature, result.pub_date, signature.replace('version:1.2.3', 'version:1.2.4')));
   data.write('Ed');
-  assert.throws(() => manifest('1.2.3', signature.replace(signature.split('\n')[1], data.toString('base64')), result.pub_date));
+  assert.throws(() => manifest('1.2.3', signature.replace(signature.split('\n')[1], data.toString('base64')), result.pub_date, signature));
 });
 
 test('release asset verification rejects changed installers, missing files and extra files', () => {
-  const directory = mkdtempSync(join(tmpdir(), 'crosshair-release-'));
+  const root = mkdtempSync(join(tmpdir(), 'crosshair-release-'));
+  const directory = join(root, 'assets');
+  mkdirSync(directory);
   try {
     const version = '0.1.0-alpha.1';
-    const filename = `crosshair-rs-${version}-windows-x64.msix`;
+    const filename = `crosshair-rs-${version}-windows-x64-setup.exe`;
     const data = Buffer.alloc(74); data.write('ED');
     const signature = `untrusted comment: fixture\n${data.toString('base64')}\ntrusted comment: version:${version}\n${Buffer.alloc(64).toString('base64')}\n`;
-    for (const name of [filename, 'Microsoft.VCLibs.x64.14.00.appx', 'Install.ps1', 'minisign.exe', 'Minisign-LICENSE.txt']) writeFileSync(join(directory, name), 'fixture');
-    writeFileSync(join(directory, `${filename}.minisig`), signature);
-    metadata(directory, version);
+    writeFileSync(join(directory, filename), 'fixture');
+    const signatureFile = join(root, 'private.minisig');
+    writeFileSync(signatureFile, signature);
+    metadata(directory, version, signatureFile, signatureFile);
     verifyAssets(directory, version);
-    writeFileSync(join(directory, 'Install.ps1'), 'changed');
+    writeFileSync(join(directory, filename), 'changed');
     assert.throws(() => verifyAssets(directory, version));
-    writeFileSync(join(directory, 'Install.ps1'), 'fixture');
+    writeFileSync(join(directory, filename), 'fixture');
     const manifestPath = join(directory, 'latest.json');
     const original = readFileSync(manifestPath);
     writeFileSync(manifestPath, original.toString().replace('0.1.0-alpha.1', '0.1.0-alpha.2'));
     assert.throws(() => verifyAssets(directory, version));
     writeFileSync(manifestPath, original);
-    writeFileSync(join(directory, 'extra.exe'), 'extra');
+    for (const extra of ['minisign.exe', 'Install.ps1', 'package.msix', `${filename}.minisig`, 'Microsoft.VCLibs.x64.14.00.appx', 'Minisign-LICENSE.txt']) {
+      writeFileSync(join(directory, extra), 'extra');
+      assert.throws(() => verifyAssets(directory, version));
+      rmSync(join(directory, extra));
+    }
+    rmSync(join(directory, filename));
     assert.throws(() => verifyAssets(directory, version));
-    rmSync(join(directory, 'extra.exe'));
-    rmSync(join(directory, 'minisign.exe'));
-    assert.throws(() => verifyAssets(directory, version));
-  } finally { rmSync(directory, { recursive: true, force: true }); }
+  } finally { rmSync(root, { recursive: true, force: true }); }
 });

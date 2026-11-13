@@ -66,15 +66,14 @@ jobs:
           if (!!$env:CROSSHAIR_UPDATE_PUBLIC_KEY -ne !!$env:CROSSHAIR_PACKAGE_PUBLISHER) { throw 'Configure both public release variables, or neither.' }
           ./scripts/package-windows.ps1 -OutputDirectory target/validated -ReleaseCandidate:$configured
           ./scripts/test-installer.ps1 -ArtifactDirectory target/validated
+          ./scripts/test-deployment.ps1 -ArtifactDirectory target/validated
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: windows-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
             target/validated/*.unsigned.msix
+            target/validated/*-setup.exe
             target/validated/build.json
             target/validated/Microsoft.VCLibs.x64.14.00.appx
-            target/validated/Install.ps1
-            target/validated/minisign.exe
-            target/validated/Minisign-LICENSE.txt
           if-no-files-found: error
           retention-days: 14

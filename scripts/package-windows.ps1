@@ -54,16 +54,19 @@ $required = @(
     (Join-Path $gamebarOutput 'Microsoft.Gaming.XboxGameBar.pri'), (Join-Path $gamebarOutput 'Microsoft.GameBar.LICENSE.txt')
 )
 foreach ($file in $required) { if (!(Test-Path -LiteralPath $file -PathType Leaf)) { throw "Missing package input: $file" } }
-foreach ($file in @($required | Where-Object { [IO.Path]::GetExtension($_) -eq '.exe' })) {
-    $bytes = [IO.File]::ReadAllBytes($file)
-    foreach ($encoding in @([Text.Encoding]::UTF8, [Text.Encoding]::Unicode)) {
-        $text = $encoding.GetString($bytes)
-        foreach ($mapping in $pathMappings) {
-            $path = [IO.Path]::GetFullPath($mapping[0]).TrimEnd('\')
-            if ($text.IndexOf($path, [StringComparison]::OrdinalIgnoreCase) -ge 0 -or $text.IndexOf($path.Replace('\', '/'), [StringComparison]::OrdinalIgnoreCase) -ge 0) { throw "Executable contains a local build path; rebuild through this packaging script: $([IO.Path]::GetFileName($file))" }
+function Assert-PrivatePathsRemoved([string[]]$Files) {
+    foreach ($file in $Files) {
+        $bytes = [IO.File]::ReadAllBytes($file)
+        foreach ($encoding in @([Text.Encoding]::UTF8, [Text.Encoding]::Unicode)) {
+            $text = $encoding.GetString($bytes)
+            foreach ($mapping in $pathMappings) {
+                $path = [IO.Path]::GetFullPath($mapping[0]).TrimEnd('\')
+                if ($text.IndexOf($path, [StringComparison]::OrdinalIgnoreCase) -ge 0 -or $text.IndexOf($path.Replace('\', '/'), [StringComparison]::OrdinalIgnoreCase) -ge 0) { throw "Executable contains a local build path; rebuild through this packaging script: $([IO.Path]::GetFileName($file))" }
+            }
         }
     }
 }
+Assert-PrivatePathsRemoved @($required | Where-Object { [IO.Path]::GetExtension($_) -eq '.exe' })
 if (!(Test-Path -LiteralPath (Join-Path $gamebarOutput 'CppWinRT-LICENSE') -PathType Leaf)) { throw 'C++/WinRT license is missing; rebuild the Game Bar host.' }
 $start = [Diagnostics.ProcessStartInfo]::new([IO.Path]::GetFullPath((Join-Path $BinaryDirectory 'crosshair-engine.exe')), '--build-info')
 $start.UseShellExecute = $false
@@ -125,16 +128,13 @@ if ($LASTEXITCODE -ne 0) { throw 'Cannot determine package source revision.' }
 $dirty = [bool](& git -C $repoRoot status --porcelain)
 if ($LASTEXITCODE -ne 0) { throw 'Cannot determine package source state.' }
 $hash = (Get-FileHash -LiteralPath $packageFile -Algorithm SHA256).Hash.ToLowerInvariant()
-$build = [ordered]@{ schemaVersion=1; version=$productVersion; packageVersion=$msixVersion; commit=$commit; dirty=$dirty; platform='windows-x86_64-msix'; package=[IO.Path]::GetFileName($packageFile); sha256=$hash; signed=$false; releaseCandidate=[bool]$ReleaseCandidate; configuration=$buildConfiguration }
-[IO.File]::WriteAllText((Join-Path $packageRoot 'build.json'), ($build | ConvertTo-Json -Depth 4) + "`n", [Text.UTF8Encoding]::new($false))
 & (Join-Path $PSScriptRoot 'get-vclibs.ps1') -OutputDirectory $packageRoot -Offline:$Offline | Out-Host
-$installer = Get-Content -LiteralPath (Join-Path $repoRoot 'packaging/windows/Install.ps1') -Raw
-$installer = $installer.Replace('@UPDATE_PUBLIC_KEY@', [string]$buildConfiguration.updatePublicKey).Replace('@PACKAGE_PUBLISHER@', $Publisher.Replace("'", "''"))
-$installer = $installer.Replace('# @DEPLOY_SCRIPT@', [IO.File]::ReadAllText((Join-Path $repoRoot 'apps/engine/src/updates/deploy.ps1')))
-[IO.File]::WriteAllText((Join-Path $packageRoot 'Install.ps1'), $installer, [Text.UTF8Encoding]::new($false))
-$minisign = & (Join-Path $PSScriptRoot 'get-minisign.ps1') -Offline:$Offline
-Copy-Item -LiteralPath $minisign -Destination $packageRoot
-Copy-Item -LiteralPath (Join-Path $repoRoot 'assets/licenses/Minisign-LICENSE.txt') -Destination $packageRoot
+$setup = Join-Path $packageRoot "crosshair-rs-$productVersion-windows-x64-setup.exe"
+& (Join-Path $PSScriptRoot 'build-setup.ps1') -Package $packageFile -Framework (Join-Path $packageRoot 'Microsoft.VCLibs.x64.14.00.appx') -Output $setup -Version $productVersion -Offline:$Offline | Out-Host
+Assert-PrivatePathsRemoved @($setup)
+$setupHash = (Get-FileHash -LiteralPath $setup -Algorithm SHA256).Hash.ToLowerInvariant()
+$build = [ordered]@{ schemaVersion=1; version=$productVersion; packageVersion=$msixVersion; commit=$commit; dirty=$dirty; platform='windows-x86_64-nsis'; package=[IO.Path]::GetFileName($packageFile); sha256=$hash; setup=[IO.Path]::GetFileName($setup); setupSha256=$setupHash; signed=$false; releaseCandidate=[bool]$ReleaseCandidate; configuration=$buildConfiguration }
+[IO.File]::WriteAllText((Join-Path $packageRoot 'build.json'), ($build | ConvertTo-Json -Depth 4) + "`n", [Text.UTF8Encoding]::new($false))
 Write-Output "Package: $packageFile"
 Write-Output "Stage: $stage"
 if ($ReleaseCandidate) { Write-Output 'Unsigned release candidate. Manual publication must verify provenance and add the updater signature.' }

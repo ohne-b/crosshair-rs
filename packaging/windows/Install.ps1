@@ -1,16 +1,17 @@
 [CmdletBinding()]
-param([string]$Package, [switch]$VerifyOnly, [string]$ExpectedUser)
+param([switch]$VerifyOnly)
 $ErrorActionPreference = 'Stop'
 if ([Runtime.InteropServices.RuntimeInformation]::OSArchitecture -ne 'X64' -or [Environment]::OSVersion.Version.Build -lt 22000) { throw 'This release requires x64 Windows 11.' }
 $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
-if ($ExpectedUser -and $identity.User.Value -ne $ExpectedUser) { throw 'Install using the same Windows account that requested installation.' }
-$publicKey = '@UPDATE_PUBLIC_KEY@'
+$packageName = '@PACKAGE_NAME@'
+$packageVersion = '@PACKAGE_VERSION@'
+$expectedHash = '@PACKAGE_SHA256@'
 $publisher = '@PACKAGE_PUBLISHER@'
 $deployment = {
     param($Package, $ExpectedHash, $ExpectedUser, $Framework)
     # @DEPLOY_SCRIPT@
 }
-if ($publicKey -notmatch '^[A-Za-z0-9+/]{56}$') { throw 'This development package has no release verification key.' }
+if ($expectedHash -notmatch '^[a-f0-9]{64}$') { throw 'The installer payload hash is missing.' }
 if (!('CrosshairReleaseFilePath' -as [type])) {
     Add-Type -TypeDefinition @'
 using System;
@@ -35,41 +36,15 @@ function Lock-ReleaseFile([string]$Path) {
     if (!$final.StartsWith('\\?\') -or $final.Length -lt 7 -or $final[5] -ne ':' -or $final[6] -ne '\') { throw 'Copy the release download to a local Windows drive before installing.' }
     return $final.Substring(4)
 }
-if (!$Package) {
-    $files = @(Get-ChildItem -LiteralPath $PSScriptRoot -Filter 'crosshair-rs-*-windows-x64.msix' -File)
-    if ($files.Count -ne 1) { throw 'Place exactly one release MSIX beside this script, or pass -Package.' }
-    $Package = $files[0].FullName
-}
-$Package = (Resolve-Path -LiteralPath $Package).Path
-$version = [regex]::Match([IO.Path]::GetFileName($Package), '^crosshair-rs-(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-(alpha|beta|rc)\.(0|[1-9][0-9]*))?-windows-x64\.msix$')
-if (!$version.Success) { throw 'Expected a crosshair-rs release package.' }
-$parts = @(1,2,3 | ForEach-Object { [uint32]$version.Groups[$_].Value })
-if (@($parts | Where-Object { $_ -gt 65535 }).Count) { throw 'Package version exceeds Windows limits.' }
-$releaseVersion = "$($parts[0]).$($parts[1]).$($parts[2])"
-$revision = 65535
-if ($version.Groups[4].Success) {
-    $number = [uint32]$version.Groups[5].Value
-    if ($number -ge 20000) { throw 'Invalid prerelease version.' }
-    $stage = $version.Groups[4].Value
-    $revision = @{alpha=0; beta=20000; rc=40000}[$stage] + $number
-    $releaseVersion += "-$stage.$number"
-}
-$packageVersion = "$($parts[0]).$($parts[1]).$($parts[2]).$revision"
+$Package = Join-Path $PSScriptRoot 'package.msix'
 $framework = Join-Path $PSScriptRoot 'Microsoft.VCLibs.x64.14.00.appx'
-$minisign = Join-Path $PSScriptRoot 'minisign.exe'
 $locks = [Collections.Generic.List[IO.FileStream]]::new()
 try {
     # Bind every later path-based read to its opened file, resolving junction ancestors.
-    $signaturePath = Lock-ReleaseFile "$Package.minisig"
     $Package = Lock-ReleaseFile $Package
-    $minisign = Lock-ReleaseFile $minisign
     $framework = Lock-ReleaseFile $framework
-    if ((Get-FileHash -LiteralPath $framework -Algorithm SHA256).Hash.ToLowerInvariant() -ne '9c17b521f9d690a1f504da5108ed6eec5669eb3a8fd1331eef43e40d84e74283') { throw 'The bundled Microsoft x64 framework is damaged. Download the complete release.' }
-    if ((Get-FileHash -LiteralPath $minisign -Algorithm SHA256).Hash.ToLowerInvariant() -ne '5535be9e4e123831ebe6ef324aafe9dde507015c176191f9e20c3ad60567f9e1') { throw 'The release verifier is damaged. Download the complete release.' }
-    & $minisign -V -H -P $publicKey -m $Package -x $signaturePath
-    if ($LASTEXITCODE) { throw 'The package was not signed by the crosshair-rs updater key.' }
-    $signature = (Get-Content -LiteralPath $signaturePath -Raw).TrimEnd() -split '\r?\n'
-    if ($signature.Count -ne 4 -or $signature[2] -cne "trusted comment: version:$releaseVersion") { throw 'The signed version does not match the download name.' }
+    if ((Get-FileHash -LiteralPath $Package -Algorithm SHA256).Hash.ToLowerInvariant() -cne $expectedHash) { throw 'The application package is damaged. Download the installer again.' }
+    if ((Get-FileHash -LiteralPath $framework -Algorithm SHA256).Hash.ToLowerInvariant() -ne '9c17b521f9d690a1f504da5108ed6eec5669eb3a8fd1331eef43e40d84e74283') { throw 'The bundled Microsoft x64 framework is damaged. Download the installer again.' }
     Add-Type -AssemblyName System.IO.Compression.FileSystem
     $archive = [IO.Compression.ZipFile]::OpenRead($Package)
     try {
@@ -78,9 +53,9 @@ try {
         $reader = [IO.StreamReader]::new($entry.Open())
         try { [xml]$manifest = $reader.ReadToEnd() } finally { $reader.Dispose() }
         $packageIdentity = $manifest.Package.Identity
-        if ($packageIdentity.Name -cne 'OhneB.crosshair-rs' -or $packageIdentity.Publisher -cne $publisher -or $packageIdentity.Version -ne $packageVersion -or $packageIdentity.ProcessorArchitecture -ne 'x64') { throw 'The Windows package identity does not match this release.' }
+        if ($packageIdentity.Name -cne $packageName -or $packageIdentity.Publisher -cne $publisher -or $packageIdentity.Version -ne $packageVersion -or $packageIdentity.ProcessorArchitecture -ne 'x64') { throw 'The Windows package identity does not match this release.' }
     } finally { $archive.Dispose() }
-    if ($VerifyOnly) { Write-Output 'Release signature, version, identity and dependencies verified.'; return }
+    if ($VerifyOnly) { Write-Output 'Embedded package hash, version, identity and dependency verified.'; return }
     $administrator = [Security.Principal.WindowsPrincipal]::new($identity).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
     $hash = (Get-FileHash -LiteralPath $Package -Algorithm SHA256).Hash.ToLowerInvariant()
     # Transfer the already parsed deployment code, never reopen a writable script after elevation.
