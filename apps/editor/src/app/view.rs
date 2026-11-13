@@ -102,6 +102,7 @@ impl App {
         store.set_startup(self.state.settings.launch_at_login);
         store.set_show_on_launch(self.state.settings.show_on_launch);
         store.set_check_updates(self.state.settings.check_updates);
+        store.set_allow_prereleases(self.state.settings.allow_prereleases);
         store.set_discord_presence(self.state.settings.discord_presence);
         store.set_discord_style(match self.state.settings.discord_style {
             crosshair_core::DiscordStyle::Simple => 0,

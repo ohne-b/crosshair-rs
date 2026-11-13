@@ -118,6 +118,27 @@ fn complete_preview(app: &mut App, adjusted: Option<Preset>) -> Result<()> {
 }
 
 #[test]
+fn hidden_layers_remain_editable_and_visibility_is_undoable() -> Result<()> {
+    let ui = window();
+    let mut app = app(&ui);
+    app.document.open(app.state.presets[0].clone())?;
+    let id = app.document.draft.as_ref().unwrap().layers[0].id;
+    app.layer_action("layer-visible", &id.to_string())?;
+    assert!(!app.document.draft.as_ref().unwrap().layers[0].visible);
+    assert!(app.document.dirty);
+    complete_preview(&mut app, None)?;
+    app.action("undo", "")?;
+    assert!(app.document.draft.as_ref().unwrap().layers[0].visible);
+    app.action("redo", "")?;
+    assert!(!app.document.draft.as_ref().unwrap().layers[0].visible);
+    complete_preview(&mut app, None)?;
+    app.layer_action("layer-visible", &id.to_string())?;
+    assert!(app.document.draft.as_ref().unwrap().layers[0].visible);
+    ui.hide()?;
+    Ok(())
+}
+
+#[test]
 fn canvas_resize_reaches_odd_sizes_and_does_not_grow_past_the_center() -> Result<()> {
     let ui = window();
     let mut app = app(&ui);
@@ -467,6 +488,46 @@ fn color_opacity_drag_does_not_continue_on_a_new_selection() -> Result<()> {
     pointer(&ui, 1, 1208.0, 138.0);
     pointer(&ui, 2, 1208.0, 138.0);
     assert!(events.borrow().is_empty());
+    ui.hide()?;
+    Ok(())
+}
+
+#[test]
+fn color_picker_uses_the_final_pointer_position_on_release() -> Result<()> {
+    let ui = window();
+    ui.global::<Store>().set_fields(
+        Rc::new(slint::VecModel::from(vec![FieldGroup {
+            first: FieldRow {
+                kind: 4,
+                label: "Fill".into(),
+                selection: "layer".into(),
+                swatch: slint::Color::from_rgb_u8(255, 0, 0),
+                value: "#FF0000FF".into(),
+                ..Default::default()
+            },
+            ..Default::default()
+        }]))
+        .into(),
+    );
+    let events = Rc::new(RefCell::new(Vec::new()));
+    let recorded = events.clone();
+    ui.global::<Store>()
+        .on_property_color(move |_, _, value, phase| recorded.borrow_mut().push((value, phase)));
+    pointer(&ui, 0, 1030.0, 138.0);
+    pointer(&ui, 2, 1030.0, 138.0);
+    // Release can arrive at a different position without an intervening move event.
+    for (start, end) in [
+        ((780.0, 335.0), (900.0, 335.0)),
+        ((780.0, 180.0), (930.0, 260.0)),
+    ] {
+        events.borrow_mut().clear();
+        pointer(&ui, 0, start.0, start.1);
+        pointer(&ui, 2, end.0, end.1);
+        let values = events.borrow();
+        assert_eq!(values.len(), 2, "{values:?}");
+        assert_eq!((values[0].1, values[1].1), (1, 2));
+        assert_ne!(values[0].0, values[1].0);
+    }
     ui.hide()?;
     Ok(())
 }

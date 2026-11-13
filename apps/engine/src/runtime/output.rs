@@ -81,6 +81,9 @@ impl Runtime {
             }
         }
         validate_state(&candidate)?;
+        if candidate.settings.allow_prereleases != self.app.state.settings.allow_prereleases {
+            self.updates.ensure_idle()?;
+        }
         let history = match kind {
             ChangeKind::Settings => None,
             ChangeKind::Import => {
@@ -378,6 +381,9 @@ impl Runtime {
                 .ok_or(HistoryError::RevisionExhausted)?,
         );
         self.app.state = state;
+        if change.before.settings.allow_prereleases != self.app.state.settings.allow_prereleases {
+            self.updates.reset_offer();
+        }
         if let Some(history) = change.history {
             self.app.history = history;
         }
