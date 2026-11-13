@@ -132,16 +132,24 @@ describe the available choices.
 
 ### Crosshairs and profiles
 
-Local thumbnail grid: search, All/Favorites with counts, a compact icon sort picker
+Saved and Browse tabs use bookmark and search icons. Saved contains the local
+thumbnail grid: search, All/Favorites with counts, a compact icon sort picker
 for Manual/Name/Recently edited, New and Import. Names rename in place on Enter or
 focus loss; Escape cancels. Favorite and trash appear on hover or keyboard focus;
-filled favorites stay visible. Right-click/Shift+F10 opens the compact card menu:
+favorites use a filled gray star, without changing the card border. Both star
+states hide when neither hovered nor focused. Right-click/Shift+F10 opens the compact card menu:
 Edit, Rename, Duplicate, Export, Create keybind, order and Delete. Menus and help
 popovers anchor to their controls, dismiss outside/on Escape and return focus.
-No discovery tabs.
+Browse contains seven built-in designs made from editable native layers, based on
+the supplied references. Names are fixed; a bookmark appears on hover or keyboard
+focus. Save adds an independent copy to Saved without activating it or removing
+the original. Saved copies use the existing edit, favorite and delete controls.
+The engine validates and adds each copy atomically with fresh preset/layer IDs;
+Undo removes the copy. There are no downloads or shared image assets.
 Single-click activates; double-click/Edit opens Designer. Manual order supports
-drag and keyboard alternatives. Cache thumbnails and virtualize larger lists.
-Ship a small original preset set, never reference artwork.
+drag and keyboard alternatives. Move earlier/later switches the grid to Manual.
+Cache thumbnails and virtualize larger lists. Keep the Designer's shape palette
+separate from the Browse collection.
 
 New creates a selected four-arm preset. Duplicate creates independent IDs while
 sharing immutable assets. Delete offers Undo. If a preset has references, one

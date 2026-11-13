@@ -2,6 +2,8 @@ mod actions;
 mod editing;
 mod events;
 mod keybinds;
+#[cfg(test)]
+mod library_tests;
 mod prompts;
 mod view;
 
@@ -190,6 +192,7 @@ pub(crate) struct App {
     collapsed: BTreeSet<String>,
     thumbnails: BTreeMap<Id, (u64, slint::Image)>,
     palette: Vec<Preset>,
+    browse: Vec<Preset>,
     bounds: Vec<(Id, LayerBounds)>,
     inverses: BTreeMap<Id, [Point; 3]>,
     anchors: BTreeMap<Id, Point>,
@@ -278,6 +281,7 @@ pub fn run() -> Result<()> {
         collapsed: BTreeSet::new(),
         thumbnails: BTreeMap::new(),
         palette: crate::features::presets::presets(),
+        browse: crate::features::browse::presets(),
         bounds: Vec::new(),
         inverses: BTreeMap::new(),
         anchors: BTreeMap::new(),
@@ -474,6 +478,7 @@ impl App {
             .presets
             .iter()
             .chain(self.palette.iter())
+            .chain(self.browse.iter())
             .filter(|preset| {
                 self.thumbnails
                     .get(&preset.id)

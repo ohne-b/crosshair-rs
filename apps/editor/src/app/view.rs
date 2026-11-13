@@ -192,11 +192,19 @@ impl App {
         }) {
             store.set_selector_presets(model(selector_rows));
         }
-        let rows: Vec<_> = library::filtered(
-            &self.state,
+        let rows: Vec<_> = library::filtered_presets(
+            if store.get_browsing() {
+                &self.browse
+            } else {
+                &self.state.presets
+            },
             &store.get_search(),
-            store.get_favorites(),
-            store.get_sort(),
+            !store.get_browsing() && store.get_favorites(),
+            if store.get_browsing() {
+                0
+            } else {
+                store.get_sort()
+            },
         )
         .into_iter()
         .map(preset_row)

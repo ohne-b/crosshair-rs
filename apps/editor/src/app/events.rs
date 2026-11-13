@@ -328,6 +328,12 @@ impl App {
                         self.image_ready = Some((id, width, height));
                         self.client.refresh();
                     }
+                } else if tag == "save-browse" {
+                    let ui = self.window()?;
+                    let store = ui.global::<Store>();
+                    store.set_browse_saving(false);
+                    store.set_library_notice("Added to Saved".into());
+                    self.client.refresh();
                 } else if tag == "new-preset" || tag == "duplicate-open" {
                     if let Reply::Created { id } = reply {
                         self.open_after_refresh = Some(id);
@@ -349,6 +355,9 @@ impl App {
                     conflict,
                 },
             ) => {
+                if tag == "save-browse" || tag == "connection" {
+                    self.window()?.global::<Store>().set_browse_saving(false);
+                }
                 if let Some(id) = tag.strip_prefix("new-shortcut:") {
                     let ui = self.window()?;
                     let store = ui.global::<Store>();
@@ -437,6 +446,7 @@ impl App {
                 self.refresh_document();
             }
             Event::Engine(_, client::Event::Disconnected(message)) => {
+                self.window()?.global::<Store>().set_browse_saving(false);
                 let close_clean =
                     self.closing && !self.document.dirty && self.deferred_ui.is_empty();
                 self.window()?.global::<Store>().set_connected(false);

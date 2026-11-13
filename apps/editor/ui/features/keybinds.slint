@@ -35,7 +35,7 @@ component BindingItem inherits Rectangle {
     HorizontalLayout { spacing: 0px;
         if root.binding.global: Rectangle { horizontal-stretch: 1; Text { x: 12px; width: parent.width - 24px; text: root.binding.action; color: Theme.text; font-size: 12px * Theme.text-scale; vertical-alignment: center; } }
         if root.binding.shortcut: Rectangle { width: 88px;
-            trigger := ActionButton { x: 12px; y: (parent.height - self.height) / 2; width: 64px; enabled: Store.connected && Store.interactive && !root.saving; thumbnail: Store.preset-thumbnails[root.binding.target-index]; label: "Choose crosshair for " + root.binding.name; clicked => { picker.show(); } }
+            trigger := ActionButton { x: 24px; y: (parent.height - self.height) / 2; width: 40px; height: 40px; enabled: Store.connected && Store.interactive && !root.saving; thumbnail: Store.preset-thumbnails[root.binding.target-index]; label: "Choose crosshair for " + root.binding.name; clicked => { picker.show(); } }
             picker := PresetPicker {
                 viewport-width: root.viewport-width; viewport-height: root.viewport-height;
                 model: Store.selector-presets; selected-id: root.binding.target;

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.0-alpha.7 (unreleased)
+
+- Add Saved and Browse tabs with seven built-in crosshairs that save as editable copies.
+- Show gray favorite stars on hover or keyboard focus, filled when favorited.
+- Keep the sort picker in sync with manual ordering and make shortcut thumbnails square.
+
 ## 0.1.0-alpha.6 (unreleased)
 
 - Fix the tray right-click crash caused by measuring empty menu labels.

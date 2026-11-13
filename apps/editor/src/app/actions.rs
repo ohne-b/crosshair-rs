@@ -201,6 +201,34 @@ impl App {
                     },
                 )?;
             }
+            "library-tab" => {
+                store.set_browsing(value == "browse");
+                store.set_search("".into());
+                store.set_library_notice("".into());
+                store.set_dragged_preset("".into());
+                store.set_preset_drop_index(-1);
+                self.refresh_library();
+            }
+            "save-browse" => {
+                ensure!(
+                    !store.get_browse_saving(),
+                    "A crosshair is already being saved"
+                );
+                let id: Id = value.parse()?;
+                let preset = self
+                    .browse
+                    .iter()
+                    .find(|p| p.id == id)
+                    .context("Unknown built-in crosshair")?;
+                self.send(
+                    "save-browse",
+                    Command::AddPreset {
+                        preset: preset.clone(),
+                    },
+                )?;
+                store.set_browse_saving(true);
+                store.set_library_notice("".into());
+            }
             "search" => {
                 store.set_search(value.into());
                 self.refresh_library();
@@ -238,6 +266,8 @@ impl App {
                         order: library::moved_order(&self.state, id.parse()?, delta.parse()?),
                     },
                 )?;
+                store.set_sort(0);
+                self.refresh_library();
             }
             "preset-menu" => {
                 let name = self
@@ -808,6 +838,7 @@ fn requires_finished_edit(action: &str) -> bool {
     matches!(
         action,
         "new-preset"
+            | "save-browse"
             | "duplicate-preset"
             | "favorite"
             | "commit-preset-name"
