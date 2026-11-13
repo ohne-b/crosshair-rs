@@ -67,7 +67,7 @@ export component TitleBar inherits Rectangle {
         DropDown {
             x: 0px; y: 8px; width: 152px; model: Store.profiles; current-index: Store.profile-index; accessible-label: "Active profile";
             menu-title: "PROFILES"; footer-text: "Profile Settings"; footer-icon: @image-url("../../../../assets/icons/settings.svg");
-            selected(value) => { Store.action("select-profile", self.current-index); }
+            selected(index) => { Store.action("select-profile", index); }
             footer-clicked => { Store.settings-category = 2; Store.action("navigate", "3"); }
         }
         Rectangle { x: 164px; y: 8px; width: 32px; height: 32px; border-radius: 8px; background: Theme.preview; border-width: 1px; border-color: Store.visible ? Theme.orange : Theme.border;

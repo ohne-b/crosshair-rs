@@ -1,6 +1,8 @@
 mod actions;
 mod editing;
 mod events;
+#[cfg(test)]
+mod gesture_tests;
 mod keybinds;
 #[cfg(test)]
 mod library_tests;
@@ -162,6 +164,7 @@ enum Drag {
     Resize {
         origin: Point,
         center: Point,
+        span: f32,
         before: Preset,
     },
     Rotate {

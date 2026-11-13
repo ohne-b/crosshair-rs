@@ -62,7 +62,7 @@ component PropertyRow inherits Rectangle {
                 edited(value) => { Store.property-edit(root.field.selection, root.field.key, value, 0); }
                 committed(value) => { Store.property-edit(root.field.selection, root.field.key, value, 2); }
             }
-            if root.field.kind == 5: DropDown { enabled: root.editable; horizontal-stretch: 1; model: root.field.choices; current-index: root.field.selected; accessible-label: root.field.label; selected(value) => { Store.property-edit(root.field.selection, root.field.key, self.current-index, 3); } }
+            if root.field.kind == 5: DropDown { enabled: root.editable; horizontal-stretch: 1; model: root.field.choices; current-index: root.field.selected; accessible-label: root.field.label; selected(index) => { Store.property-edit(root.field.selection, root.field.key, index, 3); } }
             if root.field.kind == 6: ActionButton { enabled: root.editable; text: "Choose…"; horizontal-stretch: 1; clicked => { Store.action("property-action", root.field.key); } }
         }
     }
@@ -211,7 +211,7 @@ export component Designer inherits Rectangle {
                     width: max(1px, bounds.width * Store.zoom * 1px); height: max(1px, bounds.height * Store.zoom * 1px);
                     border-width: 1px; border-color: Theme.muted; background: transparent;
                     Rectangle { x: (parent.width - self.width) / 2; y: parent.height + 8px; width: dimensions.preferred-width + 12px; height: 24px; background: Theme.panel; border-radius: 5px;
-                        dimensions := Text { text: (ceil(bounds.x + bounds.width) - floor(bounds.x)) + " x " + (ceil(bounds.y + bounds.height) - floor(bounds.y)) + " px"; color: Theme.muted; font-size: 10px * Theme.text-scale; horizontal-alignment: center; vertical-alignment: center; }
+                        dimensions := Text { text: round(bounds.width) + " x " + round(bounds.height) + " px"; color: Theme.muted; font-size: 10px * Theme.text-scale; horizontal-alignment: center; vertical-alignment: center; }
                     }
                     Rectangle { x: -3px; y: -3px; width: 6px; height: 6px; background: Theme.canvas; border-width: 1px; border-color: Theme.muted; }
                     Rectangle { x: parent.width - 3px; y: -3px; width: 6px; height: 6px; background: Theme.canvas; border-width: 1px; border-color: Theme.muted; }
@@ -238,6 +238,9 @@ export component Designer inherits Rectangle {
                             Store.menu-y = (self.absolute-position.y + self.mouse-y) / 1px;
                         }
                         if event.kind == PointerEventKind.down { canvas-keys.focus(); canvas.pressed-button = button; canvas.shift-down = event.modifiers.shift; }
+                        if event.kind == PointerEventKind.up && canvas.pressed-button == button {
+                            Store.canvas-event(1, button == 3 ? self.mouse-x / 1px : (self.mouse-x / 1px - canvas.center-x) / Store.zoom, button == 3 ? self.mouse-y / 1px : (self.mouse-y / 1px - canvas.center-y) / Store.zoom, button, event.modifiers.shift);
+                        }
                         Store.canvas-event(event.kind == PointerEventKind.down ? 0 : event.kind == PointerEventKind.up ? 2 : event.kind == PointerEventKind.cancel ? 3 : 4, button == 3 ? self.mouse-x / 1px : (self.mouse-x / 1px - canvas.center-x) / Store.zoom, button == 3 ? self.mouse-y / 1px : (self.mouse-y / 1px - canvas.center-y) / Store.zoom, button, event.modifiers.shift);
                         if event.kind == PointerEventKind.up || event.kind == PointerEventKind.cancel { canvas.pressed-button = 0; }
                     }

@@ -470,6 +470,8 @@ impl App {
                 self.save_document()?
             }
             "undo" | "redo" if store.get_page() == 1 && self.document.draft.is_some() => {
+                self.drag = None;
+                self.draw_base = None;
                 self.document.undo(action == "redo");
                 self.preview_sent = None;
                 self.render();

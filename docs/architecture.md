@@ -191,8 +191,11 @@ The shared renderer rasterizes previews at display/zoom resolution, capped at a
 1024px bitmap dimension; the engine still rasterizes at physical output scale.
 Bounds/handles and the grid are editor adornments only.
 Drag moves; handles resize/rotate; Shift constrains proportions/angles. Arrow
-keys nudge one design pixel, Shift+arrow ten. Moves and geometry fields use whole
-design pixels. Exact fields cover every transform.
+keys nudge one design pixel, Shift+arrow ten. Move deltas, resize size changes and
+geometry fields use whole design pixels. Transforms preserve existing fractional
+offsets and their center; rounding an untouched axis must not shift the design.
+Resize measures the selection's actual span, not the handle's click offset.
+Exact fields cover every transform.
 
 Bottom tools: Crosshair, Shape (Rectangle/Ellipse/Triangle), Image and Draw.
 Text creation is removed. Existing/imported text remains readable, renderable

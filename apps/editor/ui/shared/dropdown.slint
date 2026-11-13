@@ -13,8 +13,8 @@ export component DropDown inherits Rectangle {
     in property <string> footer-text;
     in property <image> footer-icon;
     in property <bool> enabled: Store.interactive;
-    in-out property <int> current-index: 0;
-    callback selected(string);
+    in property <int> current-index: 0;
+    callback selected(int);
     callback footer-clicked;
     property <int> highlighted: root.current-index;
     property <bool> expanded: popup.is-open;
@@ -39,7 +39,7 @@ export component DropDown inherits Rectangle {
     function close() { popup.close(); focus.focus(); }
     function choose(index: int) {
         if root.enabled && index >= 0 && index < root.model.length {
-            root.current-index = index; root.selected(root.model[index]);
+            root.selected(index);
         }
     }
     HorizontalLayout { padding-left: 10px; padding-right: 10px; spacing: 8px;

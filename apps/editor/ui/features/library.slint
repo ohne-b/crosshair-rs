@@ -42,8 +42,8 @@ export component Library inherits Rectangle {
                     compact: true; horizontal-stretch: 0;
                     model: ["Manual", "Name", "Recently edited"];
                     icons: [@image-url("../../../../assets/icons/grip-vertical.svg"), @image-url("../../../../assets/icons/sort-ascending-letters.svg"), @image-url("../../../../assets/icons/clock.svg")];
-                    current-index <=> Store.sort; accessible-label: "Sort crosshairs";
-                    selected(value) => { Store.action("sort", self.current-index); }
+                    current-index: Store.sort; accessible-label: "Sort crosshairs";
+                    selected(index) => { Store.action("sort", index); }
                 }
             }
             Divider { y: parent.height - 1px; }

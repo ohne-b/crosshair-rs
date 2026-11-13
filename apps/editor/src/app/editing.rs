@@ -200,6 +200,10 @@ impl App {
     }
 
     fn edit(&mut self, edit: impl FnOnce(&mut Preset, &BTreeSet<Id>) -> Result<()>) -> Result<()> {
+        if self.drag.take().is_some() {
+            self.document.finish_gesture();
+            self.draw_base = None;
+        }
         let before = self
             .document
             .draft
@@ -225,6 +229,17 @@ impl App {
             !self.window()?.global::<Store>().get_read_only(),
             "The application is finishing shutdown"
         );
+        if phase == 4 {
+            // Restore every selected layer, including differing starting values.
+            self.preview_pending = false;
+            self.cancel_document_gesture();
+            self.cancel_group = true;
+            self.finish_group = true;
+            self.finish_edit()?;
+            self.render();
+            self.refresh_document();
+            return Ok(());
+        }
         let mut value = input.to_owned();
         if phase == 3 {
             let field = self
@@ -657,6 +672,7 @@ impl App {
                     self.drag = Some(Drag::Resize {
                         origin: point,
                         center,
+                        span: bounds.width().max(bounds.height()),
                         before,
                     });
                     return Ok(());
@@ -716,19 +732,13 @@ impl App {
                     }
                     designer::nudge(&mut changed, &self.document.selected, x.round(), y.round());
                 }
-                Drag::Resize { origin, center, .. } => {
-                    let before = (origin.x - center.x).hypot(origin.y - center.y).max(0.01);
-                    let mut scale = ((point.x - center.x).hypot(point.y - center.y) / before)
-                        .clamp(0.01, 100.0);
-                    if shift {
-                        scale = (scale * 10.0).round().max(0.1) / 10.0;
-                    }
-                    let span = ((origin.x - center.x).abs().max((origin.y - center.y).abs()) * 2.0)
-                        .max(1.0);
-                    scale = (span * scale)
-                        .round()
-                        .clamp(1.0, crosshair_renderer::MAX_DIMENSION as f32)
-                        / span;
+                Drag::Resize {
+                    origin,
+                    center,
+                    span,
+                    ..
+                } => {
+                    let scale = designer::resize_scale(origin, point, center, span, shift);
                     designer::transform_around(
                         &mut changed,
                         &self.document.selected,

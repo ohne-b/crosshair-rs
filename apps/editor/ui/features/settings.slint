@@ -59,11 +59,11 @@ export component Settings inherits Rectangle {
                         SectionTitle { text: "DISPLAY"; }
                         Group {
                             Setting { label: "Display mode";
-                                DropDown { width: 180px; model: ["Desktop", "Game Bar"]; current-index: Store.output-mode; accessible-label: "Output mode"; selected(value) => { Store.action("output-mode", self.current-index); } }
+                                DropDown { width: 180px; model: ["Desktop", "Game Bar"]; current-index: Store.output-mode; accessible-label: "Output mode"; selected(index) => { Store.action("output-mode", index); } }
                                 ActionButton { icon: @image-url("../../../../assets/icons/info-circle.svg"); label: "Display compatibility"; quiet: true; clicked => { Store.action("gamebar-help", ""); } }
                             }
                             Setting { label: "Monitor"; last: true;
-                                DropDown { width: 220px; model: Store.monitors; current-index: Store.monitor-index; accessible-label: "Monitor"; selected(value) => { Store.action("monitor", self.current-index); } }
+                                DropDown { width: 220px; model: Store.monitors; current-index: Store.monitor-index; accessible-label: "Monitor"; selected(index) => { Store.action("monitor", index); } }
                             }
                         }
                         SectionTitle { text: "POSITION & SIZE"; }
@@ -77,7 +77,7 @@ export component Settings inherits Rectangle {
                                 ActionButton { icon: @image-url("../../../../assets/icons/refresh.svg"); label: "Reset position"; quiet: true; clicked => { Store.action("reset-position", ""); } }
                             }
                             Setting { label: "Saved positions"; last: true;
-                                DropDown { width: 152px; model: Store.positions; placeholder: "No positions"; current-index <=> Store.position-index; accessible-label: "Saved position"; }
+                                DropDown { width: 152px; model: Store.positions; placeholder: "No positions"; current-index: Store.position-index; accessible-label: "Saved position"; selected(index) => { Store.position-index = index; } }
                                 ActionButton { text: "Use"; enabled: Store.positions.length > 0 && Store.interactive; clicked => { Store.action("position-use", Store.position-index); } }
                                 ActionButton { icon: @image-url("../../../../assets/icons/plus.svg"); label: "Save position"; quiet: true; clicked => { Store.action("position-save", ""); } }
                                 ActionButton { icon: @image-url("../../../../assets/icons/trash.svg"); label: "Remove saved position"; enabled: Store.positions.length > 0 && Store.interactive; quiet: true; clicked => { Store.action("position-delete", Store.position-index); } }
@@ -108,7 +108,7 @@ export component Settings inherits Rectangle {
                                 Switch { checked: Store.discord-presence; label: "Show activity on Discord"; toggled => { Store.action("discord-presence", Store.discord-presence ? "false" : "true"); } }
                             }
                             if Store.discord-presence: Setting { label: "Style"; last: true;
-                                DropDown { width: 180px; model: ["Simple", "Quote"]; current-index: Store.discord-style; accessible-label: "Discord presence style"; selected(value) => { Store.action("discord-style", self.current-index); } }
+                                DropDown { width: 180px; model: ["Simple", "Quote"]; current-index: Store.discord-style; accessible-label: "Discord presence style"; selected(index) => { Store.action("discord-style", index); } }
                             }
                         }
                         Text { text: "Shares your overlay status or the Soldier: 76 quote. Requires Discord desktop and Activity Sharing."; color: Theme.muted; font-size: 12px * Theme.text-scale; wrap: word-wrap; }
