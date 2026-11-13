@@ -7,6 +7,7 @@
   are no longer release downloads.
 - Keep update signatures in the update metadata and verify both the installer
   and its embedded application package. Upgrade alpha 1 with the new setup EXE.
+  ([#4](https://github.com/ohne-b/crosshair-rs/pull/4))
 
 ## [v0.1.0-alpha.1](https://github.com/ohne-b/crosshair-rs/releases/tag/v0.1.0-alpha.1) 2026-11-12
 
