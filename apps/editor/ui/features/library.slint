@@ -35,7 +35,7 @@ export component Library inherits Rectangle {
         }
         Rectangle { height: 68px;
             HorizontalLayout { padding-left: 20px; padding-right: 20px; padding-top: 18px; padding-bottom: 18px; spacing: 12px;
-                EditField { text: Store.search; placeholder: "Search crosshairs"; horizontal-stretch: 1; edited(value) => { Store.action("search", value); } }
+                EditField { text <=> Store.search; placeholder: "Search crosshairs"; horizontal-stretch: 1; edited(value) => { Store.action("search", value); } }
                 if Store.library-notice != "": Text { text: Store.library-notice; color: Theme.muted; font-size: 12px * Theme.text-scale; vertical-alignment: center; }
                 if !Store.browsing: Text { text: "Sort"; color: Theme.muted; font-size: 11px * Theme.text-scale; vertical-alignment: center; }
                 if !Store.browsing: DropDown {

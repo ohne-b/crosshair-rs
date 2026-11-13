@@ -69,7 +69,11 @@ fn library_tabs_sort_picker_and_browse_save_use_the_correct_actions() -> Result<
         let store = ui.global::<Store>();
         match action.as_str() {
             "sort" => store.set_sort(value.parse().unwrap()),
-            "library-tab" => store.set_browsing(value == "browse"),
+            "library-tab" => {
+                store.set_browsing(value == "browse");
+                store.set_search("".into());
+            }
+            "search" => store.set_search(value),
             "library-columns" => store.set_library_columns(value.parse().unwrap()),
             _ => {}
         }
@@ -90,8 +94,19 @@ fn library_tabs_sort_picker_and_browse_save_use_the_correct_actions() -> Result<
     key(&ui, Key::End);
     key(&ui, Key::Return);
     assert_eq!(store.get_sort(), 2);
+    click(&ui, 200.0, 174.0);
+    key(&ui, "x");
+    assert_eq!(store.get_search(), "x");
     click(&ui, 250.0, 118.0);
     assert!(store.get_browsing(), "events: {:?}", events.borrow());
+    click(&ui, 200.0, 174.0);
+    key(&ui, "s");
+    assert_eq!(
+        store.get_search(),
+        "s",
+        "Switching tabs must clear the visible search field too"
+    );
+    store.set_search("".into());
     slint::platform::update_timers_and_animations();
 
     let mut renderer = crosshair_renderer::Renderer::new()?;
