@@ -1,5 +1,16 @@
 # Changelog
 
+## [v0.1.0-alpha.6](https://github.com/ohne-b/crosshair-rs/releases/tag/v0.1.0-alpha.6) 2026-11-14
+
+- Add an optional Include prereleases switch for alpha, beta and release-candidate
+  updates. Keep complete version names and the existing signed setup verification.
+- Handle update checks cleanly when no stable release has been published.
+- Fix the layer visibility button and color pickers missing the final drag position.
+- Round the Saved/Browse buttons and warning banners, align warning controls, and
+  remove the extra Discord settings description.
+- Look up launch-at-sign-in tasks across the package and clarify missing-installation errors.
+  ([#14](https://github.com/ohne-b/crosshair-rs/pull/14))
+
 ## [v0.1.0-alpha.5](https://github.com/ohne-b/crosshair-rs/releases/tag/v0.1.0-alpha.5) 2026-11-14
 
 - Keep small whole-pixel crosshair strokes solid when resizing or changing overlay
