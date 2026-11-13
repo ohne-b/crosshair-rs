@@ -360,8 +360,8 @@ cryptography, TLS client or async runtime just to keep an idle message loop aliv
 
 The engine owns optional Discord Rich Presence through the local Windows IPC
 pipe. The dashboard may close normally. Application ID `1570691376738209834`
-and the large-image asset key `crosshair_rs` are public constants. Buttons link
-to Download (GitHub releases) and Source code (the repository). No crosshair or
+and the large-image asset key `crosshair_rs` are public constants. The Download
+button links to GitHub releases. No crosshair or
 profile names, images, input, game detection, join data, uploads or secrets are
 sent. The logo must be uploaded to that application's Rich Presence assets.
 

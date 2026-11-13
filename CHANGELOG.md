@@ -3,7 +3,7 @@
 ## 0.1.0-alpha.5 (unreleased)
 
 - Add optional Discord Rich Presence, enabled by default, with Simple and Soldier: 76 Quote styles,
-  an app logo, and Download and Source code buttons. It continues with the
+  an app logo, and a Download button. It continues with the
   dashboard closed and never shares crosshair names or designs.
 
 ## 0.1.0-alpha.4 (unreleased)
