@@ -6,6 +6,7 @@
   their hover backgrounds.
 - Give delete and unsaved-edit dialogs more space between buttons.
 - Update Shotgun and add Small white to Browse, both with editable native layers.
+  ([#11](https://github.com/ohne-b/crosshair-rs/pull/11))
 
 ## [v0.1.0-alpha.3](https://github.com/ohne-b/crosshair-rs/releases/tag/v0.1.0-alpha.3) 2026-11-13
 
