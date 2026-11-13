@@ -278,7 +278,7 @@ Use one quiet surface, headings and separators rather than card stacks.
 | Game Bar | Installed/connected/pinned state, Open Game Bar, setup help and repin recovery. Only show relevant controls in that mode. |
 | Startup | Launch at sign-in; Show crosshair on launch. Startup runs only the engine. |
 | Interface | Windows text scaling/reduced motion respected; reset editor layout. Fixed dark design, no exposed rendering backend toggle. |
-| Discord | Off by default; General has an enable switch and Simple/Quote selector. Simple shares only overlay visibility; Quote uses only the Soldier: 76 quote. |
+| Discord | On by default; General has an enable switch and Simple/Quote selector. Simple shares only overlay visibility; Quote uses only the Soldier: 76 quote. |
 | Data | Import/export profiles/all data, open data folder, confirmed settings reset with backup. |
 | Maintenance | Version, update check preference, manual check, inline status/progress, release notes, download/cancel/install. |
 | About | Version, source license and third-party notices/attribution. |
@@ -373,7 +373,8 @@ per five seconds. Reconnection backs off from one to sixty seconds. Operations
 have 500 ms deadlines and frames are capped at 64 KiB. Disable clears activity
 and closes the pipe; the worker then sleeps until reenabled or shutdown. Exit
 attempts a bounded clear and joins the worker. No Discord I/O runs on the input
-or rendering thread. Defaults and older settings leave the feature disabled.
+or rendering thread. New and older settings without a Discord preference default
+to enabled. An explicitly saved disabled preference is preserved.
 
 ### Stored model
 

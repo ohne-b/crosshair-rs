@@ -111,7 +111,13 @@ fn payloads_are_fixed_and_do_not_share_names_or_join_data() {
     assert_eq!(quote["state"], "— Soldier: 76");
     assert_eq!(quote.as_object().unwrap().len(), 4);
     let mut presence = Presence::default();
-    presence.update(&Settings::default(), true);
+    presence.update(
+        &Settings {
+            discord_presence: false,
+            ..Settings::default()
+        },
+        true,
+    );
     assert!(presence.worker.is_none());
 }
 

@@ -45,8 +45,8 @@ are removed when loading; saved crosshairs and ordinary shortcuts are retained.
 
 ## Discord Rich Presence
 
-Enable **Settings > General > Show activity on Discord** to share activity on
-your Discord profile. **Simple** shows "Overlay active" or "Overlay hidden".
+**Settings > General > Show activity on Discord** is on by default and can be
+turned off anytime. **Simple** shows "Overlay active" or "Overlay hidden".
 **Quote** shows "I've got you in my sights." and "— Soldier: 76". Both show the
 app logo, **Download** and **Source code** buttons; crosshair names are not shared.
 
