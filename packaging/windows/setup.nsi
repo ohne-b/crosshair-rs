@@ -72,6 +72,8 @@ Section "Install"
     ; Use 64-bit PowerShell; only its captured deployment command elevates.
     ; NSIS plug-ins include System.dll, so never run PowerShell from their folder.
     SetOutPath "$WINDIR\System32"
+    ; PowerShell 7 callers can pass module paths incompatible with Windows PowerShell.
+    System::Call 'kernel32::SetEnvironmentVariableW(w "PSModulePath", w "$WINDIR\System32\WindowsPowerShell\v1.0\Modules")'
     nsExec::ExecToStack '"$WINDIR\Sysnative\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$PLUGINSDIR\Install.ps1" $0'
     Pop $1
     Pop $2
