@@ -5,7 +5,7 @@
 - Add Saved and Browse tabs with seven built-in crosshairs that save as editable copies.
 - Show gray favorite stars on hover or keyboard focus, filled when favorited.
 - Keep the sort picker in sync with manual ordering and make shortcut thumbnails square.
-- Fix skipped resize dimensions, transform position jumps and dragging past the center.
+- Fix odd resize dimensions rounding up, transform position jumps and dragging past the center.
 - Cancel numeric drags with Escape and stop canvas drags on Undo or keyboard edits.
 - Apply the final pointer position when releasing a canvas or numeric drag.
 - Keep dropdown choices in sync after Undo, layer changes and external updates.

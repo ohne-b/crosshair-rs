@@ -200,10 +200,6 @@ impl App {
     }
 
     fn edit(&mut self, edit: impl FnOnce(&mut Preset, &BTreeSet<Id>) -> Result<()>) -> Result<()> {
-        if self.drag.take().is_some() {
-            self.document.finish_gesture();
-            self.draw_base = None;
-        }
         let before = self
             .document
             .draft
@@ -853,9 +849,7 @@ impl App {
         if self.window()?.global::<Store>().get_read_only() {
             return Ok(false);
         }
-        if (self.group_ending || (self.finish_group && (self.group_open || self.preview_pending)))
-            && !alt
-        {
+        if !alt {
             let recognized = if control {
                 matches!(
                     text.to_ascii_lowercase().as_str(),
@@ -876,11 +870,19 @@ impl App {
                     || matches!(text, "[" | "]")
             };
             if recognized {
-                defer_ui(
-                    &mut self.deferred_ui,
-                    UiEvent::Shortcut(text.into(), control, shift, alt),
-                )?;
-                return Ok(true);
+                if text != SharedString::from(Key::Escape).as_str() && self.drag.take().is_some() {
+                    self.finish_group = true;
+                    self.finish_edit()?;
+                }
+                if self.group_ending
+                    || (self.finish_group && (self.group_open || self.preview_pending))
+                {
+                    defer_ui(
+                        &mut self.deferred_ui,
+                        UiEvent::Shortcut(text.into(), control, shift, alt),
+                    )?;
+                    return Ok(true);
+                }
             }
         }
         if text == SharedString::from(Key::Escape).as_str() {

@@ -470,8 +470,17 @@ impl App {
                 self.save_document()?
             }
             "undo" | "redo" if store.get_page() == 1 && self.document.draft.is_some() => {
-                self.drag = None;
-                self.draw_base = None;
+                if self.drag.take().is_some() {
+                    self.finish_group = true;
+                    self.finish_edit()?;
+                    if self.finish_group || self.group_ending {
+                        defer_ui(
+                            &mut self.deferred_ui,
+                            UiEvent::Action(action.into(), value.into()),
+                        )?;
+                        return Ok(());
+                    }
+                }
                 self.document.undo(action == "redo");
                 self.preview_sent = None;
                 self.render();

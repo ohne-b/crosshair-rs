@@ -89,6 +89,28 @@ fn pointer(ui: &AppWindow, kind: i32, x: f32, y: f32) {
     });
 }
 
+fn complete_preview(app: &mut App, adjusted: Option<Preset>) -> Result<()> {
+    app.event(Event::Preview(preview::Event::Document {
+        scale: 1.0,
+        generation: app.preview_generation,
+        id: app.document.draft.as_ref().unwrap().id,
+        raster: std::sync::Arc::new(crosshair_renderer::Raster {
+            width: 1,
+            height: 1,
+            origin: [0, 0],
+            pixels: vec![0; 4],
+        }),
+        bounds: app.bounds.clone(),
+        inverses: app.inverses.clone(),
+        anchors: app.anchors.clone(),
+        adjusted,
+    }))?;
+    while let Some(event) = EVENTS.with(|events| events.borrow_mut().pop_front()) {
+        app.event(event)?;
+    }
+    Ok(())
+}
+
 #[test]
 fn canvas_resize_reaches_odd_sizes_and_does_not_grow_past_the_center() -> Result<()> {
     let ui = window();
@@ -151,6 +173,7 @@ fn undo_and_keyboard_edits_stop_the_previous_canvas_drag() -> Result<()> {
     app.document.open(preset.clone())?;
     app.canvas_event(0, Point::default(), 1, false)?;
     app.canvas_event(1, Point { x: 2.0, y: 0.0 }, 1, false)?;
+    complete_preview(&mut app, None)?;
     app.action("undo", "")?;
     app.canvas_event(1, Point { x: 5.0, y: 0.0 }, 1, false)?;
     assert!(crate::features::designer::same_design(
@@ -158,6 +181,7 @@ fn undo_and_keyboard_edits_stop_the_previous_canvas_drag() -> Result<()> {
         &preset
     ));
     app.action("redo", "")?;
+    complete_preview(&mut app, None)?;
     assert_eq!(
         app.document.draft.as_ref().unwrap().layers[0].transform.x,
         2.0
@@ -165,6 +189,7 @@ fn undo_and_keyboard_edits_stop_the_previous_canvas_drag() -> Result<()> {
 
     app.canvas_event(0, Point::default(), 1, false)?;
     app.canvas_event(1, Point { x: 1.0, y: 0.0 }, 1, false)?;
+    complete_preview(&mut app, None)?;
     assert!(app.shortcut(
         SharedString::from(Key::RightArrow).as_str(),
         false,
@@ -183,6 +208,73 @@ fn undo_and_keyboard_edits_stop_the_previous_canvas_drag() -> Result<()> {
         3.0
     );
     ui.hide()?;
+    Ok(())
+}
+
+#[test]
+fn keyboard_edits_wait_for_a_scaled_strokes_preview_and_keep_separate_history() -> Result<()> {
+    let ui = window();
+    let mut app = app(&ui);
+    let mut preset = app.state.presets[0].clone();
+    preset.layers[0].content = Content::Freehand(Default::default());
+    preset.layers[0].transform.scale = 2.0;
+    let id = preset.layers[0].id;
+    app.document.open(preset.clone())?;
+    ui.global::<Store>().set_drawing(true);
+    app.inverses.insert(
+        id,
+        [
+            Point::default(),
+            Point { x: 0.5, y: 0.0 },
+            Point { x: 0.0, y: 0.5 },
+        ],
+    );
+    app.canvas_event(0, Point::default(), 1, false)?;
+    app.canvas_event(1, Point { x: 20.0, y: 0.0 }, 1, false)?;
+    let generation = app.preview_generation;
+    assert!(app.preview_pending);
+    app.shortcut(
+        SharedString::from(Key::RightArrow).as_str(),
+        false,
+        false,
+        false,
+    )?;
+    assert!(app.drag.is_none());
+    assert!(app.draw_base.is_some());
+    assert_eq!(app.preview_generation, generation);
+    assert_eq!(app.deferred_ui.len(), 1);
+    app.canvas_event(1, Point { x: 40.0, y: 0.0 }, 1, false)?;
+
+    // At scale 2, the new intrinsic pivot at X=5 requires a +5 translation
+    // from the preview worker before the queued one-pixel nudge can run.
+    let mut adjusted = app.document.draft.as_ref().unwrap().clone();
+    adjusted.layers[0].transform.x = 5.0;
+    complete_preview(&mut app, Some(adjusted.clone()))?;
+    assert!(app.draw_base.is_none());
+    let layer = &app.document.draft.as_ref().unwrap().layers[0];
+    let mut renderer = crosshair_renderer::Renderer::new()?;
+    assert!(
+        renderer
+            .local_point(layer, Point { x: 1.0, y: 0.0 })?
+            .x
+            .abs()
+            < 0.001
+    );
+    assert!((renderer.local_point(layer, Point { x: 21.0, y: 0.0 })?.x - 10.0).abs() < 0.001);
+    app.action("undo", "")?;
+    assert_eq!(app.document.draft.as_ref().unwrap(), &adjusted);
+    app.action("undo", "")?;
+    assert_eq!(app.document.draft.as_ref().unwrap(), &preset);
+    complete_preview(&mut app, None)?;
+    app.canvas_event(0, Point::default(), 1, false)?;
+    app.canvas_event(1, Point { x: 20.0, y: 0.0 }, 1, false)?;
+    app.action("undo", "")?;
+    assert!(app.draw_base.is_some());
+    assert_eq!(app.deferred_ui.len(), 1);
+    complete_preview(&mut app, Some(adjusted.clone()))?;
+    assert_eq!(app.document.draft.as_ref().unwrap(), &preset);
+    app.action("redo", "")?;
+    assert_eq!(app.document.draft.as_ref().unwrap(), &adjusted);
     Ok(())
 }
 

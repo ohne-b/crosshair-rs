@@ -195,6 +195,8 @@ keys nudge one design pixel, Shift+arrow ten. Move deltas, resize size changes a
 geometry fields use whole design pixels. Transforms preserve existing fractional
 offsets and their center; rounding an untouched axis must not shift the design.
 Resize measures the selection's actual span, not the handle's click offset.
+Effects retain the renderer's discrete padding, so a blurred selection's measured
+bounds can still change by more than one pixel at a padding threshold.
 Exact fields cover every transform.
 
 Bottom tools: Crosshair, Shape (Rectangle/Ellipse/Triangle), Image and Draw.
