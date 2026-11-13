@@ -190,26 +190,6 @@ fn startup_package(full_name: Option<&str>) -> bool {
     )
 }
 
-#[cfg(test)]
-mod startup_tests {
-    #[test]
-    fn startup_requires_our_package_not_an_inherited_unrelated_identity() {
-        for name in [
-            None,
-            Some("Other.App_1.0.0.0_x64__publisher"),
-            Some("OhneB.crosshair-rs.fake_1.0.0.0_x64__publisher"),
-        ] {
-            assert!(!super::startup_package(name));
-        }
-        for name in [
-            "OhneB.crosshair-rs_0.1.0.6_x64__publisher",
-            "OhneB.crosshair-rs.Preview_0.1.0.6_x64__publisher",
-        ] {
-            assert!(super::startup_package(Some(name)));
-        }
-    }
-}
-
 fn startup_enabled(state: StartupTaskState) -> bool {
     state == StartupTaskState::Enabled || state == StartupTaskState::EnabledByPolicy
 }
@@ -249,3 +229,24 @@ pub fn open(target: &str, hwnd: HWND) -> Result<Reply> {
         document_revision: None,
     })
 }
+
+#[cfg(test)]
+mod startup_tests {
+    #[test]
+    fn startup_requires_our_package_not_an_inherited_unrelated_identity() {
+        for name in [
+            None,
+            Some("Other.App_1.0.0.0_x64__publisher"),
+            Some("OhneB.crosshair-rs.fake_1.0.0.0_x64__publisher"),
+        ] {
+            assert!(!super::startup_package(name));
+        }
+        for name in [
+            "OhneB.crosshair-rs_0.1.0.6_x64__publisher",
+            "OhneB.crosshair-rs.Preview_0.1.0.6_x64__publisher",
+        ] {
+            assert!(super::startup_package(Some(name)));
+        }
+    }
+}
+
