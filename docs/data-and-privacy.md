@@ -24,7 +24,7 @@ Discord Rich Presence is optional and on by default. Disable it in Settings >
 General > Show activity on Discord. When enabled, the engine
 sends the overlay's visible/hidden status or the fixed Soldier: 76 quote to the
 local Discord desktop client, which shares it according to your Discord Activity
-Sharing settings. It also sends the app logo's asset key and two project links.
+Sharing settings. It also sends the app logo's asset key and the project's releases link.
 Crosshair names, designs, profiles and input are never sent. There are no image
 uploads, accounts, tokens or additional network services in this integration.
 

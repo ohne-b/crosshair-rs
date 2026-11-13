@@ -42,8 +42,7 @@ impl Activity {
             "details": details,
             "assets": { "large_image": ASSET_KEY, "large_text": "Crosshair-RS" },
             "buttons": [
-                { "label": "Download", "url": "https://github.com/ohne-b/crosshair-rs/releases" },
-                { "label": "Source code", "url": "https://github.com/ohne-b/crosshair-rs" }
+                { "label": "Download", "url": "https://github.com/ohne-b/crosshair-rs/releases" }
             ]
         });
         if let Some(state) = state {

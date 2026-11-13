@@ -101,8 +101,7 @@ fn payloads_are_fixed_and_do_not_share_names_or_join_data() {
     assert_eq!(
         active["buttons"],
         json!([
-            {"label": "Download", "url": "https://github.com/ohne-b/crosshair-rs/releases"},
-            {"label": "Source code", "url": "https://github.com/ohne-b/crosshair-rs"}
+            {"label": "Download", "url": "https://github.com/ohne-b/crosshair-rs/releases"}
         ])
     );
     assert_eq!(active.as_object().unwrap().len(), 3);
