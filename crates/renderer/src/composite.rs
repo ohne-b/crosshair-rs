@@ -1,7 +1,7 @@
 use anyhow::{Context, Result, ensure};
 use tiny_skia::{
-    BlendMode, FillRule, FilterQuality, Mask, Paint, PathBuilder, Pixmap, PixmapPaint, Rect,
-    Transform,
+    BlendMode, FillRule, FilterQuality, Mask, Paint, Path, PathBuilder, PathSegment, Pixmap,
+    PixmapPaint, Rect, Transform,
 };
 
 use crate::{
@@ -85,8 +85,10 @@ fn render(
                     erase,
                     antialias,
                 } => {
+                    let aligned = (!*antialias).then(|| align_rectangles(path)).flatten();
+                    let path = aligned.as_ref().unwrap_or(path);
                     let mut paint = Paint {
-                        anti_alias: *antialias,
+                        anti_alias: true,
                         blend_mode: if *erase {
                             BlendMode::DestinationOut
                         } else {
@@ -203,6 +205,55 @@ fn render(
         }
     }
     Ok(result)
+}
+
+// Snap whole-pixel rectangular spans consistently after all transforms; fractional
+// spans and positions retain coverage antialiasing instead of disappearing.
+pub(crate) fn align_rectangles(path: &Path) -> Option<Path> {
+    let mut segments = path.segments();
+    let mut aligned = PathBuilder::new();
+    while let Some(first) = segments.next() {
+        let (
+            PathSegment::MoveTo(a),
+            Some(PathSegment::LineTo(b)),
+            Some(PathSegment::LineTo(c)),
+            Some(PathSegment::LineTo(d)),
+            Some(PathSegment::Close),
+        ) = (
+            first,
+            segments.next(),
+            segments.next(),
+            segments.next(),
+            segments.next(),
+        )
+        else {
+            return None;
+        };
+        let near = |a: f32, b: f32| (a - b).abs() < 0.0001;
+        let axis_aligned = (near(a.y, b.y) && near(b.x, c.x) && near(c.y, d.y) && near(d.x, a.x))
+            || (near(a.x, b.x) && near(b.y, c.y) && near(c.x, d.x) && near(d.y, a.y));
+        let snap_axis = |min: f32, max: f32| {
+            let length = max - min;
+            length >= 1.0 - 0.0001
+                && (length - length.round()).abs() < 0.0001
+                && (min * 2.0 - (min * 2.0).round()).abs() < 0.0001
+        };
+        let snap_x = axis_aligned && snap_axis(a.x.min(c.x), a.x.max(c.x));
+        let snap_y = axis_aligned && snap_axis(a.y.min(c.y), a.y.max(c.y));
+        // Normalize floating-point drift before choosing the nearest pixel boundary.
+        let snapped = |v: f32| ((v * 2.0).round() / 2.0 + 0.5).floor();
+        for (index, p) in [a, b, c, d].into_iter().enumerate() {
+            let x = if snap_x { snapped(p.x) } else { p.x };
+            let y = if snap_y { snapped(p.y) } else { p.y };
+            if index == 0 {
+                aligned.move_to(x, y);
+            } else {
+                aligned.line_to(x, y);
+            }
+        }
+        aligned.close();
+    }
+    aligned.finish()
 }
 
 fn blur(
