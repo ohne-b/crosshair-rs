@@ -50,6 +50,8 @@ mod app;
 #[cfg(windows)]
 mod commands;
 #[cfg(windows)]
+mod discord;
+#[cfg(windows)]
 mod input;
 #[cfg(windows)]
 mod ipc;

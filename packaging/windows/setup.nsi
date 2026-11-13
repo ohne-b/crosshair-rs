@@ -64,23 +64,20 @@ Section "Install"
     SetOutPath "$PLUGINSDIR"
     File /oname=package.msix "${PAYLOAD}"
     File /oname=Microsoft.VCLibs.x64.14.00.appx "${FRAMEWORK}"
-    File /oname=Install.ps1 "${INSTALL_SCRIPT}"
-    StrCpy $0 ""
+    File /oname=install.exe "${INSTALL_HELPER}"
+    StrCpy $0 "--install"
+    IfSilent 0 +2
+    StrCpy $0 "--install-silent"
     ${If} $Mode == "verify"
-        StrCpy $0 "-VerifyOnly"
+        StrCpy $0 "--verify"
     ${EndIf}
-    ; Use 64-bit PowerShell; only its captured deployment command elevates.
-    ; NSIS plug-ins include System.dll, so never run PowerShell from their folder.
+    ; The native helper requests UAC and reports Windows deployment errors itself.
     SetOutPath "$WINDIR\System32"
-    ; PowerShell 7 callers can pass module paths incompatible with Windows PowerShell.
-    System::Call 'kernel32::SetEnvironmentVariableW(w "PSModulePath", w "$WINDIR\System32\WindowsPowerShell\v1.0\Modules")'
-    nsExec::ExecToStack '"$WINDIR\Sysnative\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$PLUGINSDIR\Install.ps1" $0'
+    nsExec::ExecToStack '"$PLUGINSDIR\install.exe" $0'
     Pop $1
     Pop $2
     ${If} $1 != 0
         DetailPrint "$2"
-        IfSilent failed
-        MessageBox MB_OK|MB_ICONSTOP "Installation did not finish.$\r$\n$\r$\n$2"
         Goto failed
     ${EndIf}
     SetErrorLevel 0

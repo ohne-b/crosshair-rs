@@ -12,6 +12,9 @@ Requires Windows 11, x64. Xbox Game Bar is needed only for Game Bar display mode
    then open **crosshair-rs** from Start.
 
 The installer checks its embedded package and dependency before requesting approval.
+It installs through Windows directly, without launching PowerShell. A suitable
+installed Microsoft runtime is reused. If installation fails, setup displays the
+Windows error; it does not forcibly close other applications.
 Download it from this repository's Releases page: the setup EXE and Windows package
 are not Windows-signed. In-app updates authenticate both using the project's release key.
 No certificate import or Developer Mode is needed. Normal use does not require

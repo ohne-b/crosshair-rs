@@ -134,6 +134,14 @@ impl App {
                 self.commit(next)?;
                 return Ok(Reply::Created { id });
             }
+            Command::AddPreset { preset } => {
+                let copy = preset.duplicate(preset.name.clone());
+                let id = copy.id;
+                let mut next = self.state.clone();
+                next.presets.push(copy);
+                self.commit(next)?;
+                return Ok(Reply::Created { id });
+            }
             Command::DuplicatePreset { preset } => {
                 let preset = self.preset(preset)?;
                 let duplicate = preset.duplicate(format!(

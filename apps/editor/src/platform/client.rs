@@ -130,6 +130,19 @@ pub struct Client {
 }
 
 impl Client {
+    #[cfg(test)]
+    pub fn disconnected_for_test() -> Self {
+        let (jobs, _) = mpsc::sync_channel(1);
+        Self {
+            jobs,
+            refresh_pending: Arc::new(AtomicBool::new(false)),
+            pipe: Arc::new(Mutex::new(None)),
+            source_assets: Arc::new(Mutex::new(BTreeMap::new())),
+            pinned_assets: Arc::new(Mutex::new(BTreeSet::new())),
+            connection_epoch: Arc::new(AtomicU64::new(0)),
+            stopped: Arc::new(AtomicBool::new(true)),
+        }
+    }
     pub fn start(options: Options, events: Events) -> Self {
         let (jobs, receiver) = mpsc::sync_channel(64);
         let client = Self {

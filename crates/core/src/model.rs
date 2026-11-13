@@ -480,6 +480,14 @@ pub enum OutputMode {
     GameBar,
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DiscordStyle {
+    #[default]
+    Simple,
+    Quote,
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Settings {
@@ -488,7 +496,15 @@ pub struct Settings {
     pub launch_at_login: bool,
     pub show_on_launch: bool,
     pub check_updates: bool,
+    #[serde(default = "discord_presence_default")]
+    pub discord_presence: bool,
+    #[serde(default)]
+    pub discord_style: DiscordStyle,
     pub global_toggle: Option<InputChord>,
+}
+
+fn discord_presence_default() -> bool {
+    true
 }
 
 impl Default for Settings {
@@ -499,6 +515,8 @@ impl Default for Settings {
             launch_at_login: false,
             show_on_launch: true,
             check_updates: true,
+            discord_presence: discord_presence_default(),
+            discord_style: DiscordStyle::Simple,
             global_toggle: Some(InputChord {
                 trigger: InputKey::Keyboard {
                     scan_code: 0x2c,
@@ -507,6 +525,31 @@ impl Default for Settings {
                 modifiers: vec![Modifier::Shift, Modifier::Alt],
             }),
         }
+    }
+}
+
+#[cfg(test)]
+mod discord_settings_tests {
+    use super::*;
+
+    #[test]
+    fn presence_defaults_on_and_saved_opt_out_round_trips() {
+        assert!(Settings::default().discord_presence);
+        let mut old = serde_json::to_value(Settings::default()).unwrap();
+        old.as_object_mut().unwrap().remove("discord_presence");
+        old.as_object_mut().unwrap().remove("discord_style");
+        let mut settings: Settings = serde_json::from_value(old).unwrap();
+        assert!(settings.discord_presence);
+        assert_eq!(settings.discord_style, DiscordStyle::Simple);
+        settings.discord_presence = false;
+        settings.discord_style = DiscordStyle::Quote;
+        assert_eq!(
+            serde_json::from_value::<Settings>(serde_json::to_value(&settings).unwrap()).unwrap(),
+            settings
+        );
+        let mut invalid = serde_json::to_value(settings).unwrap();
+        invalid["discord_style"] = "unknown".into();
+        assert!(serde_json::from_value::<Settings>(invalid).is_err());
     }
 }
 

@@ -43,6 +43,17 @@ current shortcut; the default is **Shift+Alt+Z** on a US keyboard layout. Change
 in the application row in **Keybinds**. Older press/hold and preset-toggle bindings
 are removed when loading; saved crosshairs and ordinary shortcuts are retained.
 
+## Discord Rich Presence
+
+**Settings > General > Show activity on Discord** is on by default and can be
+turned off anytime. **Simple** shows "Overlay active" or "Overlay hidden".
+**Quote** shows "I've got you in my sights." and "— Soldier: 76". Both show the
+app logo and a **Download** button; crosshair names are not shared.
+
+Discord desktop must be running with Activity Sharing enabled. The connection
+continues with the editor closed and reconnects if Discord restarts. Turn the
+setting off or quit the app from the tray to clear the activity.
+
 ## Closing and startup
 
 Closing the editor leaves the crosshair running after resolving unsaved changes.

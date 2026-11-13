@@ -68,6 +68,9 @@ pub enum Command {
     NewPreset {
         name: String,
     },
+    AddPreset {
+        preset: Preset,
+    },
     DuplicatePreset {
         preset: Id,
     },

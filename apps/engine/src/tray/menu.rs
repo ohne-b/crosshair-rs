@@ -107,7 +107,10 @@ impl Style {
                 let dc = GetDC(None);
                 let previous = SelectObject(dc, self.font.into());
                 let mut measured = text.clone();
-                DrawTextW(dc, &mut measured, &mut bounds, DT_CALCRECT | DT_SINGLELINE);
+                // Empty Rust slices use a dangling pointer that DrawTextW still reads at count 0.
+                if !measured.is_empty() {
+                    DrawTextW(dc, &mut measured, &mut bounds, DT_CALCRECT | DT_SINGLELINE);
+                }
                 SelectObject(dc, previous);
                 ReleaseDC(None, dc);
                 let item = Box::new(Item {
@@ -199,12 +202,14 @@ pub(super) unsafe fn message(message: u32, lparam: LPARAM) -> Option<LRESULT> {
         let mut bounds = draw.rcItem;
         bounds.left += item.inset;
         bounds.right -= item.inset;
-        DrawTextW(
-            draw.hDC,
-            &mut text,
-            &mut bounds,
-            DT_SINGLELINE | DT_VCENTER | DT_END_ELLIPSIS,
-        );
+        if !text.is_empty() {
+            DrawTextW(
+                draw.hDC,
+                &mut text,
+                &mut bounds,
+                DT_SINGLELINE | DT_VCENTER | DT_END_ELLIPSIS,
+            );
+        }
         if item.checked {
             SetTextColor(draw.hDC, COLORREF(0x1678f9));
             let mut check: Vec<u16> = "✓".encode_utf16().collect();
@@ -230,5 +235,62 @@ pub(super) unsafe fn message(message: u32, lparam: LPARAM) -> Option<LRESULT> {
         }
         let _ = RestoreDC(draw.hDC, saved);
         Some(LRESULT(1))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crosshair_platform::identity::wide;
+    use windows::core::PCWSTR;
+
+    #[test]
+    fn native_menu_measures_separators_and_empty_labels_without_crashing() -> Result<()> {
+        unsafe {
+            let menu = CreatePopupMenu()?;
+            let result = (|| -> Result<()> {
+                for (index, (flags, label)) in [
+                    (MF_STRING, "Open menu"),
+                    (MF_SEPARATOR, ""),
+                    (MF_STRING, ""),
+                ]
+                .into_iter()
+                .enumerate()
+                {
+                    AppendMenuW(menu, flags, index + 1, PCWSTR(wide(label).as_ptr()))?;
+                }
+                // Force the custom path even when the machine uses high contrast.
+                let mut style = Style {
+                    background: CreateSolidBrush(COLORREF(0x202020)),
+                    font: CreateFontIndirectW(&LOGFONTW {
+                        lfHeight: -12,
+                        ..Default::default()
+                    }),
+                    scale: 1.0,
+                    items: Vec::new(),
+                };
+                style.apply(menu)?;
+                assert_eq!(style.items.len(), 3);
+                for (index, item) in style.items.iter().enumerate() {
+                    let mut measure = MEASUREITEMSTRUCT {
+                        CtlType: ODT_MENU,
+                        itemData: item.as_ref() as *const Item as usize,
+                        ..Default::default()
+                    };
+                    assert_eq!(
+                        message(
+                            WM_MEASUREITEM,
+                            LPARAM((&mut measure as *mut MEASUREITEMSTRUCT) as isize)
+                        ),
+                        Some(LRESULT(1))
+                    );
+                    assert_eq!(measure.itemHeight, if index == 1 { 9 } else { 34 });
+                    assert!(measure.itemWidth >= 210);
+                }
+                Ok(())
+            })();
+            let _ = DestroyMenu(menu);
+            result
+        }
     }
 }

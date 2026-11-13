@@ -34,8 +34,8 @@ sequence this work; they do not make required features optional.
 
 Exclude animations and animation stages, controllers, game detection, automatic
 profile switching, foreground-process monitoring, cursor replacement, randomizer,
-community feeds, workshop, shop, accounts, cloud sync, telemetry, Discord
-integration and streaming servers. These are exclusions, not empty navigation
+community feeds, workshop, shop, accounts, cloud sync, telemetry and streaming
+servers. These are exclusions, not empty navigation
 entries or a future-feature backlog.
 
 ### Changes from the original baseline
@@ -132,16 +132,24 @@ describe the available choices.
 
 ### Crosshairs and profiles
 
-Local thumbnail grid: search, All/Favorites with counts, a compact icon sort picker
+Saved and Browse tabs use bookmark and search icons. Saved contains the local
+thumbnail grid: search, All/Favorites with counts, a compact icon sort picker
 for Manual/Name/Recently edited, New and Import. Names rename in place on Enter or
 focus loss; Escape cancels. Favorite and trash appear on hover or keyboard focus;
-filled favorites stay visible. Right-click/Shift+F10 opens the compact card menu:
+favorites use a filled gray star, without changing the card border. Both star
+states hide when neither hovered nor focused. Right-click/Shift+F10 opens the compact card menu:
 Edit, Rename, Duplicate, Export, Create keybind, order and Delete. Menus and help
 popovers anchor to their controls, dismiss outside/on Escape and return focus.
-No discovery tabs.
+Browse contains seven built-in designs made from editable native layers, based on
+the supplied references. Names are fixed; a bookmark appears on hover or keyboard
+focus. Save adds an independent copy to Saved without activating it or removing
+the original. Saved copies use the existing edit, favorite and delete controls.
+The engine validates and adds each copy atomically with fresh preset/layer IDs;
+Undo removes the copy. There are no downloads or shared image assets.
 Single-click activates; double-click/Edit opens Designer. Manual order supports
-drag and keyboard alternatives. Cache thumbnails and virtualize larger lists.
-Ship a small original preset set, never reference artwork.
+drag and keyboard alternatives. Move earlier/later switches the grid to Manual.
+Cache thumbnails and virtualize larger lists. Keep the Designer's shape palette
+separate from the Browse collection.
 
 New creates a selected four-arm preset. Duplicate creates independent IDs while
 sharing immutable assets. Delete offers Undo. If a preset has references, one
@@ -183,8 +191,13 @@ The shared renderer rasterizes previews at display/zoom resolution, capped at a
 1024px bitmap dimension; the engine still rasterizes at physical output scale.
 Bounds/handles and the grid are editor adornments only.
 Drag moves; handles resize/rotate; Shift constrains proportions/angles. Arrow
-keys nudge one design pixel, Shift+arrow ten. Moves and geometry fields use whole
-design pixels. Exact fields cover every transform.
+keys nudge one design pixel, Shift+arrow ten. Move deltas, resize size changes and
+geometry fields use whole design pixels. Transforms preserve existing fractional
+offsets and their center; rounding an untouched axis must not shift the design.
+Resize measures the selection's actual span, not the handle's click offset.
+Effects retain the renderer's discrete padding, so a blurred selection's measured
+bounds can still change by more than one pixel at a padding threshold.
+Exact fields cover every transform.
 
 Bottom tools: Crosshair, Shape (Rectangle/Ellipse/Triangle), Image and Draw.
 Text creation is removed. Existing/imported text remains readable, renderable
@@ -278,6 +291,7 @@ Use one quiet surface, headings and separators rather than card stacks.
 | Game Bar | Installed/connected/pinned state, Open Game Bar, setup help and repin recovery. Only show relevant controls in that mode. |
 | Startup | Launch at sign-in; Show crosshair on launch. Startup runs only the engine. |
 | Interface | Windows text scaling/reduced motion respected; reset editor layout. Fixed dark design, no exposed rendering backend toggle. |
+| Discord | On by default; General has an enable switch and Simple/Quote selector. Simple shares only overlay visibility; Quote uses only the Soldier: 76 quote. |
 | Data | Import/export profiles/all data, open data folder, confirmed settings reset with backup. |
 | Maintenance | Version, update check preference, manual check, inline status/progress, release notes, download/cancel/install. |
 | About | Version, source license and third-party notices/attribution. |
@@ -354,6 +368,28 @@ SemVer implementations. Reuse suitable existing primitives. No handwritten
 cryptography, TLS client or async runtime just to keep an idle message loop alive.
 
 ## Data and editing contract
+
+### Discord presence
+
+The engine owns optional Discord Rich Presence through the local Windows IPC
+pipe. The dashboard may close normally. Application ID `1570691376738209834`
+and the large-image asset key `crosshair_rs` are public constants. The Download
+button links to GitHub releases. No crosshair or
+profile names, images, input, game detection, join data, uploads or secrets are
+sent. The logo must be uploaded to that application's Rich Presence assets.
+
+Reuse the existing bounded, cancellable Windows pipe transport and JSON support;
+there is no additional dependency. One 256 KiB stack worker is created on first
+enable. It sleeps on pipe input or settings notifications, uses a single latest
+state slot, debounces changes for 350 ms and sends at most one activity update
+per five seconds. Reconnection backs off from one to sixty seconds. Operations
+have 500 ms deadlines and frames are capped at 64 KiB. Disable clears activity
+and closes the pipe; the worker then sleeps until reenabled or shutdown. Exit
+attempts a bounded clear and joins the worker. No Discord I/O runs on the input
+or rendering thread. New and older settings without a Discord preference default
+to enabled. An explicitly saved disabled preference is preserved.
+
+### Stored model
 
 Stable opaque IDs identify presets/layers/profiles/bindings/assets. Names are
 editable labels, never identity or filesystem paths.
@@ -700,14 +736,20 @@ identity and dependency failures block installation before the app stops.
 ### Install and restart
 
 One NSIS setup EXE bundles the unsigned MSIX and its Microsoft framework. The
-embedded installer checks pinned payload hashes and identity before using Windows
-`Add-AppxPackage -AllowUnsigned`, with no `.appinstaller` update association.
+native installer checks pinned payload hashes (binding the build-validated identity)
+before using Windows `PackageManager.AddPackageByUriAsync` with `AllowUnsigned`,
+with no `.appinstaller` update association. It reuses a healthy installed x64
+VCLibs runtime meeting the minimum version, supplying the bundled dependency only
+when needed. This avoids redeploying a shared runtime used by other running apps.
 Initial installation trusts the setup obtained from the project's GitHub release;
 it does not claim Windows code signing or a self-authenticating executable.
 [Microsoft's unsigned-package
 deployment][unsigned-msix] requires Windows 11 and administrator privileges for
-this executable package. A temporary elevated Windows PowerShell process deploys;
-the engine, editor, widget and recovery coordinator stay unelevated. No Windows
+this executable package. Setup uses a temporary native helper elevated through
+the normal UAC prompt; it verifies the same user, stages and rechecks payloads in
+an administrator/SYSTEM-only directory, and reports Windows errors directly.
+The existing in-app update coordinator still uses its separate PowerShell deployment
+path. The engine, editor, widget and recovery coordinator stay unelevated. No Windows
 App SDK dependency just for deployment.
 
 1. Verify before stopping anything. Install and restart acquires update lock,
@@ -754,6 +796,11 @@ prerequisite only for its output mode. The package identity is
 `CN=ohne-b, OID.2.25.311729368913984317654407730594956997722=1`, Microsoft's
 unsigned-package namespace. This does not claim certificate ownership. The three
 executables are package-root siblings.
+
+Taskbar logos use transparent target-size PNGs rendered from `assets/logo.svg`
+at 16, 24, 32, 48 and 256 pixels, including unplated light/dark variants. Packaging
+builds `resources.pri` with the Windows SDK so the shell resolves those variants.
+Installer checks verify the index, packaged files and transparent backgrounds.
 
 `scripts/package-windows.ps1` validates a real build and bundles an offline
 `Microsoft.VCLibs.140.00` x64 **14.0.33519.0** dependency inside the setup EXE. The

@@ -102,6 +102,11 @@ impl App {
         store.set_startup(self.state.settings.launch_at_login);
         store.set_show_on_launch(self.state.settings.show_on_launch);
         store.set_check_updates(self.state.settings.check_updates);
+        store.set_discord_presence(self.state.settings.discord_presence);
+        store.set_discord_style(match self.state.settings.discord_style {
+            crosshair_core::DiscordStyle::Simple => 0,
+            crosshair_core::DiscordStyle::Quote => 1,
+        });
         if let Some(profile) = self.state.active_profile() {
             store.set_output_scale(profile.scale);
             store.set_output_x(profile.offset.x);
@@ -187,11 +192,19 @@ impl App {
         }) {
             store.set_selector_presets(model(selector_rows));
         }
-        let rows: Vec<_> = library::filtered(
-            &self.state,
+        let rows: Vec<_> = library::filtered_presets(
+            if store.get_browsing() {
+                &self.browse
+            } else {
+                &self.state.presets
+            },
             &store.get_search(),
-            store.get_favorites(),
-            store.get_sort(),
+            !store.get_browsing() && store.get_favorites(),
+            if store.get_browsing() {
+                0
+            } else {
+                store.get_sort()
+            },
         )
         .into_iter()
         .map(preset_row)

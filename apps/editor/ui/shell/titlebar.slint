@@ -3,10 +3,10 @@ import { Store } from "../shared/models.slint";
 import { Theme } from "../shared/tokens.slint";
 
 component VisibilitySwitch inherits Rectangle {
-    property <bool> hint-requested: Store.interactive && (touch.has-hover || keys.has-focus) && !touch.pressed;
+    property <bool> hint-requested: Store.interactive && touch.has-hover && !touch.pressed;
     property <bool> hint-visible: false;
     changed hint-requested => { root.hint-visible = false; }
-    Timer { interval: 500ms; running: root.hint-requested && !root.hint-visible; triggered => { root.hint-visible = true; } }
+    Timer { interval: 500ms; running: root.hint-requested && !root.hint-visible; triggered => { root.hint-visible = root.hint-requested; } }
     width: 64px; height: 34px; border-radius: 17px;
     background: Store.visible ? (keys.has-focus || touch.has-hover ? Theme.orange.brighter(0.18) : Theme.orange) : keys.has-focus || touch.has-hover ? Theme.hover : Theme.field;
     accessible-role: switch; accessible-label: "Show crosshair"; accessible-checked: Store.visible;
@@ -19,7 +19,7 @@ component VisibilitySwitch inherits Rectangle {
     }
     keys := FocusScope { enabled: Store.interactive; key-pressed(event) => { if event.text == Key.Space || event.text == Key.Return { Store.action("toggle-visible", ""); return accept; } return reject; } }
     touch := TouchArea { enabled: Store.interactive; clicked => { keys.focus(); Store.action("toggle-visible", ""); } }
-    if root.hint-visible: hint := Rectangle {
+    if root.hint-visible && root.hint-requested: hint := Rectangle {
         x: (root.width - self.width) / 2; y: root.height + 8px;
         width: hint-content.preferred-width; height: hint-content.preferred-height;
         background: Theme.panel; border-radius: 10px; border-width: 1px; border-color: Theme.border;
@@ -67,7 +67,7 @@ export component TitleBar inherits Rectangle {
         DropDown {
             x: 0px; y: 8px; width: 152px; model: Store.profiles; current-index: Store.profile-index; accessible-label: "Active profile";
             menu-title: "PROFILES"; footer-text: "Profile Settings"; footer-icon: @image-url("../../../../assets/icons/settings.svg");
-            selected(value) => { Store.action("select-profile", self.current-index); }
+            selected(index) => { Store.action("select-profile", index); }
             footer-clicked => { Store.settings-category = 2; Store.action("navigate", "3"); }
         }
         Rectangle { x: 164px; y: 8px; width: 32px; height: 32px; border-radius: 8px; background: Theme.preview; border-width: 1px; border-color: Store.visible ? Theme.orange : Theme.border;

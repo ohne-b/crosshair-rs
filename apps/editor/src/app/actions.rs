@@ -201,6 +201,34 @@ impl App {
                     },
                 )?;
             }
+            "library-tab" => {
+                store.set_browsing(value == "browse");
+                store.set_search("".into());
+                store.set_library_notice("".into());
+                store.set_dragged_preset("".into());
+                store.set_preset_drop_index(-1);
+                self.refresh_library();
+            }
+            "save-browse" => {
+                ensure!(
+                    !store.get_browse_saving(),
+                    "A crosshair is already being saved"
+                );
+                let id: Id = value.parse()?;
+                let preset = self
+                    .browse
+                    .iter()
+                    .find(|p| p.id == id)
+                    .context("Unknown built-in crosshair")?;
+                self.send(
+                    "save-browse",
+                    Command::AddPreset {
+                        preset: preset.clone(),
+                    },
+                )?;
+                store.set_browse_saving(true);
+                store.set_library_notice("".into());
+            }
             "search" => {
                 store.set_search(value.into());
                 self.refresh_library();
@@ -238,6 +266,8 @@ impl App {
                         order: library::moved_order(&self.state, id.parse()?, delta.parse()?),
                     },
                 )?;
+                store.set_sort(0);
+                self.refresh_library();
             }
             "preset-menu" => {
                 let name = self
@@ -440,6 +470,17 @@ impl App {
                 self.save_document()?
             }
             "undo" | "redo" if store.get_page() == 1 && self.document.draft.is_some() => {
+                if self.drag.take().is_some() {
+                    self.finish_group = true;
+                    self.finish_edit()?;
+                    if self.finish_group || self.group_ending {
+                        defer_ui(
+                            &mut self.deferred_ui,
+                            UiEvent::Action(action.into(), value.into()),
+                        )?;
+                        return Ok(());
+                    }
+                }
                 self.document.undo(action == "redo");
                 self.preview_sent = None;
                 self.render();
@@ -591,7 +632,13 @@ impl App {
             "export-profile" => self.export(ExportKind::Profile {
                 profile: value.parse()?,
             })?,
-            "output-mode" | "monitor" | "startup" | "show-on-launch" | "check-updates-setting" => {
+            "output-mode"
+            | "monitor"
+            | "startup"
+            | "show-on-launch"
+            | "check-updates-setting"
+            | "discord-presence"
+            | "discord-style" => {
                 let mut settings = self.state.settings.clone();
                 match action {
                     "output-mode" => {
@@ -610,6 +657,14 @@ impl App {
                     }
                     "startup" => settings.launch_at_login = value.parse()?,
                     "show-on-launch" => settings.show_on_launch = value.parse()?,
+                    "discord-presence" => settings.discord_presence = value.parse()?,
+                    "discord-style" => {
+                        settings.discord_style = match value {
+                            "0" => crosshair_core::DiscordStyle::Simple,
+                            "1" => crosshair_core::DiscordStyle::Quote,
+                            _ => bail!("Choose Simple or Quote"),
+                        };
+                    }
                     _ => settings.check_updates = value.parse()?,
                 }
                 self.settings_edit(settings)?;
@@ -794,6 +849,7 @@ fn requires_finished_edit(action: &str) -> bool {
     matches!(
         action,
         "new-preset"
+            | "save-browse"
             | "duplicate-preset"
             | "favorite"
             | "commit-preset-name"
@@ -817,6 +873,8 @@ fn requires_finished_edit(action: &str) -> bool {
             | "startup"
             | "show-on-launch"
             | "check-updates-setting"
+            | "discord-presence"
+            | "discord-style"
             | "position-use"
             | "position-delete"
             | "binding-remove"

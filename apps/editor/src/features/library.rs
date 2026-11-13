@@ -6,9 +6,17 @@ pub fn filtered<'a>(
     favorites: bool,
     sort: i32,
 ) -> Vec<&'a Preset> {
+    filtered_presets(&state.presets, search, favorites, sort)
+}
+
+pub fn filtered_presets<'a>(
+    presets: &'a [Preset],
+    search: &str,
+    favorites: bool,
+    sort: i32,
+) -> Vec<&'a Preset> {
     let search = search.trim().to_lowercase();
-    let mut presets: Vec<_> = state
-        .presets
+    let mut presets: Vec<_> = presets
         .iter()
         .filter(|preset| {
             (!favorites || preset.favorite) && preset.name.to_lowercase().contains(&search)
@@ -72,6 +80,30 @@ pub fn placed_order(state: &AppState, id: Id, target: Id) -> Vec<Id> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn all_sort_modes_produce_the_expected_order_after_filtering() {
+        let mut state = AppState::default();
+        for (preset, (name, order)) in
+            state
+                .presets
+                .iter_mut()
+                .zip([("Zulu", 2), ("alpha", 1), ("Beta", 3)])
+        {
+            preset.name = name.into();
+            preset.modified_order = order;
+            preset.favorite = name != "alpha";
+        }
+        let names = |sort, favorites| {
+            filtered(&state, "", favorites, sort)
+                .into_iter()
+                .map(|p| p.name.as_str())
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(names(0, false), ["Zulu", "alpha", "Beta"]);
+        assert_eq!(names(1, false), ["alpha", "Beta", "Zulu"]);
+        assert_eq!(names(2, false), ["Beta", "Zulu", "alpha"]);
+        assert_eq!(names(1, true), ["Beta", "Zulu"]);
+    }
     #[test]
     fn search_and_favorites_do_not_mutate_manual_order() {
         let mut state = AppState::default();

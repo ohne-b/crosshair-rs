@@ -119,6 +119,13 @@ $manifest.Save((Join-Path $stage 'AppxManifest.xml'))
 $sdkTools = Join-Path ${env:ProgramFiles(x86)} 'Windows Kits/10/bin/10.0.26100.0/x64'
 $makeappx = Join-Path $sdkTools 'makeappx.exe'
 if (!(Test-Path -LiteralPath $makeappx)) { throw 'Windows SDK 10.0.26100 packaging tools are required.' }
+$makepri = Get-WindowsSdkTool 'makepri'
+$priConfig = Join-Path $packageRoot 'priconfig.xml'
+& $makepri createconfig /cf $priConfig /dq en-US /o | Out-Null
+if ($LASTEXITCODE -ne 0) { throw 'Package resource configuration failed.' }
+& $makepri new /pr $stage /cf $priConfig /of (Join-Path $packageRoot 'resources.pri') /o | Out-Null
+if ($LASTEXITCODE -ne 0) { throw 'Package resource indexing failed.' }
+Copy-Item -LiteralPath (Join-Path $packageRoot 'resources.pri') -Destination $stage
 $packageFile = Join-Path $packageRoot "crosshair-rs-$productVersion-windows-x64.unsigned.msix"
 if (Test-Path -LiteralPath $packageFile) { throw "Output already exists; choose a new version or remove the known local build first: $packageFile" }
 & $makeappx pack /d $stage /p $packageFile /o /h SHA256

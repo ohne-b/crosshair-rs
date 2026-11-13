@@ -13,7 +13,8 @@ impl Runtime {
         if disconnected
             && matches!(
                 pending.after,
-                After::Replace { .. }
+                After::Add
+                    | After::Replace { .. }
                     | After::Preview { .. }
                     | After::State
                     | After::Staged
@@ -130,6 +131,15 @@ impl Runtime {
                 scale,
                 raster,
             } => {
+                if matches!(pending.after, After::Add) {
+                    return self
+                        .app
+                        .command(
+                            pending.owner.ok_or(HistoryError::Missing)?,
+                            Command::AddPreset { preset: *preset },
+                        )
+                        .map(Some);
+                }
                 if let After::Preview { expected_revision } = pending.after {
                     if self.preview_generation == pending.preview_generation {
                         let stored = self

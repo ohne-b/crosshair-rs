@@ -469,6 +469,20 @@ mod tests {
             .is_err()
         );
         assert_eq!(store.load()?, state);
+        // New Browse copies use the same validation before any IDs or state are committed.
+        let new_preset = preset.duplicate("New crosshair");
+        assert!(
+            run(
+                &mut store,
+                &mut None,
+                Job::ValidatePreset {
+                    state: Box::new(state.clone()),
+                    preset: Box::new(new_preset),
+                }
+            )
+            .is_err()
+        );
+        assert_eq!(store.load()?, state);
         let mut candidate = state.clone();
         candidate.presets[0] = preset;
         assert!(

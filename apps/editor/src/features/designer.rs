@@ -869,8 +869,8 @@ pub fn nudge(preset: &mut Preset, selected: &BTreeSet<Id>, x: f32, y: f32) {
         .iter_mut()
         .filter(|layer| selected.contains(&layer.id) && !layer.locked)
     {
-        layer.transform.x = (layer.transform.x + x).round();
-        layer.transform.y = (layer.transform.y + y).round();
+        layer.transform.x += x;
+        layer.transform.y += y;
     }
 }
 
@@ -893,13 +893,27 @@ pub fn transform_around(
             .context("Wait for the layer preview before transforming it")?;
         let x = layer.transform.x + pivot.x - center.x;
         let y = layer.transform.y + pivot.y - center.y;
-        layer.transform.x = (center.x + scale * (x * cos - y * sin) - pivot.x).round();
-        layer.transform.y = (center.y + scale * (x * sin + y * cos) - pivot.y).round();
+        layer.transform.x = center.x + scale * (x * cos - y * sin) - pivot.x;
+        layer.transform.y = center.y + scale * (x * sin + y * cos) - pivot.y;
         layer.transform.scale *= scale;
         layer.transform.rotation =
             (layer.transform.rotation + rotation + 360.0).rem_euclid(720.0) - 360.0;
     }
     Ok(())
+}
+
+pub fn resize_scale(origin: Point, point: Point, center: Point, span: f32, coarse: bool) -> f32 {
+    let x = origin.x - center.x;
+    let y = origin.y - center.y;
+    // Signed projection keeps a handle dragged past the center from growing again.
+    let mut ratio =
+        1.0 + ((point.x - origin.x) * x + (point.y - origin.y) * y) / (x * x + y * y).max(0.0001);
+    if coarse {
+        ratio = (ratio * 10.0).round() / 10.0;
+    }
+    let span = span.max(1.0);
+    (span + (span * (ratio - 1.0)).round()).clamp(1.0, crosshair_renderer::MAX_DIMENSION as f32)
+        / span
 }
 
 pub fn parse_clipboard(text: &str, assets: &BTreeMap<Id, Asset>) -> Result<Vec<Layer>> {
@@ -1251,6 +1265,98 @@ pub fn zoom_pan(pan: [f32; 2], pointer: [f32; 2], old: f32, new: f32) -> [f32; 2
 #[cfg(test)]
 mod viewport_tests {
     use super::*;
+    #[test]
+    fn pixel_nudges_preserve_fractional_origins_and_the_untouched_axis() {
+        let mut preset = Preset::new("Imported");
+        preset.layers[0].transform.x = 0.25;
+        preset.layers[0].transform.y = -0.5;
+        let selected = BTreeSet::from([preset.layers[0].id]);
+        let before = preset.clone();
+        nudge(&mut preset, &selected, 0.0, 0.0);
+        assert_eq!(preset, before);
+        nudge(&mut preset, &selected, 1.0, 0.0);
+        assert_eq!(preset.layers[0].transform.x, 1.25);
+        assert_eq!(preset.layers[0].transform.y, -0.5);
+        nudge(&mut preset, &selected, -1.0, 0.0);
+        assert_eq!(preset, before);
+    }
+
+    #[test]
+    fn transformations_preserve_the_center_with_a_noncentral_anchor() -> Result<()> {
+        let mut preset = Preset::new("Off-center pivot");
+        preset.layers[0].content = Content::Rectangle(Rectangle {
+            width: 10.0,
+            height: 6.0,
+            ..Default::default()
+        });
+        preset.layers[0].transform.x = 0.25;
+        preset.layers[0].transform.y = -0.5;
+        preset.layers[0].transform.anchor = Anchor::TopLeft;
+        let mut renderer = crosshair_renderer::Renderer::new()?;
+        let layer = &preset.layers[0];
+        let bounds = renderer.layer_bounds(layer, 1.0)?;
+        let center = Point {
+            x: (bounds.left + bounds.right) / 2.0,
+            y: (bounds.top + bounds.bottom) / 2.0,
+        };
+        let selected = BTreeSet::from([layer.id]);
+        let anchors = BTreeMap::from([(layer.id, renderer.anchor_point(layer)?)]);
+        let original = preset.clone();
+        transform_around(&mut preset, &selected, &anchors, center, 1.0, 0.0)?;
+        assert_eq!(preset, original);
+        transform_around(&mut preset, &selected, &anchors, center, 1.1, 90.0)?;
+        let changed = renderer.layer_bounds(&preset.layers[0], 1.0)?;
+        assert!(((changed.left + changed.right) / 2.0 - center.x).abs() < 0.001);
+        assert!(((changed.top + changed.bottom) / 2.0 - center.y).abs() < 0.001);
+        assert!((changed.height() - 11.0).abs() < 0.001);
+        Ok(())
+    }
+
+    #[test]
+    fn resize_ignores_tangential_motion_and_preserves_fractional_start_sizes() {
+        let origin = Point { x: 14.25, y: 14.25 };
+        assert_eq!(
+            resize_scale(origin, origin, Point::default(), 28.5, false),
+            1.0
+        );
+        assert_eq!(
+            resize_scale(
+                origin,
+                Point { x: 15.25, y: 13.25 },
+                Point::default(),
+                28.5,
+                false
+            ),
+            1.0
+        );
+        let scale = resize_scale(
+            origin,
+            Point { x: 14.75, y: 14.75 },
+            Point::default(),
+            28.5,
+            false,
+        );
+        assert!((28.5 * scale - 29.5).abs() < 0.001);
+    }
+
+    #[test]
+    fn coarse_resize_snaps_to_ten_percent_without_jumping_on_press() {
+        let origin = Point { x: 50.0, y: 50.0 };
+        assert_eq!(
+            resize_scale(origin, origin, Point::default(), 100.0, true),
+            1.0
+        );
+        assert_eq!(
+            resize_scale(
+                origin,
+                Point { x: 53.0, y: 53.0 },
+                Point::default(),
+                100.0,
+                true
+            ),
+            1.1
+        );
+    }
     #[test]
     fn zoom_keeps_the_point_under_the_pointer_after_panning() {
         let pan = [127.0, -81.0];

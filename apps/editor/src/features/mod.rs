@@ -1,3 +1,4 @@
+pub mod browse;
 pub mod designer;
 pub mod keybinds;
 pub mod library;

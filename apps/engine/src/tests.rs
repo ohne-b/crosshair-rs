@@ -13,6 +13,42 @@ fn application() -> Result<(tempfile::TempDir, Store, App)> {
 }
 
 #[test]
+fn adding_a_design_is_independent_undoable_and_keeps_selection() -> Result<()> {
+    let (_directory, _store, mut app) = application()?;
+    let before = app.state.clone();
+    let source = before.presets[0].clone();
+    let owner = Id::new_v4();
+    for _ in 0..2 {
+        app.command(
+            owner,
+            Command::AddPreset {
+                preset: source.clone(),
+            },
+        )?;
+    }
+    assert_eq!(app.state.presets.len(), before.presets.len() + 2);
+    assert_eq!(app.state.active_profile(), before.active_profile());
+    let copies = &app.state.presets[before.presets.len()..];
+    assert_ne!(copies[0].id, copies[1].id);
+    assert_ne!(copies[0].layers[0].id, source.layers[0].id);
+    assert_eq!(copies[0].layers[0].content, source.layers[0].content);
+    assert_eq!(copies[0].revision, 0);
+    assert!(copies[1].modified_order > copies[0].modified_order);
+    let mut invalid = source.clone();
+    invalid.name.clear();
+    let saved = app.state.clone();
+    assert!(
+        app.command(owner, Command::AddPreset { preset: invalid })
+            .is_err()
+    );
+    assert_eq!(app.state, saved);
+    app.command(owner, Command::Undo)?;
+    app.command(owner, Command::Undo)?;
+    assert_eq!(app.state.presets, before.presets);
+    Ok(())
+}
+
+#[test]
 fn status_notifications_advance_independently_of_persistent_state() -> Result<()> {
     let (_directory, _store, mut app) = application()?;
     let config_revision = app.state.revision;

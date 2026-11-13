@@ -10,6 +10,7 @@ pub(super) enum SaveNext {
 #[derive(Clone)]
 pub(super) enum After {
     Reply,
+    Add,
     Replace { expected_revision: u64 },
     Preview { expected_revision: u64 },
     State,
@@ -47,7 +48,12 @@ impl Pending {
     pub fn changes_configuration(&self) -> bool {
         matches!(
             self.after,
-            After::Replace { .. } | After::State | After::Staged | After::Restore | After::Commit
+            After::Add
+                | After::Replace { .. }
+                | After::State
+                | After::Staged
+                | After::Restore
+                | After::Commit
         )
     }
 }
@@ -227,6 +233,17 @@ impl Runtime {
                     let _ = self.updates.check();
                 }
                 return Ok(Some(reply));
+            }
+            Command::AddPreset { preset } => {
+                pending.after = After::Add;
+                self.queue(
+                    Job::ValidatePreset {
+                        state: Box::new(self.app.state.clone()),
+                        preset: Box::new(preset),
+                    },
+                    pending,
+                )?;
+                return Ok(None);
             }
             Command::ReplacePreset {
                 preset,

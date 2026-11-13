@@ -83,6 +83,12 @@ pub struct Preview {
 }
 
 impl Preview {
+    #[cfg(test)]
+    pub fn idle_for_test() -> Self {
+        Self {
+            pending: Arc::new(Pending::default()),
+        }
+    }
     pub fn start(client: Client, events: Arc<dyn Fn(Event) + Send + Sync>) -> Self {
         let pending = Arc::new(Pending::default());
         let work = pending.clone();

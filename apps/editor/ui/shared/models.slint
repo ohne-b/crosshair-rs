@@ -40,6 +40,9 @@ export global Store {
     in-out property <[PresetRow]> presets;
     in-out property <[PresetGroup]> preset-groups;
     in-out property <int> library-columns: 4;
+    in-out property <bool> browsing: false;
+    in-out property <bool> browse-saving: false;
+    in-out property <string> library-notice;
     in-out property <string> dragged-preset;
     in-out property <int> preset-drop-index: -1;
     in-out property <string> search;
@@ -84,6 +87,8 @@ export global Store {
     in-out property <bool> startup: false;
     in-out property <bool> show-on-launch: true;
     in-out property <bool> check-updates: true;
+    in-out property <bool> discord-presence: true;
+    in-out property <int> discord-style: 0;
     in-out property <string> widget-status;
     in-out property <string> version;
     in-out property <int> update-phase: 0;
