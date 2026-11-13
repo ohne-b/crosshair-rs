@@ -100,7 +100,7 @@ fn scaled_whole_pixel_crosshairs_match_native_pixels() {
             ..Default::default()
         }));
         let expected = renderer.render(&native, 1.0, &no_assets).unwrap();
-        for scale in [0.25, 0.5, 1.25, 1.5, 2.0] {
+        for scale in [0.25, 0.5, 0.67, 0.7, 1.25, 1.5, 2.0] {
             for output_scale in [false, true] {
                 let mut changed = native.clone();
                 let Content::Crosshair(cross) = &mut changed.layers[0].content else {
@@ -125,6 +125,42 @@ fn scaled_whole_pixel_crosshairs_match_native_pixels() {
                     }
                 }
             }
+        }
+    }
+}
+
+#[test]
+fn combined_rotations_and_mixed_arms_keep_whole_pixel_strokes_solid() {
+    let mut renderer = Renderer::new().unwrap();
+    for (arms, arm_rotation, layer_rotation) in [(4, 45.0, 45.0), (4, 30.0, 60.0), (8, 0.0, 0.0)] {
+        let mut document = preset(Content::Crosshair(Crosshair {
+            arms,
+            enabled_arms: vec![true; arms as usize],
+            length: 20.0,
+            gap: 8.0,
+            thickness: 2.0,
+            rotation: arm_rotation,
+            ..Default::default()
+        }));
+        document.layers[0].transform.scale = 0.5;
+        document.layers[0].transform.rotation = layer_rotation;
+        let raster = renderer.render(&document, 1.0, &no_assets).unwrap();
+        assert_eq!(pixel(&raster, 8, 0)[3], 255);
+        assert_eq!(pixel(&raster, 0, 8)[3], 255);
+        if arms == 8 {
+            assert!(
+                raster
+                    .pixels
+                    .chunks_exact(4)
+                    .any(|p| p[3] > 0 && p[3] < 255)
+            );
+        } else {
+            assert!(
+                raster
+                    .pixels
+                    .chunks_exact(4)
+                    .all(|p| p[3] == 0 || p[3] == 255)
+            );
         }
     }
 }

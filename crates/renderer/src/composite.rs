@@ -229,22 +229,22 @@ pub(crate) fn align_rectangles(path: &Path) -> Option<Path> {
         else {
             return None;
         };
-        if !((a.y == b.y && b.x == c.x && c.y == d.y && d.x == a.x)
-            || (a.x == b.x && b.y == c.y && c.x == d.x && d.y == a.y))
-        {
-            return None;
-        }
+        let near = |a: f32, b: f32| (a - b).abs() < 0.0001;
+        let axis_aligned = (near(a.y, b.y) && near(b.x, c.x) && near(c.y, d.y) && near(d.x, a.x))
+            || (near(a.x, b.x) && near(b.y, c.y) && near(c.x, d.x) && near(d.y, a.y));
         let snap_axis = |min: f32, max: f32| {
             let length = max - min;
             length >= 1.0 - 0.0001
                 && (length - length.round()).abs() < 0.0001
                 && (min * 2.0 - (min * 2.0).round()).abs() < 0.0001
         };
-        let snap_x = snap_axis(a.x.min(c.x), a.x.max(c.x));
-        let snap_y = snap_axis(a.y.min(c.y), a.y.max(c.y));
+        let snap_x = axis_aligned && snap_axis(a.x.min(c.x), a.x.max(c.x));
+        let snap_y = axis_aligned && snap_axis(a.y.min(c.y), a.y.max(c.y));
+        // Normalize floating-point drift before choosing the nearest pixel boundary.
+        let snapped = |v: f32| ((v * 2.0).round() / 2.0 + 0.5).floor();
         for (index, p) in [a, b, c, d].into_iter().enumerate() {
-            let x = if snap_x { (p.x + 0.5).floor() } else { p.x };
-            let y = if snap_y { (p.y + 0.5).floor() } else { p.y };
+            let x = if snap_x { snapped(p.x) } else { p.x };
+            let y = if snap_y { snapped(p.y) } else { p.y };
             if index == 0 {
                 aligned.move_to(x, y);
             } else {
