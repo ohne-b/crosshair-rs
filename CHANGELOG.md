@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.0-alpha.6 (unreleased)
+
+- Fix the tray right-click crash caused by measuring empty menu labels.
+- Remove the background behind the packaged taskbar icon and include transparent
+  icons for light and dark taskbars at standard sizes.
+
 ## 0.1.0-alpha.5 (unreleased)
 
 - Add optional Discord Rich Presence, enabled by default, with Simple and Soldier: 76 Quote styles,

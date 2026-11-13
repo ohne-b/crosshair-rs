@@ -784,6 +784,11 @@ prerequisite only for its output mode. The package identity is
 unsigned-package namespace. This does not claim certificate ownership. The three
 executables are package-root siblings.
 
+Taskbar logos use transparent target-size PNGs rendered from `assets/logo.svg`
+at 16, 24, 32, 48 and 256 pixels, including unplated light/dark variants. Packaging
+builds `resources.pri` with the Windows SDK so the shell resolves those variants.
+Installer checks verify the index, packaged files and transparent backgrounds.
+
 `scripts/package-windows.ps1` validates a real build and bundles an offline
 `Microsoft.VCLibs.140.00` x64 **14.0.33519.0** dependency inside the setup EXE. The
 framework is extracted from Microsoft's hash-pinned VS2022 CRT redistributable

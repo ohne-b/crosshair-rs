@@ -2,6 +2,8 @@
 param([Parameter(Mandatory)][string]$ArtifactDirectory)
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.IO.Compression.FileSystem
+Add-Type -AssemblyName System.Drawing
+. (Join-Path $PSScriptRoot 'windows-tools.ps1')
 $root = [IO.Path]::GetFullPath((Join-Path (Split-Path -Parent $PSScriptRoot) 'target/installer-tests'))
 $directory = Join-Path $root ("quoted ' `$ path-" + [Guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $directory -Force | Out-Null
@@ -51,6 +53,37 @@ try {
     Run-Check $setup '/S /EXTRACT'
     Run-Check $setup '/S /EXTRACT' $false
     if ((Get-FileHash -LiteralPath $package -Algorithm SHA256).Hash.ToLowerInvariant() -cne $build.sha256) { throw 'Setup does not contain the validated MSIX bytes.' }
+    $archive = [IO.Compression.ZipFile]::OpenRead($package)
+    try {
+        $reader = [IO.StreamReader]::new($archive.GetEntry('AppxManifest.xml').Open())
+        try { [xml]$manifest = $reader.ReadToEnd() } finally { $reader.Dispose() }
+        $visuals = $manifest.SelectSingleNode("//*[local-name()='Application' and @Id='Editor']/*[local-name()='VisualElements']")
+        if ($visuals.BackgroundColor -ne 'transparent') { throw 'Editor icon background must be transparent.' }
+        $pri = Join-Path $directory 'resources.pri'
+        $entry = $archive.GetEntry('resources.pri')
+        if (!$entry) { throw 'Package resource index is missing.' }
+        [IO.Compression.ZipFileExtensions]::ExtractToFile($entry, $pri)
+        $dump = Join-Path $directory 'resources.xml'
+        & (Get-WindowsSdkTool 'makepri') dump /if $pri /of $dump /dt detailed /o | Out-Null
+        if ($LASTEXITCODE -ne 0) { throw 'Cannot inspect package resource index.' }
+        [xml]$index = Get-Content -LiteralPath $dump -Raw
+        foreach ($size in @(16, 24, 32, 48, 256)) {
+            foreach ($form in @('UNPLATED', 'LIGHTUNPLATED')) {
+                $candidate = $index.SelectSingleNode("//NamedResource[@name='Square44x44Logo.png']/Candidate[QualifierSet/Qualifier[@name='TargetSize' and @value='$size'] and QualifierSet/Qualifier[@name='AlternateForm' and @value='$form']]")
+                if (!$candidate) { throw "Missing indexed taskbar icon: $size $form" }
+                $entry = $archive.GetEntry($candidate.Value.Replace('\', '/'))
+                if (!$entry) { throw 'Indexed taskbar icon is missing from the package.' }
+                $stream = $entry.Open()
+                try {
+                    $image = [Drawing.Bitmap]::new($stream)
+                    try {
+                        if ($image.Width -ne $size -or $image.Height -ne $size -or $image.GetPixel(0, 0).A -ne 0 -or $image.GetPixel([int]($size / 2), [int]($size / 2)).A -ne 0) { throw 'Taskbar icon size or transparency is incorrect.' }
+                    } finally { $image.Dispose() }
+                } finally { $stream.Dispose() }
+            }
+        }
+    } finally { $archive.Dispose() }
+    Write-Output 'Packaged taskbar icon backgrounds, indexed light/dark size variants and PNG transparency passed.'
     Write-Output 'Native setup verification, quoted paths, tampered payload/dependency rejection, version checks, exact extraction and overwrite rejection passed. No installation or elevation occurred.'
 } finally {
     $resolved = [IO.Path]::GetFullPath($directory)
