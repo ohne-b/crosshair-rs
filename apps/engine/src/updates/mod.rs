@@ -8,7 +8,9 @@ mod tests;
 use std::{
     fs::{File, OpenOptions},
     io::{Seek, SeekFrom},
-    path::PathBuf,
+    os::windows::process::CommandExt,
+    path::{Path, PathBuf},
+    process::{Command, Stdio},
     sync::{Arc, Mutex},
     time::{Duration, Instant},
 };
@@ -272,12 +274,13 @@ impl Updates {
         let job = Id::new_v4();
         let directory = self.0.root.join(job.to_string());
         std::fs::create_dir(&directory)?;
+        let setup_path = directory.join("setup.exe");
         let path = directory.join("package.msix");
         let result = (|| {
             let mut file = OpenOptions::new()
                 .write(true)
                 .create_new(true)
-                .open(&path)?;
+                .open(&setup_path)?;
             let mut last = Instant::now();
             http::download(
                 &manifest.artifact().url,
@@ -300,6 +303,9 @@ impl Updates {
             )?;
             file.sync_all()?;
             drop(file);
+            let mut setup = package::locked_file(&setup_path)?;
+            manifest::verify_setup(&mut setup, &manifest, &key, || cancellation.check())?;
+            extract_package(&setup_path, cancellation)?;
             let mut file = package::locked_file(&path)?;
             let (bytes, sha256) =
                 manifest::verify(&mut file, &manifest, &key, || cancellation.check())?;
@@ -329,8 +335,6 @@ impl Updates {
                 }
                 self.change(|state| {
                     state.status.phase = UpdatePhase::Ready;
-                    state.status.downloaded = ready.bytes;
-                    state.status.total = Some(ready.bytes);
                     state.ready = Some(ready);
                 });
                 Ok(())
@@ -351,4 +355,41 @@ impl Updates {
         };
         (self.0.notify)(status);
     }
+}
+
+// Only call while holding the authenticated setup file against writes/deletion.
+fn extract_package(setup: &Path, cancellation: &http::Cancellation) -> Result<()> {
+    cancellation.check()?;
+    let mut process = Command::new(setup)
+        .args(["/S", "/EXTRACT"])
+        .current_dir(setup.parent().context("Missing update directory")?)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .creation_flags(0x0800_0000)
+        .spawn()
+        .context("Could not extract the verified update")?;
+    let start = Instant::now();
+    let result = (|| {
+        loop {
+            cancellation.check()?;
+            ensure!(
+                start.elapsed() < Duration::from_secs(60),
+                "Update extraction timed out"
+            );
+            if let Some(status) = process.try_wait()? {
+                ensure!(
+                    status.success(),
+                    "The verified installer could not extract its package"
+                );
+                return Ok(());
+            }
+            std::thread::sleep(Duration::from_millis(25));
+        }
+    })();
+    if result.is_err() {
+        let _ = process.kill();
+        let _ = process.wait();
+    }
+    result
 }

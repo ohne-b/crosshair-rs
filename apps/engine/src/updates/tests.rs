@@ -20,8 +20,9 @@ pub(super) fn release() -> Manifest {
         notes: "[Check release notes on GitHub](https://github.com/ohne-b/crosshair-rs/releases/tag/v1.2.3)".into(),
         pub_date: "2026-11-11T12:00:00Z".into(),
         platforms: Platforms { windows: Artifact {
-            url: "https://github.com/ohne-b/crosshair-rs/releases/download/v1.2.3/crosshair-rs-1.2.3-windows-x64.msix".into(),
+            url: "https://github.com/ohne-b/crosshair-rs/releases/download/v1.2.3/crosshair-rs-1.2.3-windows-x64-setup.exe".into(),
             signature: SIGNATURE.into(),
+            package_signature: SIGNATURE.into(),
         } },
     }
 }
@@ -53,9 +54,31 @@ fn streamed_signature_authenticates_bytes_and_version_comment() {
     let signature = String::from_utf8(STANDARD.decode(SIGNATURE).unwrap())
         .unwrap()
         .replace("version:1.2.3", "version:2.0.0");
-    artifact.signature = STANDARD.encode(signature);
+    artifact.signature = STANDARD.encode(&signature);
+    artifact.package_signature = STANDARD.encode(signature);
     assert!(forged.validate().is_ok()); // Syntactic metadata is still untrusted.
     assert!(manifest::verify(&mut &DATA[..], &forged, &key, || Ok(())).is_err());
+}
+
+#[test]
+fn setup_and_embedded_package_are_authenticated_independently() {
+    let key = PublicKey::from_base64(KEY).unwrap();
+    let mut candidate = release();
+    assert!(manifest::verify_setup(&mut &DATA[..], &candidate, &key, || Ok(())).is_ok());
+    let decoded = String::from_utf8(STANDARD.decode(SIGNATURE).unwrap()).unwrap();
+    let mut lines: Vec<String> = decoded.lines().map(str::to_owned).collect();
+    let mut bytes = STANDARD.decode(&lines[1]).unwrap();
+    bytes[73] ^= 1;
+    lines[1] = STANDARD.encode(bytes);
+    let tampered = STANDARD.encode(lines.join("\n") + "\n");
+    candidate.platforms.windows.signature = tampered.clone();
+    assert!(candidate.validate().is_ok());
+    assert!(manifest::verify_setup(&mut &DATA[..], &candidate, &key, || Ok(())).is_err());
+    assert!(manifest::verify(&mut &DATA[..], &candidate, &key, || Ok(())).is_ok());
+    candidate.platforms.windows.signature = SIGNATURE.into();
+    candidate.platforms.windows.package_signature = tampered;
+    assert!(manifest::verify_setup(&mut &DATA[..], &candidate, &key, || Ok(())).is_ok());
+    assert!(manifest::verify(&mut &DATA[..], &candidate, &key, || Ok(())).is_err());
 }
 
 #[test]
@@ -122,8 +145,8 @@ fn metadata_rejects_oversize_unknown_schema_and_relabeled_versions() {
     assert!(Manifest::parse(duplicate.as_bytes()).is_err());
     let artifact = serde_json::to_string(release().artifact()).unwrap();
     let duplicate = text.replace(
-        &format!("\"windows-x86_64-msix\":{artifact}"),
-        &format!("\"windows-x86_64-msix\":{artifact},\"windows-x86_64-msix\":{artifact}"),
+        &format!("\"windows-x86_64-nsis\":{artifact}"),
+        &format!("\"windows-x86_64-nsis\":{artifact},\"windows-x86_64-nsis\":{artifact}"),
     );
     assert!(Manifest::parse(duplicate.as_bytes()).is_err());
 }

@@ -642,7 +642,7 @@ pub(super) fn clean_job(root: &Path, job: Id) {
     if fs::symlink_metadata(&directory).is_ok_and(|metadata| {
         metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT.0 == 0 && metadata.is_dir()
     }) {
-        for name in ["package.msix", "crosshair-update.exe"] {
+        for name in ["setup.exe", "package.msix", "crosshair-update.exe"] {
             let _ = fs::remove_file(directory.join(name));
         }
         let _ = fs::remove_dir(directory);
@@ -961,11 +961,14 @@ mod tests {
         fs::create_dir(&keep).unwrap();
         fs::create_dir(&remove).unwrap();
         fs::write(keep.join("package.msix"), b"fixture").unwrap();
+        fs::write(keep.join("setup.exe"), b"fixture").unwrap();
         fs::write(remove.join("package.msix"), b"fixture").unwrap();
+        fs::write(remove.join("setup.exe"), b"fixture").unwrap();
         fs::write(directory.path().join("unrelated.txt"), b"keep").unwrap();
         write_journal(directory.path(), &value).unwrap();
         clean_orphans(directory.path()).unwrap();
         assert!(keep.join("package.msix").exists());
+        assert!(keep.join("setup.exe").exists());
         assert!(!remove.exists());
         assert!(directory.path().join("unrelated.txt").exists());
     }

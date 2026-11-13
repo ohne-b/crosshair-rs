@@ -28,7 +28,7 @@ pub struct Manifest {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Platforms {
-    #[serde(rename = "windows-x86_64-msix")]
+    #[serde(rename = "windows-x86_64-nsis")]
     pub windows: Artifact,
 }
 
@@ -37,6 +37,7 @@ pub struct Platforms {
 pub struct Artifact {
     pub url: String,
     pub signature: String,
+    pub package_signature: String,
 }
 
 impl Manifest {
@@ -69,20 +70,18 @@ impl Manifest {
         ensure!(
             artifact.url
                 == format!(
-                    "{RELEASES}download/v{0}/crosshair-rs-{0}-windows-x64.msix",
+                    "{RELEASES}download/v{0}/crosshair-rs-{0}-windows-x64-setup.exe",
                     self.version
                 ),
             "Unexpected update asset URL"
         );
-        ensure!(
-            artifact.signature.len() <= 4096,
-            "Update signature exceeds its limit"
-        );
-        let signature = signature(artifact)?;
-        ensure!(
-            signature.trusted_comment() == format!("version:{}", self.version),
-            "Signature does not authenticate this release version"
-        );
+        for encoded in [&artifact.signature, &artifact.package_signature] {
+            ensure!(encoded.len() <= 4096, "Update signature exceeds its limit");
+            ensure!(
+                signature(encoded)?.trusted_comment() == format!("version:{}", self.version),
+                "Signature does not authenticate this release version"
+            );
+        }
         Ok(version)
     }
 
@@ -171,9 +170,9 @@ pub fn publisher() -> Result<&'static str> {
         .context("Updates are not configured in this build: the Windows publisher is missing")
 }
 
-fn signature(artifact: &Artifact) -> Result<Signature> {
+fn signature(encoded: &str) -> Result<Signature> {
     let decoded = STANDARD
-        .decode(&artifact.signature)
+        .decode(encoded)
         .context("Invalid update signature encoding")?;
     Signature::decode(std::str::from_utf8(&decoded)?).context("Invalid Minisign signature")
 }
@@ -182,10 +181,34 @@ pub fn verify(
     reader: &mut impl Read,
     manifest: &Manifest,
     key: &PublicKey,
-    mut cancelled: impl FnMut() -> Result<()>,
+    cancelled: impl FnMut() -> Result<()>,
 ) -> Result<(u64, String)> {
     manifest.validate()?;
-    let signature = signature(manifest.artifact())?;
+    verify_bytes(
+        reader,
+        &manifest.artifact().package_signature,
+        key,
+        cancelled,
+    )
+}
+
+pub fn verify_setup(
+    reader: &mut impl Read,
+    manifest: &Manifest,
+    key: &PublicKey,
+    cancelled: impl FnMut() -> Result<()>,
+) -> Result<(u64, String)> {
+    manifest.validate()?;
+    verify_bytes(reader, &manifest.artifact().signature, key, cancelled)
+}
+
+fn verify_bytes(
+    reader: &mut impl Read,
+    encoded: &str,
+    key: &PublicKey,
+    mut cancelled: impl FnMut() -> Result<()>,
+) -> Result<(u64, String)> {
+    let signature = signature(encoded)?;
     // Release signatures must use Minisign's prehashed mode. This verifier
     // authenticates both the streamed bytes and the trusted version comment.
     let mut verifier = key

@@ -101,8 +101,10 @@ cargo test --locked --workspace
 
 The [Validation workflow](../.github/workflows/validation.yml) runs this baseline on
 Windows for PRs, main pushes and manual runs. Packaging builds the real engine,
-Slint editor and Game Bar host, validates the MSIX manifest and includes the
-Microsoft-signed x64 VCLibs dependency. It never installs the result. A PR package
+Slint editor and Game Bar host, validates the MSIX manifest and bundles it with
+the Microsoft-signed x64 VCLibs dependency in one NSIS setup EXE. Packaging itself
+never installs the result. `test-deployment.ps1` installs and removes it only on
+the disposable GitHub-hosted Windows runner. A PR package
 is unsigned, has its updater disabled and cannot be promoted to a release.
 `-Offline` on build/package scripts uses previously verified cached dependencies.
 Choose a fresh package output directory rather than overwriting an artifact.
@@ -166,8 +168,8 @@ The manual workflows implement these boundaries:
    Publication needs separate explicit authorization and a manual workflow from
    validated canonical main. Require successful validation on the exact commit.
 4. Create a draft release titled `crosshair-rs vVERSION`. Attach the validated
-   unsigned Windows package containing engine, editor and Game Bar widget, its
-   updater signature, `latest.json` and SHA-256 checksums. Verify
+   setup EXE containing the unsigned Windows package, Game Bar widget and runtime,
+   `latest.json` with updater signatures, and SHA-256 checksums. Verify
    downloaded assets and clean-install/upgrade behavior before publication.
    Never promote PR artifacts or silently rebuild a different revision.
 5. Generate exactly one `Changelog:` comparison link and one issue-report link
@@ -212,27 +214,33 @@ unsigned-package namespace and must remain stable between releases.
 After release acceptance and explicit publication authorization, run **Publish
 release** from main with only the version. It selects the latest Validation run
 for exact current main and rejects old, failed, cancelled, superseded, expired,
-dirty or PR artifacts. It copies the immutable MSIX byte-for-byte, adds a detached
-Minisign signature authenticating the version, then creates a draft release.
+dirty or PR artifacts. It copies the immutable setup EXE byte-for-byte and signs
+both the EXE and its embedded MSIX, authenticating their version in `latest.json`,
+then creates a draft release.
 After downloading and verifying the assets it publishes that draft. Prereleases
 do not advance Latest; stable releases do. A failed verification leaves the draft
 unpublished for investigation; do not overwrite it or rerun blindly.
 
-The draft contains `crosshair-rs-VERSION-windows-x64.msix`, its `.minisig`,
-`latest.json`, `SHA256SUMS`, `Microsoft.VCLibs.x64.14.00.appx`, `Install.ps1`,
-`minisign.exe` and `Minisign-LICENSE.txt`. The workflow verifies all eight assets.
+The draft contains only `crosshair-rs-VERSION-windows-x64-setup.exe`, `latest.json`
+and `SHA256SUMS`. The workflow verifies all three assets, then verifies and extracts
+the installer without elevation and authenticates the enclosed MSIX against the
+original Validation hash. NSIS and Minisign remain build/release tools; users do
+not download them separately.
 Complete clean-machine installation, authenticated N-to-N+1 update, cancellation,
 interrupted deployment and restart checks before publication. The updater uses
 TDM's stable Latest endpoint, including when running an alpha: alpha-to-alpha
 upgrades use the release installer. Local development packages use `.Preview`
 identity and have updates disabled.
 
-For a downloaded release, place its assets together and run
-`powershell -NoProfile -ExecutionPolicy Bypass -File .\Install.ps1`. This affects
-only that process's script policy. The installer verifies the project signature,
-signed version, package identity and pinned dependency/verifier hashes, then
-requests administrator approval in the same Windows account and calls
-`Add-AppxPackage -AllowUnsigned`. It requires x64 Windows 11. It never imports a
-certificate, enables Developer Mode or installs a service. `-VerifyOnly` checks
-the download without installation or elevation. Development packages deliberately
-have no release verification key or signature and are not accepted by this installer.
+For a release, download and run its setup EXE from the project's GitHub Releases
+page. It checks embedded package identity and hashes, requests administrator
+approval in the same Windows account, and calls `Add-AppxPackage -AllowUnsigned`.
+It requires x64 Windows 11 and never imports a certificate, enables Developer Mode
+or installs a service. The EXE and MSIX are not Windows-signed. In-app updates
+verify the project signatures before extraction and deployment.
+
+For acceptance tooling, `/S /VERIFYONLY` checks the bundled files without
+installation or elevation. `/S /EXTRACT` writes the MSIX beside the installer
+only when that destination does not exist. Development setups bundle `.Preview`
+packages with updates disabled; they cannot be promoted to a release. Alpha 1
+requires a manual setup upgrade to consume the new updater metadata format.

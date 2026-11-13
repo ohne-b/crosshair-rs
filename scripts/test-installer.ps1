@@ -5,9 +5,7 @@ Add-Type -AssemblyName System.IO.Compression.FileSystem
 $root = [IO.Path]::GetFullPath((Join-Path (Split-Path -Parent $PSScriptRoot) 'target/installer-tests'))
 $directory = Join-Path $root ("quoted ' `$ path-" + [Guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $directory -Force | Out-Null
-$minisign = Join-Path $directory 'minisign.exe'
-$package = Join-Path $directory 'crosshair-rs-0.1.0-alpha.1-windows-x64.msix'
-$key = Join-Path $directory 'test.key'
+$package = Join-Path $directory 'package.msix'
 $installer = Join-Path $directory 'Install.ps1'
 $alias = Join-Path $root ('junction-' + [Guid]::NewGuid().ToString('N'))
 $publisher = 'CN=fixture, OID.2.25.311729368913984317654407730594956997722=1'
@@ -19,9 +17,10 @@ function Write-Package([string]$version = '0.1.0.1') {
         try { $writer.Write("<Package><Identity Name='OhneB.crosshair-rs' Publisher='$publisher' Version='$version' ProcessorArchitecture='x64'/></Package>") } finally { $writer.Dispose() }
     } finally { $archive.Dispose() }
 }
-function Sign-Package([string]$version = '0.1.0-alpha.1') {
-    & $minisign -S -W -s $key -m $package -t "version:$version" | Out-Null
-    if ($LASTEXITCODE) { throw 'Fixture signing failed.' }
+function Write-Installer {
+    $hash = (Get-FileHash -LiteralPath $package -Algorithm SHA256).Hash.ToLowerInvariant()
+    $script = $source.Replace('@PACKAGE_NAME@', 'OhneB.crosshair-rs').Replace('@PACKAGE_VERSION@', '0.1.0.1').Replace('@PACKAGE_SHA256@', $hash).Replace('@PACKAGE_PUBLISHER@', $publisher)
+    [IO.File]::WriteAllText($installer, $script)
 }
 function Expect-Rejection([string]$label) {
     $rejected = $false
@@ -35,18 +34,19 @@ function Start-Process {
     [PSCustomObject]@{ ExitCode=0 }
 }
 try {
-    foreach ($name in @('minisign.exe', 'Microsoft.VCLibs.x64.14.00.appx')) {
-        Copy-Item -LiteralPath (Join-Path $ArtifactDirectory $name) -Destination $directory
-    }
-    & $minisign -G -W -s $key -p (Join-Path $directory 'test.pub') | Out-Null
-    if ($LASTEXITCODE) { throw 'Fixture key generation failed.' }
-    $publicKey = (Get-Content -LiteralPath (Join-Path $directory 'test.pub'))[-1]
+    Copy-Item -LiteralPath (Join-Path $ArtifactDirectory 'Microsoft.VCLibs.x64.14.00.appx') -Destination $directory
     $source = [IO.File]::ReadAllText((Join-Path (Split-Path -Parent $PSScriptRoot) 'packaging/windows/Install.ps1'))
     $source = $source.Replace('# @DEPLOY_SCRIPT@', [IO.File]::ReadAllText((Join-Path (Split-Path -Parent $PSScriptRoot) 'apps/engine/src/updates/deploy.ps1')))
-    [IO.File]::WriteAllText($installer, $source.Replace('@UPDATE_PUBLIC_KEY@', $publicKey).Replace('@PACKAGE_PUBLISHER@', $publisher))
     Write-Package
-    Sign-Package
+    Write-Installer
     & $installer -VerifyOnly | Out-Null
+    $fixtureSetup = Join-Path $directory 'fixture-setup.exe'
+    & (Join-Path $PSScriptRoot 'build-setup.ps1') -Package $package -Framework (Join-Path $directory 'Microsoft.VCLibs.x64.14.00.appx') -Output $fixtureSetup -Version '0.1.0-alpha.1' -Offline | Out-Null
+    $fixtureProcess = Microsoft.PowerShell.Management\Start-Process -FilePath $fixtureSetup -ArgumentList '/S /VERIFYONLY' -WindowStyle Hidden -PassThru
+    try {
+        if (!$fixtureProcess.WaitForExit(60000)) { $fixtureProcess.Kill(); $fixtureProcess.WaitForExit(); throw 'Quoted-path installer verification timed out.' }
+        if ($fixtureProcess.ExitCode) { throw 'Installer built from quoted paths failed verification.' }
+    } finally { $fixtureProcess.Dispose() }
     New-Item -ItemType Junction -Path $alias -Target $directory | Out-Null
     & (Join-Path $alias 'Install.ps1') | Out-Null
     $invocation = $global:crosshairInstallerInvocation
@@ -60,21 +60,31 @@ try {
     if(!$arguments[0].ScriptBlock.ToString().Contains('Add-AppxPackage @parameters')) { throw 'The shared deployment code was not embedded.' }
     [IO.File]::AppendAllText($package, 'tampered')
     Expect-Rejection 'changed package bytes'
-    Write-Package
-    Sign-Package '0.1.0-alpha.2'
-    Expect-Rejection 'a relabeled signed version'
     Write-Package '0.1.0.2'
-    Sign-Package
+    Write-Installer
     Expect-Rejection 'a different MSIX version'
     Write-Package
-    Sign-Package
+    Write-Installer
     $framework = Join-Path $directory 'Microsoft.VCLibs.x64.14.00.appx'
     [IO.File]::AppendAllText($framework, 'tampered')
     Expect-Rejection 'a changed dependency'
     Copy-Item -LiteralPath (Join-Path $ArtifactDirectory 'Microsoft.VCLibs.x64.14.00.appx') -Destination $framework -Force
-    [IO.File]::AppendAllText($minisign, 'tampered')
-    Expect-Rejection 'a changed verifier'
-    Write-Output 'Installer verification and captured-code handoff passed; tampered bytes, versions, dependency and verifier were rejected. No installation or elevation occurred.'
+    Remove-Item -LiteralPath $package
+    $build = Get-Content -LiteralPath (Join-Path $ArtifactDirectory 'build.json') -Raw | ConvertFrom-Json
+    $setup = Join-Path $directory 'setup.exe'
+    Copy-Item -LiteralPath (Join-Path $ArtifactDirectory $build.setup) -Destination $setup
+    foreach ($mode in '/VERIFYONLY','/EXTRACT','/EXTRACT') {
+        $alreadyExtracted = Test-Path -LiteralPath $package
+        $process = Microsoft.PowerShell.Management\Start-Process -FilePath $setup -ArgumentList "/S $mode" -WindowStyle Hidden -PassThru
+        try {
+            if (!$process.WaitForExit(60000)) { $process.Kill(); $process.WaitForExit(); throw 'Setup check timed out.' }
+            if ($mode -eq '/EXTRACT' -and $alreadyExtracted) {
+                if (!$process.ExitCode) { throw 'Setup overwrote an existing extraction target.' }
+            } elseif ($process.ExitCode) { throw "Setup $mode failed." }
+        } finally { $process.Dispose() }
+    }
+    if ((Get-FileHash -LiteralPath $package -Algorithm SHA256).Hash.ToLowerInvariant() -cne $build.sha256) { throw 'Setup does not contain the validated MSIX bytes.' }
+    Write-Output 'Setup verification, exact-byte extraction, overwrite rejection and captured-code handoff passed. Tampered payload, version and dependency were rejected. No installation or elevation occurred.'
 } finally {
     Remove-Variable -Scope Global -Name crosshairInstallerInvocation -ErrorAction SilentlyContinue
     # Remove only the known junction, never traverse it during recursive fixture cleanup.

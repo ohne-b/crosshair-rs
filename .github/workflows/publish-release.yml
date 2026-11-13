@@ -88,11 +88,8 @@ jobs:
           node scripts/release.mjs verify-assets target/downloaded-release $env:RELEASE_VERSION
           if ($LASTEXITCODE) { throw 'Downloaded release asset verification failed.' }
           if ((Get-FileHash target/release-assets/SHA256SUMS).Hash -ne (Get-FileHash target/downloaded-release/SHA256SUMS).Hash) { throw 'Downloaded checksums differ from the prepared release.' }
-          $minisign = ./scripts/get-minisign.ps1 -Offline
-          $package = "target/downloaded-release/crosshair-rs-$env:RELEASE_VERSION-windows-x64.msix"
-          & $minisign -V -H -P $env:CROSSHAIR_UPDATE_PUBLIC_KEY -m $package
-          if ($LASTEXITCODE) { throw 'Downloaded updater signature failed verification.' }
-          ./target/downloaded-release/Install.ps1 -VerifyOnly
+          $build = Get-Content target/validated/build.json -Raw | ConvertFrom-Json
+          ./scripts/verify-release.ps1 -Directory target/downloaded-release -Version $env:RELEASE_VERSION -ExpectedPackageHash $build.sha256 -Offline
           node scripts/release.mjs gate $env:RELEASE_VERSION $env:VALIDATED_ARTIFACT draft
           if ($LASTEXITCODE) { throw 'Release provenance changed during verification. The release remains a draft.' }
           if ($env:PRERELEASE -eq 'true') {

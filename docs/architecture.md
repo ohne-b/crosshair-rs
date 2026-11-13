@@ -654,7 +654,7 @@ A Settings dot may mark availability; never add another sidebar footer item.
 ### Manifest and authenticity
 
 Endpoint: `https://github.com/ohne-b/crosshair-rs/releases/latest/download/latest.json`.
-TDM schema, with `windows-x86_64-msix` platform:
+TDM schema, with `windows-x86_64-nsis` platform and an embedded-package signature:
 
 ```json
 {
@@ -663,9 +663,10 @@ TDM schema, with `windows-x86_64-msix` platform:
   "notes": "[Check release notes on GitHub](https://github.com/ohne-b/crosshair-rs/releases/tag/v1.2.3)",
   "pub_date": "2026-11-11T12:00:00Z",
   "platforms": {
-    "windows-x86_64-msix": {
-      "url": "https://github.com/ohne-b/crosshair-rs/releases/download/v1.2.3/crosshair-rs-1.2.3-windows-x64.msix",
-      "signature": "BASE64_ENCODED_MINISIGN_SIGNATURE_FILE"
+    "windows-x86_64-nsis": {
+      "url": "https://github.com/ohne-b/crosshair-rs/releases/download/v1.2.3/crosshair-rs-1.2.3-windows-x64-setup.exe",
+      "signature": "BASE64_ENCODED_SETUP_SIGNATURE",
+      "package_signature": "BASE64_ENCODED_MSIX_SIGNATURE"
     }
   }
 }
@@ -677,9 +678,13 @@ bounded allowlisted GitHub asset redirects. Reject userinfo, unexpected ports,
 query/path tricks. Notes are inert text/link, never HTML. Metadata timeout 20 s,
 download deadline ten minutes, package cap 512 MiB enforced against actual bytes.
 
-Stream to private staging, not a whole installer RAM buffer. Verify pinned
-project-specific Minisign key and authenticated trusted-comment `version:VERSION`,
-matching manifest and package identity/publisher/architecture/mapped version.
+Stream the setup EXE to private staging, not a whole installer RAM buffer. Verify
+the pinned project-specific Minisign key and authenticated trusted-comment
+`version:VERSION` before executing its silent extraction mode. Keep the EXE locked
+against replacement during extraction, bound that child to 60 seconds and cancel it
+with the download. Independently verify the extracted MSIX using `package_signature`
+and the same authenticated version, then match its identity/publisher/architecture.
+The existing helper re-verifies that MSIX before shutdown and deployment.
 Otherwise old signed bytes could be relabeled as a new version. A verifier that
 requires contiguous input may use a bounded read-only mapping; do not claim
 streaming cryptographic verification without its support.
@@ -694,8 +699,12 @@ identity and dependency failures block installation before the app stops.
 
 ### Install and restart
 
-Direct unsigned MSIX with Windows `Add-AppxPackage -AllowUnsigned`, no competing
-`.appinstaller` automatic update association. [Microsoft's unsigned-package
+One NSIS setup EXE bundles the unsigned MSIX and its Microsoft framework. The
+embedded installer checks pinned payload hashes and identity before using Windows
+`Add-AppxPackage -AllowUnsigned`, with no `.appinstaller` update association.
+Initial installation trusts the setup obtained from the project's GitHub release;
+it does not claim Windows code signing or a self-authenticating executable.
+[Microsoft's unsigned-package
 deployment][unsigned-msix] requires Windows 11 and administrator privileges for
 this executable package. A temporary elevated Windows PowerShell process deploys;
 the engine, editor, widget and recovery coordinator stay unelevated. No Windows
@@ -746,12 +755,14 @@ prerequisite only for its output mode. The package identity is
 unsigned-package namespace. This does not claim certificate ownership. The three
 executables are package-root siblings.
 
-`scripts/package-windows.ps1` validates a real build and supplies an offline
-`Microsoft.VCLibs.140.00` x64 **14.0.33519.0** dependency beside the MSIX. The
+`scripts/package-windows.ps1` validates a real build and bundles an offline
+`Microsoft.VCLibs.140.00` x64 **14.0.33519.0** dependency inside the setup EXE. The
 framework is extracted from Microsoft's hash-pinned VS2022 CRT redistributable
-CAB and checked for exact hash, identity and Microsoft signature. `Install.ps1`
-passes it to Windows as a dependency; it does not import certificates or change
-Developer Mode. This is the UWP VCLibs framework, not `UWPDesktop`.
+CAB and checked for exact hash, identity and Microsoft signature. The embedded
+deployment script passes it to Windows as a dependency without importing
+certificates or changing Developer Mode. This is the UWP VCLibs framework,
+not `UWPDesktop`. A hash-pinned NSIS toolchain builds the installer during Validation;
+publication signs and copies those exact tested bytes without rebuilding.
 
 Freeze the Microsoft framework minimum versions for the first stable release
 line. Before stopping the app, validate that installed dependencies satisfy the
@@ -778,9 +789,10 @@ Follow existing OhneGuessr/TDM conventions:
   commit/platform/SHA-256 metadata. Publisher consumes that revision's successful
   artifacts, not an older success after a failed/cancelled newer attempt or a
   silent rebuild. Expired artifacts require revalidation.
-- Manual publication verifies the unsigned package and signs its authenticated release version,
-  generates latest.json/checksums. No signing secrets in PR jobs.
-- Draft release gets MSIX, detached signature, latest.json and SHA256SUMS.
+- Manual publication signs both the validated setup and its unsigned MSIX with the
+  authenticated release version. Both signatures live in latest.json; no verifier
+  executable or detached signature is distributed. No signing secrets in PR jobs.
+- Draft release gets only setup.exe, latest.json and SHA256SUMS.
   Download/verify assets and complete clean-install/upgrade/recovery evidence
   before publication. Only stable advances latest.
 - Title `crosshair-rs vVERSION`, one Changelog comparison footer, one issue link.
@@ -796,6 +808,9 @@ specified in [CONTRIBUTING.md](CONTRIBUTING.md#maintainer-commands-and-signing-c
 Missing keys fail closed before any update request. Unsigned installation, helper
 breakaway survival, two-version deployment and clean-install behavior require
 actual runtime evidence; source checks alone do not prove those gates.
+Validation installs the setup on its disposable hosted Windows runner, checks
+registration and installed engine startup, then removes that test registration.
+Interactive elevation/cancellation and upgrade recovery still need separate acceptance.
 
 ## Performance and validation
 
