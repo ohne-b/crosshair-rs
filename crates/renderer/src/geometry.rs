@@ -96,7 +96,7 @@ impl Element {
                     .context("Layer transform is out of range")?,
                 color,
                 erase,
-                antialias: antialias || !is_pixel_aligned(transform),
+                antialias,
             }),
             Self::Image {
                 image,
@@ -271,22 +271,6 @@ fn snap_trig(value: f32) -> f32 {
     } else {
         value
     }
-}
-
-fn is_pixel_aligned(transform: Transform) -> bool {
-    let axis_aligned = (transform.kx == 0.0 && transform.ky == 0.0)
-        || (transform.sx == 0.0 && transform.sy == 0.0);
-    axis_aligned
-        && [
-            transform.sx,
-            transform.sy,
-            transform.kx,
-            transform.ky,
-            transform.tx,
-            transform.ty,
-        ]
-        .iter()
-        .all(|v| v.fract() == 0.0)
 }
 
 fn element(path: Path, color: Color, antialias: bool) -> Element {

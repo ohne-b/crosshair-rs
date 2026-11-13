@@ -489,6 +489,9 @@ warm and cold switching. Integer-aligned edges stay crisp; fractional/rotated
 geometry is antialiased intentionally. For odd thickness/even monitor centers,
 choose a stable nearest-pixel placement with at most 0.5 px center error rather
 than blurring a one-pixel line. Use identical rounding on both outputs.
+Apply this alignment to rectangular contours after all layer and output transforms,
+based on their final pixel spans. Preserve fractional spans and positions with
+coverage antialiasing; do not infer alignment from scale factors alone.
 
 ### Desktop
 

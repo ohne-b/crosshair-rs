@@ -32,6 +32,29 @@ fn compare(preset: &Preset, source: &impl AssetSource, tolerance: u8) -> String 
 }
 
 #[test]
+fn svg_matches_small_scaled_fractional_and_rotated_crosshairs() {
+    for (scale, rotation, offset) in [
+        (0.5, 0.0, 0.0),
+        (0.25, 0.0, 0.0),
+        (0.5, 30.0, 0.0),
+        (0.5, 0.0, 0.25),
+    ] {
+        let mut preset = Preset::new("Small crosshair");
+        preset.layers[0].content = Content::Crosshair(Crosshair {
+            thickness: 2.0,
+            length: 9.0,
+            gap: 0.0,
+            color: Color::rgba(255, 0, 0, 128),
+            ..Default::default()
+        });
+        preset.layers[0].transform.scale = scale;
+        preset.layers[0].transform.rotation = rotation;
+        preset.layers[0].transform.x = offset;
+        compare(&preset, &no_assets, 1);
+    }
+}
+
+#[test]
 fn svg_keeps_shapes_and_text_as_paths_and_preserves_alpha_and_transforms() {
     let mut preset = Preset::new("<&\" ignored metadata");
     preset.layers = vec![Layer::new(

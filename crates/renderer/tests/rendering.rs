@@ -90,6 +90,102 @@ fn default_crosshair_has_exact_pixel_geometry_and_no_center_fill() {
 }
 
 #[test]
+fn scaled_whole_pixel_crosshairs_match_native_pixels() {
+    let mut renderer = Renderer::new().unwrap();
+    for thickness in [1.0, 2.0, 3.0] {
+        let native = preset(Content::Crosshair(Crosshair {
+            length: 5.0,
+            gap: 1.0,
+            thickness,
+            ..Default::default()
+        }));
+        let expected = renderer.render(&native, 1.0, &no_assets).unwrap();
+        for scale in [0.25, 0.5, 1.25, 1.5, 2.0] {
+            for output_scale in [false, true] {
+                let mut changed = native.clone();
+                let Content::Crosshair(cross) = &mut changed.layers[0].content else {
+                    unreachable!()
+                };
+                cross.length /= scale;
+                cross.gap /= scale;
+                cross.thickness /= scale;
+                if !output_scale {
+                    changed.layers[0].transform.scale = scale;
+                }
+                let actual = renderer
+                    .render(&changed, if output_scale { scale } else { 1.0 }, &no_assets)
+                    .unwrap();
+                for y in -8..8 {
+                    for x in -8..8 {
+                        assert_eq!(
+                            pixel(&actual, x, y),
+                            pixel(&expected, x, y),
+                            "thickness {thickness}, scale {scale}, output {output_scale}, pixel {x},{y}"
+                        );
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn fractional_and_rotated_strokes_keep_smooth_visible_coverage() {
+    let mut renderer = Renderer::new().unwrap();
+    for (thickness, scale, offset, rotation) in [
+        (0.5, 1.0, 0.0, 0.0),
+        (2.0, 0.25, 0.0, 0.0),
+        (1.0, 1.0, 0.25, 0.0),
+        (1.0, 1.0, 0.0, 30.0),
+    ] {
+        let mut document = preset(Content::Crosshair(Crosshair {
+            length: 8.0,
+            gap: 0.0,
+            thickness,
+            ..Default::default()
+        }));
+        document.layers[0].transform.scale = scale;
+        document.layers[0].transform.y = offset;
+        document.layers[0].transform.rotation = rotation;
+        let raster = renderer.render(&document, 1.0, &no_assets).unwrap();
+        assert!(
+            raster
+                .pixels
+                .chunks_exact(4)
+                .any(|p| p[3] > 0 && p[3] < 255)
+        );
+        assert_premultiplied(&raster);
+    }
+}
+
+#[test]
+fn pixel_alignment_preserves_alpha_and_fractional_arm_ends() {
+    let mut document = preset(Content::Crosshair(Crosshair {
+        length: 9.0,
+        gap: 0.0,
+        thickness: 2.0,
+        color: Color::rgba(255, 0, 0, 128),
+        ..Default::default()
+    }));
+    document.layers[0].transform.scale = 0.5;
+    let mut renderer = Renderer::new().unwrap();
+    let raster = renderer.render(&document, 1.0, &no_assets).unwrap();
+    assert_eq!(pixel(&raster, 2, 0), [128, 0, 0, 128]);
+    assert_eq!(
+        pixel(&raster, 0, 0)[3],
+        128,
+        "Overlapping arms stay one fill"
+    );
+    assert!(pixel(&raster, 4, 0)[3] > 0 && pixel(&raster, 4, 0)[3] < 128);
+    document.layers[0].transform.rotation = 90.0;
+    let rotated = renderer.render(&document, 1.0, &no_assets).unwrap();
+    assert_eq!(raster.pixels, rotated.pixels);
+    document.layers[0].opacity = 0.5;
+    let faded = renderer.render(&document, 1.0, &no_assets).unwrap();
+    assert_eq!(pixel(&faded, 2, 0)[3], 64);
+}
+
+#[test]
 fn odd_thickness_is_crisp_and_quarter_turns_do_not_add_fringe_pixels() {
     let mut crosshair = Crosshair {
         thickness: 3.0,
