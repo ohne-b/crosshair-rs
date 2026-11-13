@@ -1,11 +1,15 @@
 # Changelog
 
-## 0.1.0-alpha.3 (unreleased)
+## 0.1.0-alpha.4 (unreleased)
 
 - Install through native Windows package deployment with the normal administrator
   prompt, without launching PowerShell. Show Windows installation errors directly.
 - Reuse a suitable installed Microsoft runtime instead of redeploying it while
   unrelated applications are using it.
+- Embed the logo in the engine and dashboard executables and preserve transparency
+  in the dashboard taskbar icon.
+- Hide the visibility tooltip when the pointer leaves the switch, including
+  after clicking it.
 
 ## [v0.1.0-alpha.2](https://github.com/ohne-b/crosshair-rs/releases/tag/v0.1.0-alpha.2) 2026-11-13
 
