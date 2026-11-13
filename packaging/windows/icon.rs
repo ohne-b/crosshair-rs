@@ -24,7 +24,7 @@ pub fn embed() {
     let compiler = PathBuf::from(env::var_os("ProgramFiles(x86)").unwrap())
         .join("Windows Kits/10/bin/10.0.26100.0/x64/rc.exe");
     let status = Command::new(compiler)
-        .args(["/nologo", "/fo"])
+        .args(["/nologo", "/c65001", "/fo"])
         .arg(&compiled)
         .arg(&resource)
         .status()
