@@ -37,6 +37,10 @@ upstream notices. Its required public attribution badge is displayed in the
 repository README. Slint remains subject to its attribution, application-use
 and redistribution conditions; the project license does not relicense it.
 
+The unmodified light and dark attribution badges come from
+[Slint's official artwork](https://github.com/slint-ui/slint/tree/372cf0ee5577c3dfec309a45e7b778ba4e81b734/logo),
+licensed under [CC BY-ND 4.0](https://creativecommons.org/licenses/by-nd/4.0/).
+
 Every package contains `Licenses/third-party-rust.md`, generated from the exact
 locked Windows dependency graph reachable from the engine and editor. It lists
 crate versions, declared license expressions, repositories/source links and the

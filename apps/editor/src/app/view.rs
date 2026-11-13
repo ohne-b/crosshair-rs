@@ -152,7 +152,7 @@ impl App {
                 .map(|preset| {
                     self.thumbnails
                         .get(&preset.id)
-                        .map(|(_, image)| image.clone())
+                        .map(|(_, image, _)| image.clone())
                         .unwrap_or_default()
                 })
                 .collect(),
@@ -167,7 +167,7 @@ impl App {
             thumbnail: self
                 .thumbnails
                 .get(&preset.id)
-                .map(|(_, image)| image.clone())
+                .map(|(_, image, _)| image.clone())
                 .unwrap_or_default(),
             selected: selected == Some(preset.id),
             favorite: preset.favorite,
@@ -286,11 +286,11 @@ impl App {
                         .is_some_and(|preset| preset.id == active)
                     && store.get_preview().size().width > 0
                 {
-                    store.get_preview()
+                    store.get_preview_thumbnail()
                 } else {
                     self.thumbnails
                         .get(&active)
-                        .map(|(_, image)| image.clone())
+                        .map(|(_, _, image)| image.clone())
                         .unwrap_or_default()
                 },
             );

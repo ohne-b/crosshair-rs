@@ -46,6 +46,80 @@ fn snapshot(window: &MinimalSoftwareWindow, name: &str) -> Result<()> {
 }
 
 #[test]
+fn header_crosshair_stays_centered_when_source_size_changes() -> Result<()> {
+    struct Headless(Rc<MinimalSoftwareWindow>);
+    impl Platform for Headless {
+        fn create_window_adapter(&self) -> Result<Rc<dyn WindowAdapter>, slint::PlatformError> {
+            Ok(self.0.clone())
+        }
+    }
+    let window = MinimalSoftwareWindow::new(RepaintBufferType::NewBuffer);
+    slint::platform::set_platform(Box::new(Headless(window.clone())))?;
+    let ui = AppWindow::new()?;
+    ui.global::<Store>()
+        .on_scale_thumbnail(preview::scale_thumbnail);
+    ui.window().set_size(slint::LogicalSize::new(1280.0, 800.0));
+    ui.show()?;
+    for dpi in [1.0f32, 1.25, 1.5, 1.75, 2.0] {
+        ui.window()
+            .dispatch_event(WindowEvent::ScaleFactorChanged { scale_factor: dpi });
+        ui.window().set_size(slint::LogicalSize::new(1280.0, 800.0));
+        for size in [20u32, 21, 24, 25, 28, 31, 32, 48, 60, 80, 120, 256] {
+            let mut source = slint::SharedPixelBuffer::<slint::Rgba8Pixel>::new(size, size);
+            let thickness = ((size / 4) & !1) + size % 2;
+            let start = (size - thickness) / 2;
+            for y in 0..size {
+                for x in 0..size {
+                    if (start..start + thickness).contains(&x)
+                        || (start..start + thickness).contains(&y)
+                    {
+                        source.make_mut_slice()[(y * size + x) as usize] =
+                            slint::Rgba8Pixel::new(255, 0, 0, 255);
+                    }
+                }
+            }
+            let raster = crosshair_renderer::Raster {
+                width: size,
+                height: size,
+                origin: [0, 0],
+                pixels: source.as_bytes().to_vec(),
+            };
+            ui.global::<Store>()
+                .set_active_thumbnail(preview::image(&raster.thumbnail(24, 1.0)?));
+            slint::platform::update_timers_and_animations();
+            let physical = ui.window().size();
+            let stride = physical.width as usize;
+            let mut pixels = vec![slint::Rgb8Pixel::default(); stride * physical.height as usize];
+            window.draw_if_needed(|renderer| {
+                renderer.render(&mut pixels, stride);
+            });
+            let red = |x: usize, y: usize| {
+                let p = pixels[y * stride + x];
+                p.r > 160 && p.g < 60
+            };
+            let xs = (1004.0 * dpi) as usize..(1036.0 * dpi) as usize;
+            let ys = (8.0 * dpi) as usize..(40.0 * dpi) as usize;
+            let top = ys.clone().find(|&y| xs.clone().any(|x| red(x, y))).unwrap();
+            let left = xs.clone().find(|&x| ys.clone().any(|y| red(x, y))).unwrap();
+            let stem: Vec<_> = xs.filter(|&x| red(x, top)).collect();
+            let center = (stem[0] + stem[stem.len() - 1] + 1) as f32 / 2.0;
+            assert!(
+                (center - 1020.0 * dpi).abs() <= 0.5,
+                "{size}px source at {dpi} DPI: x center {center}"
+            );
+            let stem: Vec<_> = ys.filter(|&y| red(left, y)).collect();
+            let center = (stem[0] + stem[stem.len() - 1] + 1) as f32 / 2.0;
+            assert!(
+                (center - 24.0 * dpi).abs() <= 0.5,
+                "{size}px source at {dpi} DPI: y center {center}"
+            );
+        }
+    }
+    ui.hide()?;
+    Ok(())
+}
+
+#[test]
 fn library_tabs_sort_picker_and_browse_save_use_the_correct_actions() -> Result<()> {
     struct Headless(Rc<MinimalSoftwareWindow>);
     impl Platform for Headless {

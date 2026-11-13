@@ -36,6 +36,7 @@ export global Store {
     in-out property <[string]> profiles;
     in-out property <int> profile-index: 0;
     in-out property <image> active-thumbnail;
+    in-out property <image> preview-thumbnail;
     in-out property <string> active-name;
     in-out property <[PresetRow]> presets;
     in-out property <[PresetGroup]> preset-groups;
@@ -112,6 +113,7 @@ export global Store {
     callback commit-focused-input;
     callback action(string, string);
     pure callback format-number(float) -> string;
+    pure callback scale-thumbnail(image, float) -> image;
     callback property-edit(string, string, string, int);
     callback property-color(string, string, color, int);
     callback select-layer(string, bool);

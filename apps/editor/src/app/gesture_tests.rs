@@ -94,6 +94,12 @@ fn complete_preview(app: &mut App, adjusted: Option<Preset>) -> Result<()> {
         scale: 1.0,
         generation: app.preview_generation,
         id: app.document.draft.as_ref().unwrap().id,
+        thumbnail: crosshair_renderer::Raster {
+            width: 1,
+            height: 1,
+            origin: [0, 0],
+            pixels: vec![0; 4],
+        },
         raster: std::sync::Arc::new(crosshair_renderer::Raster {
             width: 1,
             height: 1,

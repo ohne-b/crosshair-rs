@@ -71,7 +71,7 @@ export component TitleBar inherits Rectangle {
             footer-clicked => { Store.settings-category = 2; Store.action("navigate", "3"); }
         }
         Rectangle { x: 164px; y: 8px; width: 32px; height: 32px; border-radius: 8px; background: Theme.preview; border-width: 1px; border-color: Store.visible ? Theme.orange : Theme.border;
-            Image { x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2; width: min(24px, self.source.width * 1px); height: min(24px, self.source.height * 1px); source: Store.active-thumbnail; image-fit: contain; }
+            Image { x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2; width: self.source.width * 1phx; height: self.source.height * 1phx; source: Store.scale-thumbnail(Store.active-thumbnail, 1px / 1phx); }
             accessible-role: image; accessible-label: Store.active-name;
         }
         VisibilitySwitch { x: 206px; y: 7px; }
