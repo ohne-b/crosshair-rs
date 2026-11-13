@@ -492,6 +492,7 @@ impl App {
                 generation,
                 id,
                 raster,
+                thumbnail,
                 bounds,
                 inverses,
                 anchors,
@@ -518,6 +519,7 @@ impl App {
                 let ui = self.window()?;
                 let store = ui.global::<Store>();
                 store.set_preview(preview::image(&raster));
+                store.set_preview_thumbnail(preview::image(&thumbnail));
                 store.set_preview_x(raster.origin[0] as f32 / scale);
                 store.set_preview_y(raster.origin[1] as f32 / scale);
                 store.set_preview_width(raster.width as f32 / scale);
@@ -529,9 +531,16 @@ impl App {
                 id,
                 revision,
                 raster,
+                thumbnail,
             }) => {
-                self.thumbnails
-                    .insert(id, (revision, preview::image(&raster)));
+                self.thumbnails.insert(
+                    id,
+                    (
+                        revision,
+                        preview::image(&raster),
+                        preview::image(&thumbnail),
+                    ),
+                );
                 self.refresh_library();
                 self.refresh_status();
             }

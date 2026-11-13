@@ -78,6 +78,18 @@ pub fn presets() -> Vec<Preset> {
         layer.transform.y = y;
         shotgun.push(layer);
     }
+    let mut teloqr = Layer::new(
+        "Cross",
+        Content::Crosshair(Crosshair {
+            color: white,
+            length: 3.5,
+            thickness: 1.0,
+            gap: 0.0,
+            ..Default::default()
+        }),
+    );
+    teloqr.transform.x = -0.5;
+    teloqr.transform.y = 0.5;
     let designs = [
         ("Shotgun", shotgun),
         ("Blue outline", outlined(Color::rgba(0, 0, 255, 204))),
@@ -110,6 +122,7 @@ pub fn presets() -> Vec<Preset> {
             )],
         ),
         ("Small white", vec![cross("Cross", white, 4.0, 0.0)]),
+        ("TeloqR (CS Pro)", vec![teloqr]),
     ];
     designs
         .into_iter()
@@ -151,6 +164,7 @@ mod tests {
                 include_bytes!("fixtures/small-white.svg").as_slice(),
                 28.0,
             ),
+            (8, include_bytes!("fixtures/teloqr.svg").as_slice(), 28.0),
         ] {
             let asset = Id::new_v4();
             let data = AssetData {
@@ -185,7 +199,7 @@ mod tests {
     #[test]
     fn designs_are_valid_editable_and_copies_are_independent() -> anyhow::Result<()> {
         let designs = presets();
-        assert_eq!(designs.len(), 8);
+        assert_eq!(designs.len(), 9);
         let mut renderer = crosshair_renderer::Renderer::new()?;
         for preset in &designs {
             crosshair_core::validation::validate_preset_geometry(preset)?;

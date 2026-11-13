@@ -8,6 +8,38 @@ fn no_assets(_: Id) -> anyhow::Result<AssetData> {
     anyhow::bail!("Unexpected asset request")
 }
 
+#[test]
+fn thumbnails_preserve_aspect_and_premultiplied_color() -> anyhow::Result<()> {
+    let raster = Raster {
+        width: 48,
+        height: 24,
+        origin: [-24, -12],
+        pixels: [80, 40, 20, 128].repeat(48 * 24),
+    };
+    let small = raster.thumbnail(24, 1.0)?;
+    assert_eq!((small.width, small.height, small.origin), (24, 12, [0, 0]));
+    assert!(
+        small
+            .pixels
+            .chunks_exact(4)
+            .all(|pixel| pixel == [80, 40, 20, 128])
+    );
+    assert_eq!(small.thumbnail(80, 1.0)?.pixels, small.pixels);
+    assert_eq!(small.thumbnail(24, 1.25)?.width, 30);
+    assert!(raster.thumbnail(0, 1.0).is_err());
+    assert!(raster.thumbnail(24, f32::NAN).is_err());
+    assert!(raster.thumbnail(24, 0.0).is_err());
+    assert!(
+        Raster {
+            pixels: Vec::new(),
+            ..raster
+        }
+        .thumbnail(24, 1.0)
+        .is_err()
+    );
+    Ok(())
+}
+
 fn preset(content: Content) -> Preset {
     let mut preset = Preset::new("Test");
     preset.layers = vec![Layer::new("Layer", content)];

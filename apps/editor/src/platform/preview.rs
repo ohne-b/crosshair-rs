@@ -28,6 +28,7 @@ pub enum Event {
         generation: u64,
         id: Id,
         raster: Arc<Raster>,
+        thumbnail: Raster,
         bounds: Vec<(Id, LayerBounds)>,
         inverses: BTreeMap<Id, [Point; 3]>,
         anchors: BTreeMap<Id, Point>,
@@ -37,6 +38,7 @@ pub enum Event {
         id: Id,
         revision: u64,
         raster: Arc<Raster>,
+        thumbnail: Raster,
     },
     Fonts(Vec<String>),
     Error(String),
@@ -279,9 +281,13 @@ fn worker(
                 .measure(document, request.max_output_scale)
                 .and_then(|_| {
                     render_preview(&mut renderer, document, request.zoom, &source, cancelled)
+                })
+                .and_then(|(raster, scale)| {
+                    let thumbnail = raster.thumbnail(24, 1.0)?;
+                    Ok((raster, scale, thumbnail))
                 });
             match rendered {
-                Ok((raster, scale)) if !cancelled() => {
+                Ok((raster, scale, thumbnail)) if !cancelled() => {
                     let bounds = document
                         .layers
                         .iter()
@@ -323,6 +329,7 @@ fn worker(
                         generation,
                         id: document.id,
                         raster,
+                        thumbnail,
                         bounds,
                         inverses,
                         anchors,
@@ -364,11 +371,19 @@ fn worker(
                     } else {
                         raster
                     };
+                    let thumbnail = match raster.thumbnail(24, 1.0) {
+                        Ok(thumbnail) => thumbnail,
+                        Err(error) => {
+                            events(Event::Error(error.to_string()));
+                            continue;
+                        }
+                    };
                     thumbnail_revisions.insert(preset.id, preset.revision);
                     events(Event::Thumbnail {
                         id: preset.id,
                         revision: preset.revision,
                         raster,
+                        thumbnail,
                     });
                 }
                 Err(error) if !cancelled() => events(Event::Error(error.to_string())),
@@ -417,6 +432,26 @@ fn recover(client: &Client, original: &Preset) -> Result<(Preset, AppState)> {
     };
     crosshair_core::validate_preset(&changed, &state.assets)?;
     Ok((changed, state))
+}
+
+pub fn scale_thumbnail(source: slint::Image, dpi: f32) -> slint::Image {
+    // Only the worker's tiny thumbnail is resized here, when its source or DPI changes.
+    if dpi == 1.0 || source.size().width > 24 || source.size().height > 24 {
+        return source;
+    }
+    let Some(buffer) = source.to_rgba8_premultiplied() else {
+        return source;
+    };
+    let raster = Raster {
+        width: buffer.width(),
+        height: buffer.height(),
+        origin: [0, 0],
+        pixels: buffer.as_bytes().to_vec(),
+    };
+    raster
+        .thumbnail(24, dpi)
+        .map(|raster| image(&raster))
+        .unwrap_or(source)
 }
 
 pub fn image(raster: &Raster) -> slint::Image {

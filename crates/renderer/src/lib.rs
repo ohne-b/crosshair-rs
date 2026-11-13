@@ -30,6 +30,41 @@ pub struct Raster {
 }
 
 impl Raster {
+    /// A filtered UI thumbnail, independent of the overlay's physical origin.
+    pub fn thumbnail(&self, limit: u32, dpi: f32) -> Result<Self> {
+        // Prefilter before Slint's nearest-neighbor scaling can shift thin crosshair stems.
+        ensure!(
+            limit > 0 && limit <= MAX_DIMENSION,
+            "Invalid thumbnail limit"
+        );
+        ensure!(
+            dpi.is_finite() && dpi > 0.0 && limit as f32 * dpi <= MAX_DIMENSION as f32,
+            "Invalid thumbnail scale"
+        );
+        let source = image::ImageBuffer::<image::Rgba<u8>, _>::from_raw(
+            self.width,
+            self.height,
+            self.pixels.as_slice(),
+        )
+        .ok_or_else(|| anyhow::anyhow!("Invalid raster buffer"))?;
+        ensure!(self.width > 0 && self.height > 0, "Empty raster");
+        let scale = (limit as f32 / self.width.max(self.height) as f32).min(1.0) * dpi;
+        let width = (self.width as f32 * scale).round().max(1.0) as u32;
+        let height = (self.height as f32 * scale).round().max(1.0) as u32;
+        let pixels = image::imageops::resize(
+            &source,
+            width,
+            height,
+            image::imageops::FilterType::Triangle,
+        );
+        Ok(Self {
+            width,
+            height,
+            origin: [0, 0],
+            pixels: pixels.into_raw(),
+        })
+    }
+
     pub fn to_png(&self) -> Result<Vec<u8>> {
         let size = tiny_skia::IntSize::from_wh(self.width, self.height)
             .ok_or_else(|| anyhow::anyhow!("Invalid raster dimensions"))?;

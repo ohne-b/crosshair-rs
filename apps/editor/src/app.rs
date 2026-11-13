@@ -193,7 +193,7 @@ pub(crate) struct App {
     fonts: Vec<String>,
     fields: Vec<Field>,
     collapsed: BTreeSet<String>,
-    thumbnails: BTreeMap<Id, (u64, slint::Image)>,
+    thumbnails: BTreeMap<Id, (u64, slint::Image, slint::Image)>,
     palette: Vec<Preset>,
     browse: Vec<Preset>,
     bounds: Vec<(Id, LayerBounds)>,
@@ -336,6 +336,8 @@ pub fn run() -> Result<()> {
         .on_action(|action, value| ui_event(UiEvent::Action(action.into(), value.into())));
     ui.global::<Store>()
         .on_format_number(|value| crate::features::designer::format_number(value).into());
+    ui.global::<Store>()
+        .on_scale_thumbnail(preview::scale_thumbnail);
     ui.global::<Store>()
         .on_property_edit(|selection, key, value, phase| {
             ui_event(UiEvent::Property(
@@ -485,7 +487,7 @@ impl App {
             .filter(|preset| {
                 self.thumbnails
                     .get(&preset.id)
-                    .is_none_or(|(revision, _)| *revision != preset.revision)
+                    .is_none_or(|(revision, _, _)| *revision != preset.revision)
             })
             .cloned()
             .collect();

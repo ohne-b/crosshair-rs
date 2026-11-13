@@ -30,8 +30,13 @@ See [CONTRIBUTING.md](docs/CONTRIBUTING.md) for building, testing and pull reque
 
 [PolyForm Noncommercial 1.0.0](LICENSE.md). Third-party licenses and credits are in [NOTICE.md](NOTICE.md).
 
-[![Made with Slint](assets/MadeWithSlint.png)](https://slint.dev/)
-
 Logo adapted from the [Rust logo](https://github.com/rust-lang/rust-artwork/blob/main/logo/rust-logo-gear-only.svg),
 owned by the Rust Foundation, under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
 Colors and symbol modified.
+
+<a href="https://slint.dev/">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/MadeWithSlint-dark.svg">
+    <img src="assets/MadeWithSlint-light.svg" alt="Made with Slint" width="132">
+  </picture>
+</a>
