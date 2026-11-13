@@ -34,8 +34,8 @@ sequence this work; they do not make required features optional.
 
 Exclude animations and animation stages, controllers, game detection, automatic
 profile switching, foreground-process monitoring, cursor replacement, randomizer,
-community feeds, workshop, shop, accounts, cloud sync, telemetry, Discord
-integration and streaming servers. These are exclusions, not empty navigation
+community feeds, workshop, shop, accounts, cloud sync, telemetry and streaming
+servers. These are exclusions, not empty navigation
 entries or a future-feature backlog.
 
 ### Changes from the original baseline
@@ -278,6 +278,7 @@ Use one quiet surface, headings and separators rather than card stacks.
 | Game Bar | Installed/connected/pinned state, Open Game Bar, setup help and repin recovery. Only show relevant controls in that mode. |
 | Startup | Launch at sign-in; Show crosshair on launch. Startup runs only the engine. |
 | Interface | Windows text scaling/reduced motion respected; reset editor layout. Fixed dark design, no exposed rendering backend toggle. |
+| Discord | Off by default; General has an enable switch and Simple/Quote selector. Simple shares only overlay visibility; Quote uses only the Soldier: 76 quote. |
 | Data | Import/export profiles/all data, open data folder, confirmed settings reset with backup. |
 | Maintenance | Version, update check preference, manual check, inline status/progress, release notes, download/cancel/install. |
 | About | Version, source license and third-party notices/attribution. |
@@ -354,6 +355,27 @@ SemVer implementations. Reuse suitable existing primitives. No handwritten
 cryptography, TLS client or async runtime just to keep an idle message loop alive.
 
 ## Data and editing contract
+
+### Discord presence
+
+The engine owns optional Discord Rich Presence through the local Windows IPC
+pipe. The dashboard may close normally. Application ID `1570691376738209834`
+and the large-image asset key `crosshair_rs` are public constants. Buttons link
+to Download (GitHub releases) and Source code (the repository). No crosshair or
+profile names, images, input, game detection, join data, uploads or secrets are
+sent. The logo must be uploaded to that application's Rich Presence assets.
+
+Reuse the existing bounded, cancellable Windows pipe transport and JSON support;
+there is no additional dependency. One 256 KiB stack worker is created on first
+enable. It sleeps on pipe input or settings notifications, uses a single latest
+state slot, debounces changes for 350 ms and sends at most one activity update
+per five seconds. Reconnection backs off from one to sixty seconds. Operations
+have 500 ms deadlines and frames are capped at 64 KiB. Disable clears activity
+and closes the pipe; the worker then sleeps until reenabled or shutdown. Exit
+attempts a bounded clear and joins the worker. No Discord I/O runs on the input
+or rendering thread. Defaults and older settings leave the feature disabled.
+
+### Stored model
 
 Stable opaque IDs identify presets/layers/profiles/bindings/assets. Names are
 editable labels, never identity or filesystem paths.

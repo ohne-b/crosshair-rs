@@ -591,7 +591,13 @@ impl App {
             "export-profile" => self.export(ExportKind::Profile {
                 profile: value.parse()?,
             })?,
-            "output-mode" | "monitor" | "startup" | "show-on-launch" | "check-updates-setting" => {
+            "output-mode"
+            | "monitor"
+            | "startup"
+            | "show-on-launch"
+            | "check-updates-setting"
+            | "discord-presence"
+            | "discord-style" => {
                 let mut settings = self.state.settings.clone();
                 match action {
                     "output-mode" => {
@@ -610,6 +616,14 @@ impl App {
                     }
                     "startup" => settings.launch_at_login = value.parse()?,
                     "show-on-launch" => settings.show_on_launch = value.parse()?,
+                    "discord-presence" => settings.discord_presence = value.parse()?,
+                    "discord-style" => {
+                        settings.discord_style = match value {
+                            "0" => crosshair_core::DiscordStyle::Simple,
+                            "1" => crosshair_core::DiscordStyle::Quote,
+                            _ => bail!("Choose Simple or Quote"),
+                        };
+                    }
                     _ => settings.check_updates = value.parse()?,
                 }
                 self.settings_edit(settings)?;
@@ -817,6 +831,8 @@ fn requires_finished_edit(action: &str) -> bool {
             | "startup"
             | "show-on-launch"
             | "check-updates-setting"
+            | "discord-presence"
+            | "discord-style"
             | "position-use"
             | "position-delete"
             | "binding-remove"

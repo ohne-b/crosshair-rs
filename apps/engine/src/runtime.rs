@@ -110,6 +110,7 @@ impl Drop for Com {
 }
 
 struct Runtime {
+    discord: crate::discord::Presence,
     app: App,
     root: PathBuf,
     window: Window,
@@ -267,6 +268,7 @@ pub fn run(options: Options) -> Result<()> {
         WTSRegisterSessionNotification(window.0, NOTIFY_FOR_THIS_SESSION)?;
     }
     let mut runtime = Runtime {
+        discord: crate::discord::Presence::default(),
         app,
         root,
         window,
@@ -535,6 +537,10 @@ impl Runtime {
     }
 
     fn refresh(&mut self) {
+        self.discord.update(
+            &self.app.state.settings,
+            self.app.status().visible && !self.suspended,
+        );
         self.tray
             .update(&self.app.state, self.app.status().visible, !self.frozen);
         if let Some(input) = &mut self.input

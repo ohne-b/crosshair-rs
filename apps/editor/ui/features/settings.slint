@@ -102,6 +102,16 @@ export component Settings inherits Rectangle {
                             Setting { label: "Accessibility"; ActionButton { icon: @image-url("../../../../assets/icons/info-circle.svg"); label: "Windows text scaling and reduced motion"; quiet: true; clicked => { Store.action("interface-help", ""); } } }
                             Setting { label: "Editor layout"; last: true; ActionButton { text: "Reset layout"; clicked => { Store.action("reset-layout", ""); } } }
                         }
+                        SectionTitle { text: "DISCORD"; }
+                        Group {
+                            Setting { label: "Show activity on Discord"; last: !Store.discord-presence;
+                                Switch { checked: Store.discord-presence; label: "Show activity on Discord"; toggled => { Store.action("discord-presence", Store.discord-presence ? "false" : "true"); } }
+                            }
+                            if Store.discord-presence: Setting { label: "Style"; last: true;
+                                DropDown { width: 180px; model: ["Simple", "Quote"]; current-index: Store.discord-style; accessible-label: "Discord presence style"; selected(value) => { Store.action("discord-style", self.current-index); } }
+                            }
+                        }
+                        Text { text: "Shares your overlay status or the Soldier: 76 quote. Requires Discord desktop and Activity Sharing."; color: Theme.muted; font-size: 12px * Theme.text-scale; wrap: word-wrap; }
                     }
                     if root.category == 2: VerticalLayout { spacing: 12px; alignment: start;
                         SectionTitle { text: "PROFILES & CROSSHAIRS"; }

@@ -20,6 +20,13 @@ There are no accounts, cloud sync or telemetry. Automatic update checks contact
 GitHub and can be disabled in Settings. You can also check manually. Downloads
 start only when requested. Opening external links uses your browser.
 
+Discord Rich Presence is optional and off by default. When enabled, the engine
+sends the overlay's visible/hidden status or the fixed Soldier: 76 quote to the
+local Discord desktop client, which shares it according to your Discord Activity
+Sharing settings. It also sends the app logo's asset key and two project links.
+Crosshair names, designs, profiles and input are never sent. There are no image
+uploads, accounts, tokens or additional network services in this integration.
+
 Keyboard and mouse shortcuts are observed globally without blocking or injecting
 input. The app does not record a history of your keystrokes. Xbox Game Bar is a
 separate Microsoft application with its own privacy settings.

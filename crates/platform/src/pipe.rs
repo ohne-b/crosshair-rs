@@ -5,14 +5,14 @@ use std::{
     time::{Duration, Instant},
 };
 
-use anyhow::{Result, bail, ensure};
+use anyhow::{Result, ensure};
 use crosshair_core::protocol::MAX_FRAME_BYTES;
 use serde::{Serialize, de::DeserializeOwned};
 use windows::{
     Win32::{
         Foundation::{
-            ERROR_IO_PENDING, ERROR_PIPE_CONNECTED, HANDLE, HLOCAL, LocalFree, WAIT_OBJECT_0,
-            WAIT_TIMEOUT,
+            ERROR_IO_PENDING, ERROR_OPERATION_ABORTED, ERROR_PIPE_CONNECTED, HANDLE, HLOCAL,
+            LocalFree, WAIT_OBJECT_0, WAIT_TIMEOUT,
         },
         Security::{
             Authorization::{
@@ -35,7 +35,8 @@ use windows::{
                 PIPE_REJECT_REMOTE_CLIENTS, PIPE_TYPE_BYTE, PIPE_WAIT,
             },
             Threading::{
-                CreateEventW, INFINITE, SetEvent, WaitForMultipleObjects, WaitForSingleObject,
+                CreateEventW, INFINITE, ResetEvent, SetEvent, WaitForMultipleObjects,
+                WaitForSingleObject,
             },
         },
     },
@@ -68,6 +69,21 @@ impl StopSignal {
     fn is_set(&self) -> bool {
         unsafe { WaitForSingleObject(self.handle(), 0) == WAIT_OBJECT_0 }
     }
+
+    pub fn reset(&self) {
+        unsafe {
+            let _ = ResetEvent(self.handle());
+        }
+    }
+
+    pub fn wait(&self, timeout: Option<Duration>) {
+        let milliseconds = timeout.map_or(INFINITE, |time| {
+            time.as_millis().min((u32::MAX - 1) as u128) as u32
+        });
+        unsafe {
+            WaitForSingleObject(self.handle(), milliseconds);
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -78,6 +94,25 @@ pub struct Pipe {
 
 impl Pipe {
     pub fn connect(name: &str, identity: &Identity, server_files: &[&str]) -> Result<Self> {
+        let pipe = Self::open(name)?;
+        identity.verify_peer(&pipe.server_identity()?, server_files)?;
+        Ok(pipe)
+    }
+
+    pub fn connect_discord(index: u8, identity: &Identity) -> Result<Self> {
+        ensure!(index < 10, "Invalid Discord pipe index");
+        let pipe = Self::open(&format!(r"\\?\pipe\discord-ipc-{index}"))?;
+        let peer = pipe.server_identity()?;
+        ensure!(
+            peer.user_sid == identity.user_sid
+                && peer.logon_sid == identity.logon_sid
+                && peer.session == identity.session,
+            "Discord belongs to another Windows session"
+        );
+        Ok(pipe)
+    }
+
+    fn open(name: &str) -> Result<Self> {
         let name = wide(name);
         let handle = unsafe {
             CreateFileW(
@@ -90,16 +125,18 @@ impl Pipe {
                 None,
             )?
         };
-        let pipe = Self {
+        Ok(Self {
             handle: Arc::new(unsafe { owned(handle) }),
             stop: StopSignal::new()?,
-        };
+        })
+    }
+
+    fn server_identity(&self) -> Result<Identity> {
         let mut pid = 0;
         unsafe {
-            GetNamedPipeServerProcessId(pipe.raw(), &mut pid)?;
+            GetNamedPipeServerProcessId(self.raw(), &mut pid)?;
         }
-        identity.verify_peer(&Identity::process(pid)?, server_files)?;
-        Ok(pipe)
+        Identity::process(pid)
     }
 
     pub fn raw(&self) -> HANDLE {
@@ -168,6 +205,20 @@ impl Pipe {
         self.complete(result, &mut overlap, deadline)
     }
 
+    /// Wait for bytes, a worker notification, or a deadline without polling.
+    pub fn read_or_wake(
+        &self,
+        buffer: &mut [u8],
+        deadline: Option<Instant>,
+        wake: &StopSignal,
+    ) -> Result<Option<usize>> {
+        ensure!(!self.stop.is_set(), "Pipe connection closed");
+        let operation = Operation::new()?;
+        let mut overlap = operation.overlapped();
+        let result = unsafe { ReadFile(self.raw(), Some(buffer), None, Some(&mut overlap)) };
+        self.complete_or_wake(result, &mut overlap, deadline, wake.handle())
+    }
+
     fn write(&self, buffer: &[u8], deadline: Instant) -> Result<usize> {
         ensure!(!self.stop.is_set(), "Pipe connection closed");
         let operation = Operation::new()?;
@@ -192,6 +243,17 @@ impl Pipe {
         deadline: Option<Instant>,
         stop: HANDLE,
     ) -> Result<usize> {
+        self.complete_or_wake(result, overlap, deadline, stop)?
+            .ok_or_else(|| anyhow::anyhow!("Pipe operation timed out or was interrupted"))
+    }
+
+    fn complete_or_wake(
+        &self,
+        result: windows::core::Result<()>,
+        overlap: &mut OVERLAPPED,
+        deadline: Option<Instant>,
+        wake: HANDLE,
+    ) -> Result<Option<usize>> {
         if let Err(error) = result {
             if error.code() != ERROR_IO_PENDING.to_hresult() {
                 return Err(error.into());
@@ -202,25 +264,31 @@ impl Pipe {
                     .min((u32::MAX - 1) as u128) as u32
             });
             let result =
-                unsafe { WaitForMultipleObjects(&[overlap.hEvent, stop], false, milliseconds) };
+                unsafe { WaitForMultipleObjects(&[overlap.hEvent, wake], false, milliseconds) };
             if result != WAIT_OBJECT_0 {
                 // Cancellation must complete before the stack OVERLAPPED and buffers go away.
                 unsafe {
                     let _ = CancelIoEx(self.raw(), Some(overlap));
-                    let mut ignored = 0;
-                    let _ = GetOverlappedResult(self.raw(), overlap, &mut ignored, true);
+                    let mut count = 0;
+                    match GetOverlappedResult(self.raw(), overlap, &mut count, true) {
+                        // A simultaneous completion still owns these bytes; never discard them.
+                        Ok(()) => return Ok(Some(count as usize)),
+                        Err(error)
+                            if error.code() == ERROR_OPERATION_ABORTED.to_hresult()
+                                && (result == WAIT_TIMEOUT || result.0 == WAIT_OBJECT_0.0 + 1) =>
+                        {
+                            return Ok(None);
+                        }
+                        Err(error) => return Err(error.into()),
+                    }
                 }
-                if result == WAIT_TIMEOUT {
-                    bail!("Pipe operation timed out");
-                }
-                bail!("Pipe operation was interrupted");
             }
         }
         let mut count = 0;
         unsafe {
             GetOverlappedResult(self.raw(), overlap, &mut count, false)?;
         }
-        Ok(count as usize)
+        Ok(Some(count as usize))
     }
 }
 
