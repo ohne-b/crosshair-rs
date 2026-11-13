@@ -39,9 +39,13 @@ Open **Settings > Updates**, check for updates, then choose **Download**.
 After verification, choose **Install and restart** and approve the Windows prompt.
 The overlay and editor close during installation. Your settings are retained.
 
-Checks use the latest stable release. For alpha-to-alpha updates, use the newer
-release's installer. Automatic checks can be disabled in Settings; downloads and
-installation always require your action.
+Checks use the latest stable release by default. Enable **Include prereleases**
+to also receive alpha, beta and release-candidate versions. Their full version
+names appear in the updater. Turning it off never downgrades your installation;
+check again to see the available stable version. Automatic checks can be disabled
+in Settings; downloads and installation always require your action.
+
+Versions before alpha 6 need a manual setup upgrade to get this switch.
 
 Alpha 1 used the earlier multi-file installer. Install a newer alpha with its setup
 EXE before using the new update format; your settings are retained.

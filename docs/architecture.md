@@ -698,6 +698,18 @@ A Settings dot may mark availability; never add another sidebar footer item.
 ### Manifest and authenticity
 
 Endpoint: `https://github.com/ohne-b/crosshair-rs/releases/latest/download/latest.json`.
+**Include prereleases** defaults off. When enabled, query the official GitHub
+releases API, choose the highest supported SemVer with a `latest.json` asset, and
+fetch that tag's metadata. Ignore drafts and non-application releases. Preserve
+alpha/beta/rc suffixes in the interface and require the metadata version to match
+the selected tag. Discovery uses no token, HTML scraping or background polling.
+Bound API pages to 100 entries and 2 MiB, at most ten pages within the check's
+20-second deadline; fail rather than choose from a truncated history.
+Stable checks distinguish no published stable release from a broken release
+asset using the API's latest-release endpoint. Changing the preference requires
+idle update work and clears the previous offer after settings commit; checking
+is blocked during that transaction. Never offer a downgrade.
+
 TDM schema, with `windows-x86_64-nsis` platform and an embedded-package signature:
 
 ```json
@@ -833,8 +845,9 @@ metadata. `A.B.C-alpha.N`, `-beta.N` and `-rc.N` map to fourth components `N`,
 `A.B.C.65535`; each version component fits 16 bits. This preserves SemVer order.
 Release prereleases share the production identity; local development packages use
 `OhneB.crosshair-rs.Preview` with updates disabled. Like TDM, the updater consumes
-stable Latest only: alpha-to-alpha upgrades use the release installer. Prereleases
-never advance Latest. `0.1.0-alpha.0` is the unreleased development baseline.
+stable Latest by default, with optional prerelease discovery using versioned
+`latest.json` assets. Prereleases never advance Latest.
+`0.1.0-alpha.0` is the unreleased development baseline.
 
 Follow existing OhneGuessr/TDM conventions:
 

@@ -14,15 +14,14 @@ export component Library inherits Rectangle {
             Divider { y: parent.height - 1px; }
             HorizontalLayout { padding-left: 20px; padding-right: 20px; spacing: 16px;
                 Text { text: "Crosshairs"; horizontal-stretch: 0; font-size: 14px * Theme.text-scale; font-weight: 600; color: Theme.text; vertical-alignment: center; }
-                HorizontalLayout { spacing: 0px; horizontal-stretch: 0;
+                HorizontalLayout { spacing: 4px; horizontal-stretch: 0;
                     for title[index] in ["Saved", "Browse"]: Rectangle { width: max(112px, 88px * Theme.text-scale);
                         ActionButton {
-                            width: parent.width; height: parent.height; border-radius: 0px; text: title; quiet: true;
+                            y: (parent.height - self.height) / 2; width: parent.width; text: title; quiet: true;
                             icon: index == 0 ? @image-url("../../../../assets/icons/bookmark.svg") : @image-url("../../../../assets/icons/search.svg");
                             selected: Store.browsing == (index == 1);
                             clicked => { Store.action("library-tab", index == 1 ? "browse" : "saved"); }
                         }
-                        if Store.browsing == (index == 1): Rectangle { y: parent.height - 2px; width: parent.width; height: 2px; background: Theme.orange; }
                     }
                 }
                 Rectangle { horizontal-stretch: 1; }

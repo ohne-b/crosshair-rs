@@ -17,7 +17,10 @@ pub fn update_label(status: &UpdateStatus) -> String {
             status.version.as_deref().unwrap_or("An update")
         ),
         UpdatePhase::Downloading => "Downloading update…".into(),
-        UpdatePhase::Ready => "Ready to install".into(),
+        UpdatePhase::Ready => status.version.as_ref().map_or_else(
+            || "Ready to install".into(),
+            |version| format!("Ready to install {version}"),
+        ),
         UpdatePhase::Installing => "Installing…".into(),
         UpdatePhase::Failed => "Update couldn't finish".into(),
     }
@@ -48,6 +51,24 @@ pub const INPUT_HELP: &str = "Shortcuts work globally, including while typing in
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn update_label_preserves_the_complete_prerelease_version() {
+        for version in ["0.1.0-alpha.6", "0.1.0-beta.2", "0.1.0-rc.1", "0.1.0"] {
+            let status = UpdateStatus {
+                phase: UpdatePhase::Available,
+                version: Some(version.into()),
+                ..Default::default()
+            };
+            assert_eq!(update_label(&status), format!("{version} is available"));
+            assert_eq!(
+                update_label(&UpdateStatus {
+                    phase: UpdatePhase::Ready,
+                    ..status
+                }),
+                format!("Ready to install {version}")
+            );
+        }
+    }
     #[test]
     fn unknown_download_length_is_not_fake_percentage() {
         let mut status = UpdateStatus {

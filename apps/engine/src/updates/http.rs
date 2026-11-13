@@ -16,6 +16,21 @@ use windows::{
 
 use super::manifest::request_target;
 
+#[derive(Debug)]
+pub(super) struct HttpStatus(pub u32);
+impl std::fmt::Display for HttpStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Update server returned HTTP {}", self.0)
+    }
+}
+impl std::error::Error for HttpStatus {}
+
+pub fn is_not_found(error: &anyhow::Error) -> bool {
+    error
+        .downcast_ref::<HttpStatus>()
+        .is_some_and(|status| status.0 == 404)
+}
+
 #[derive(Default)]
 pub struct Cancellation {
     cancelled: AtomicBool,
@@ -217,7 +232,9 @@ fn download_request(
                 request_target(&url, initial, true)?;
                 continue;
             }
-            ensure!(status == 200, "Update server returned HTTP {status}");
+            if status != 200 {
+                return Err(HttpStatus(status).into());
+            }
             ensure!(
                 header(&request, WINHTTP_QUERY_CONTENT_ENCODING)?
                     .is_none_or(|value| value.eq_ignore_ascii_case("identity")),

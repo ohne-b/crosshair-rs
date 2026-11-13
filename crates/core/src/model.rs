@@ -496,6 +496,8 @@ pub struct Settings {
     pub launch_at_login: bool,
     pub show_on_launch: bool,
     pub check_updates: bool,
+    #[serde(default)]
+    pub allow_prereleases: bool,
     #[serde(default = "discord_presence_default")]
     pub discord_presence: bool,
     #[serde(default)]
@@ -515,6 +517,7 @@ impl Default for Settings {
             launch_at_login: false,
             show_on_launch: true,
             check_updates: true,
+            allow_prereleases: false,
             discord_presence: discord_presence_default(),
             discord_style: DiscordStyle::Simple,
             global_toggle: Some(InputChord {
@@ -529,8 +532,22 @@ impl Default for Settings {
 }
 
 #[cfg(test)]
-mod discord_settings_tests {
+mod settings_tests {
     use super::*;
+
+    #[test]
+    fn prerelease_updates_default_off_and_opt_in_round_trips() {
+        assert!(!Settings::default().allow_prereleases);
+        let mut old = serde_json::to_value(Settings::default()).unwrap();
+        old.as_object_mut().unwrap().remove("allow_prereleases");
+        let mut settings: Settings = serde_json::from_value(old).unwrap();
+        assert!(!settings.allow_prereleases);
+        settings.allow_prereleases = true;
+        assert_eq!(
+            serde_json::from_value::<Settings>(serde_json::to_value(&settings).unwrap()).unwrap(),
+            settings
+        );
+    }
 
     #[test]
     fn presence_defaults_on_and_saved_opt_out_round_trips() {

@@ -288,13 +288,29 @@ pub fn request_target(url: &str, initial: &str, redirect: bool) -> Result<(&'sta
         "Invalid update URL"
     );
     if url == initial {
+        if let Some(path) = super::discovery::api_target(initial) {
+            ensure!(!redirect, "GitHub API redirects are not accepted");
+            return Ok(("api.github.com", path));
+        }
+        let asset = initial
+            .strip_prefix(&format!("{RELEASES}download/v"))
+            .and_then(|path| path.split_once('/'))
+            .is_some_and(|(version, file)| {
+                release_version(version).is_ok()
+                    && (file == "latest.json"
+                        || file == format!("crosshair-rs-{version}-windows-x64-setup.exe"))
+            });
         ensure!(
-            initial == ENDPOINT || initial.starts_with(&format!("{RELEASES}download/v")),
+            initial == ENDPOINT || asset,
             "Unexpected initial update origin"
         );
         return Ok(("github.com", url["https://github.com".len()..].into()));
     }
     ensure!(redirect, "Unexpected update URL");
+    ensure!(
+        super::discovery::api_target(initial).is_none(),
+        "GitHub API redirects are not accepted"
+    );
     if initial == ENDPOINT
         && let Some(path) = url.strip_prefix(&format!("{RELEASES}download/v"))
     {

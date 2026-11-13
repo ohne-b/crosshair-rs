@@ -21,7 +21,7 @@ component ColorTrack inherits Rectangle {
         pointer-event(event) => {
             if event.button == PointerEventButton.left {
                 if event.kind == PointerEventKind.down { focus.focus(); root.value = clamp(self.mouse-x / self.width, 0, 1); root.changed(1); }
-                if event.kind == PointerEventKind.up { root.changed(2); }
+                if event.kind == PointerEventKind.up { root.value = clamp(self.mouse-x / self.width, 0, 1); root.changed(2); }
             }
             if event.kind == PointerEventKind.cancel { root.changed(2); }
         }
@@ -114,7 +114,7 @@ export component ColorField inherits Rectangle {
                             pointer-event(event) => {
                                 if event.button == PointerEventButton.left {
                                     if event.kind == PointerEventKind.down { sv-focus.focus(); root.saturation = clamp(self.mouse-x / self.width, 0, 1); root.brightness = 1 - clamp(self.mouse-y / self.height, 0, 1); root.emit(1); }
-                                    if event.kind == PointerEventKind.up { root.emit(2); }
+                                    if event.kind == PointerEventKind.up { root.saturation = clamp(self.mouse-x / self.width, 0, 1); root.brightness = 1 - clamp(self.mouse-y / self.height, 0, 1); root.emit(2); }
                                 }
                                 if event.kind == PointerEventKind.cancel { root.emit(2); }
                             }

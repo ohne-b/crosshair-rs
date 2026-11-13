@@ -226,11 +226,14 @@ impl Runtime {
                     return Err(HistoryError::Editing.into());
                 }
                 let reply = self.app.command(owner, Command::Subscribe)?;
-                if self.app.state.settings.check_updates
+                if self.change.is_none()
+                    && self.app.state.settings.check_updates
                     && self.options.test_data.is_none()
                     && self.updates.status().phase == UpdatePhase::Idle
                 {
-                    let _ = self.updates.check();
+                    let _ = self
+                        .updates
+                        .check(self.app.state.settings.allow_prereleases);
                 }
                 return Ok(Some(reply));
             }
@@ -403,7 +406,14 @@ impl Runtime {
                 }
                 self.app.broadcast(ServerMessage::CloseCancelled);
             }
-            Command::CheckUpdate => self.updates.check()?,
+            Command::CheckUpdate => {
+                ensure!(
+                    self.change.is_none(),
+                    "Wait for the current settings operation to finish"
+                );
+                self.updates
+                    .check(self.app.state.settings.allow_prereleases)?;
+            }
             Command::DownloadUpdate => self.updates.download()?,
             Command::CancelUpdate => self.updates.cancel(),
             Command::OpenEditor => self.open_editor()?,

@@ -12,7 +12,7 @@ use windows::{
         Foundation::HWND,
         UI::{Shell::ShellExecuteW, WindowsAndMessaging::SW_SHOWNORMAL},
     },
-    core::{HSTRING, PCWSTR, w},
+    core::{PCWSTR, w},
 };
 
 #[derive(Default)]
@@ -116,7 +116,8 @@ impl Options {
 }
 
 pub fn with_startup<T>(enabled: bool, operation: impl FnOnce() -> Result<T>) -> Result<T> {
-    if Identity::current()?.package.is_none() {
+    let identity = Identity::current()?;
+    if !startup_package(identity.package.as_deref()) {
         ensure!(
             !enabled,
             "Launch at sign-in requires the installed application"
@@ -136,9 +137,24 @@ pub fn with_startup<T>(enabled: bool, operation: impl FnOnce() -> Result<T>) -> 
         }
     }
     let _apartment = Apartment;
-    let task = StartupTask::GetAsync(&HSTRING::from("CrosshairEngineStartup"))?
+    // The engine can inherit the Editor application ID; search the whole package.
+    let tasks = StartupTask::GetForCurrentPackageAsync()?
         .join()
-        .context("Launch at sign-in requires the installed application")?;
+        .context("Windows could not read launch-at-sign-in settings")?;
+    let mut task = None;
+    for candidate in tasks {
+        if candidate.TaskId()? == "CrosshairEngineStartup" {
+            task = Some(candidate);
+            break;
+        }
+    }
+    let Some(task) = task else {
+        ensure!(
+            !enabled,
+            "Reinstall crosshair-rs with its setup to enable launch at sign-in"
+        );
+        return operation();
+    };
     let was_enabled = startup_enabled(task.State()?);
     if enabled != was_enabled
         && let Err(error) = set_startup(&task, enabled)
@@ -161,6 +177,35 @@ pub fn with_startup<T>(enabled: bool, operation: impl FnOnce() -> Result<T>) -> 
                 )));
             }
             Err(error)
+        }
+    }
+}
+
+fn startup_package(full_name: Option<&str>) -> bool {
+    matches!(
+        full_name
+            .and_then(|name| name.split_once('_'))
+            .map(|(name, _)| name),
+        Some("OhneB.crosshair-rs" | "OhneB.crosshair-rs.Preview")
+    )
+}
+
+#[cfg(test)]
+mod startup_tests {
+    #[test]
+    fn startup_requires_our_package_not_an_inherited_unrelated_identity() {
+        for name in [
+            None,
+            Some("Other.App_1.0.0.0_x64__publisher"),
+            Some("OhneB.crosshair-rs.fake_1.0.0.0_x64__publisher"),
+        ] {
+            assert!(!super::startup_package(name));
+        }
+        for name in [
+            "OhneB.crosshair-rs_0.1.0.6_x64__publisher",
+            "OhneB.crosshair-rs.Preview_0.1.0.6_x64__publisher",
+        ] {
+            assert!(super::startup_package(Some(name)));
         }
     }
 }
