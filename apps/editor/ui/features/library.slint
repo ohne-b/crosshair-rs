@@ -11,27 +11,28 @@ export component Library inherits Rectangle {
     Timer { interval: 3s; running: Store.library-notice != ""; triggered => { Store.library-notice = ""; } }
     VerticalLayout { spacing: 0px;
         Rectangle { height: 48px; background: Theme.panel; border-top-left-radius: 12px;
-            HorizontalLayout { padding-left: 20px; padding-right: 20px; padding-top: 8px; padding-bottom: 8px; spacing: 8px;
-                Text { text: "Crosshairs"; font-size: 14px * Theme.text-scale; font-weight: 600; color: Theme.text; vertical-alignment: center; }
-                Rectangle { horizontal-stretch: 1; }
-                if !Store.browsing: ActionButton { text: "Import"; quiet: true; icon: @image-url("../../../../assets/icons/download.svg"); clicked => { Store.action("import", ""); } }
-                if !Store.browsing: ActionButton { text: "New"; primary: true; icon: @image-url("../../../../assets/icons/plus.svg"); clicked => { Store.action("new-preset", ""); } }
-            }
             Divider { y: parent.height - 1px; }
-        }
-        Rectangle { height: 44px; background: Theme.panel;
-            HorizontalLayout { padding-left: 20px; spacing: 4px; alignment: start;
-                for title[index] in ["Saved", "Browse"]: Rectangle { width: 112px;
-                    ActionButton {
-                        width: parent.width; height: parent.height; border-radius: 0px; text: title; quiet: true;
-                        icon: index == 0 ? @image-url("../../../../assets/icons/bookmark.svg") : @image-url("../../../../assets/icons/search.svg");
-                        selected: Store.browsing == (index == 1);
-                        clicked => { Store.action("library-tab", index == 1 ? "browse" : "saved"); }
+            HorizontalLayout { padding-left: 20px; padding-right: 20px; spacing: 16px;
+                Text { text: "Crosshairs"; horizontal-stretch: 0; font-size: 14px * Theme.text-scale; font-weight: 600; color: Theme.text; vertical-alignment: center; }
+                HorizontalLayout { spacing: 0px; horizontal-stretch: 0;
+                    for title[index] in ["Saved", "Browse"]: Rectangle { width: max(112px, 88px * Theme.text-scale);
+                        ActionButton {
+                            width: parent.width; height: parent.height; border-radius: 0px; text: title; quiet: true;
+                            icon: index == 0 ? @image-url("../../../../assets/icons/bookmark.svg") : @image-url("../../../../assets/icons/search.svg");
+                            selected: Store.browsing == (index == 1);
+                            clicked => { Store.action("library-tab", index == 1 ? "browse" : "saved"); }
+                        }
+                        if Store.browsing == (index == 1): Rectangle { y: parent.height - 2px; width: parent.width; height: 2px; background: Theme.orange; }
                     }
-                    if Store.browsing == (index == 1): Rectangle { y: parent.height - 2px; width: parent.width; height: 2px; background: Theme.orange; }
+                }
+                Rectangle { horizontal-stretch: 1; }
+                if !Store.browsing: Rectangle { width: import-button.preferred-width;
+                    import-button := ActionButton { y: (parent.height - self.height) / 2; text: "Import"; quiet: true; icon: @image-url("../../../../assets/icons/download.svg"); clicked => { Store.action("import", ""); } }
+                }
+                if !Store.browsing: Rectangle { width: new-button.preferred-width;
+                    new-button := ActionButton { y: (parent.height - self.height) / 2; text: "New"; primary: true; icon: @image-url("../../../../assets/icons/plus.svg"); clicked => { Store.action("new-preset", ""); } }
                 }
             }
-            Divider { y: parent.height - 1px; }
         }
         Rectangle { height: 68px;
             HorizontalLayout { padding-left: 20px; padding-right: 20px; padding-top: 18px; padding-bottom: 18px; spacing: 12px;

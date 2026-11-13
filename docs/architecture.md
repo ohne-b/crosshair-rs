@@ -132,7 +132,8 @@ describe the available choices.
 
 ### Crosshairs and profiles
 
-Saved and Browse tabs use bookmark and search icons. Saved contains the local
+Saved and Browse tabs sit beside the Crosshairs heading and use bookmark and
+search icons. Saved contains the local
 thumbnail grid: search, All/Favorites with counts, a compact icon sort picker
 for Manual/Name/Recently edited, New and Import. Names rename in place on Enter or
 focus loss; Escape cancels. Favorite and trash appear on hover or keyboard focus;
@@ -140,7 +141,7 @@ favorites use a filled gray star, without changing the card border. Both star
 states hide when neither hovered nor focused. Right-click/Shift+F10 opens the compact card menu:
 Edit, Rename, Duplicate, Export, Create keybind, order and Delete. Menus and help
 popovers anchor to their controls, dismiss outside/on Escape and return focus.
-Browse contains seven built-in designs made from editable native layers, based on
+Browse contains built-in designs made from editable native layers, based on
 the supplied references. Names are fixed; a bookmark appears on hover or keyboard
 focus. Save adds an independent copy to Saved without activating it or removing
 the original. Saved copies use the existing edit, favorite and delete controls.
