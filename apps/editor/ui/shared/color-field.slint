@@ -78,11 +78,11 @@ export component ColorField inherits Rectangle {
                 background: root.value; border-width: 1px; border-color: Theme.muted; }
             clicked => { root.open(); }
         }
-        EditField { text: root.hex; enabled: root.enabled; label: root.label + " hexadecimal color";
+        EditField { identity: root.identity; text: root.hex; enabled: root.enabled; label: root.label + " hexadecimal color";
             committed(text) => { root.hex-committed(text); }
         }
         Rectangle { width: 1px; y: 8px; height: parent.height - 16px; background: Theme.border; }
-        NumericField { width: 66px; enabled: root.enabled; label: root.label + " opacity"; suffix: "%";
+        NumericField { identity: root.identity; width: 66px; enabled: root.enabled; label: root.label + " opacity"; suffix: "%";
             minimum: 0; maximum: 100; step: 1;
             value: round(root.value.to-hsv().alpha * 100);
             changed(value, phase) => { root.changed(root.value.with-alpha(value / 100), phase); }
@@ -130,7 +130,7 @@ export component ColorField inherits Rectangle {
                         background: @linear-gradient(90deg, root.value.with-alpha(0), root.value.with-alpha(1));
                         changed(phase) => { root.emit(phase); }
                     }
-                    EditField { text: root.hex; label: "Hexadecimal color"; enabled: root.enabled;
+                    EditField { identity: root.identity; text: root.hex; label: "Hexadecimal color"; enabled: root.enabled;
                         committed(text) => { root.hex-committed(text); }
                     }
                     HorizontalLayout { spacing: 6px; height: 24px;

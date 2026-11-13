@@ -57,7 +57,7 @@ export component PresetPicker inherits Rectangle {
                             Rectangle { x: parent.width - 1px; width: 1px; height: parent.height; background: Theme.border; }
                         }
                         VerticalLayout { padding: 16px; spacing: 12px;
-                            EditField { text <=> root.search; placeholder: "Search crosshairs"; enabled: root.enabled; edited(value) => { root.filter-request(value, root.favorites); } }
+                            EditField { text: root.search; placeholder: "Search crosshairs"; enabled: root.enabled; edited(value) => { root.search = value; root.filter-request(value, root.favorites); } }
                             Rectangle {
                                 if root.model.length == 0: Text { text: root.search != "" ? "No crosshairs found" : root.favorites ? "No favorites yet" : "No crosshairs"; color: Theme.muted; font-size: 12px * Theme.text-scale; horizontal-alignment: center; vertical-alignment: center; }
                                 ListView { width: parent.width; height: parent.height;

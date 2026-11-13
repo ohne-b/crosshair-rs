@@ -387,6 +387,85 @@ fn canvas_applies_the_release_position_before_finishing() -> Result<()> {
 }
 
 #[test]
+fn text_fields_follow_external_values_after_typing() -> Result<()> {
+    let ui = window();
+    let fields = Rc::new(slint::VecModel::from(vec![FieldGroup {
+        first: FieldRow {
+            kind: 1,
+            label: "Text".into(),
+            value: "Before".into(),
+            selection: "layer-a".into(),
+            ..Default::default()
+        },
+        ..Default::default()
+    }]));
+    ui.global::<Store>().set_fields(fields.clone().into());
+    let events = Rc::new(RefCell::new(Vec::new()));
+    let recorded = events.clone();
+    ui.global::<Store>()
+        .on_property_edit(move |_, _, value, phase| {
+            recorded.borrow_mut().push((value.to_string(), phase));
+        });
+    pointer(&ui, 0, 1120.0, 138.0);
+    pointer(&ui, 2, 1120.0, 138.0);
+    ui.window()
+        .dispatch_event(WindowEvent::KeyPressed { text: "x".into() });
+    ui.window()
+        .dispatch_event(WindowEvent::KeyReleased { text: "x".into() });
+    assert!(!events.borrow().is_empty());
+    let mut row = fields.row_data(0).unwrap();
+    row.first.value = "Restored".into();
+    fields.set_row_data(0, row);
+    slint::platform::update_timers_and_animations();
+    ui.window().dispatch_event(WindowEvent::KeyPressed {
+        text: Key::Return.into(),
+    });
+    ui.window().dispatch_event(WindowEvent::KeyReleased {
+        text: Key::Return.into(),
+    });
+    assert_eq!(events.borrow().last(), Some(&("Restored".into(), 2)));
+    ui.hide()?;
+    Ok(())
+}
+
+#[test]
+fn color_opacity_drag_does_not_continue_on_a_new_selection() -> Result<()> {
+    let ui = window();
+    let fields = Rc::new(slint::VecModel::from(vec![FieldGroup {
+        first: FieldRow {
+            kind: 4,
+            label: "Fill".into(),
+            selection: "layer-a".into(),
+            swatch: slint::Color::from_rgb_u8(255, 0, 0),
+            value: "#FF0000FF".into(),
+            ..Default::default()
+        },
+        ..Default::default()
+    }]));
+    ui.global::<Store>().set_fields(fields.clone().into());
+    let events = Rc::new(RefCell::new(Vec::new()));
+    let recorded = events.clone();
+    ui.global::<Store>()
+        .on_property_color(move |selection, _, _, phase| {
+            recorded.borrow_mut().push((selection.to_string(), phase));
+        });
+    pointer(&ui, 0, 1220.0, 138.0);
+    pointer(&ui, 1, 1214.0, 138.0);
+    assert_eq!(events.borrow().last(), Some(&("layer-a".into(), 1)));
+    let mut row = fields.row_data(0).unwrap();
+    row.first.selection = "layer-b".into();
+    row.first.swatch = slint::Color::from_argb_u8(128, 0, 0, 255);
+    fields.set_row_data(0, row);
+    slint::platform::update_timers_and_animations();
+    events.borrow_mut().clear();
+    pointer(&ui, 1, 1208.0, 138.0);
+    pointer(&ui, 2, 1208.0, 138.0);
+    assert!(events.borrow().is_empty());
+    ui.hide()?;
+    Ok(())
+}
+
+#[test]
 fn inspector_choices_follow_restored_document_values() -> Result<()> {
     let ui = window();
     let fields = Rc::new(slint::VecModel::from(vec![FieldGroup {

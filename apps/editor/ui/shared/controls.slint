@@ -100,8 +100,9 @@ export component RenameField inherits Rectangle {
 
 export component EditField inherits Rectangle {
     in property <string> identity;
-    changed identity => { root.modified = false; }
-    in-out property <string> text;
+    changed identity => { root.modified = false; input.text = root.text; }
+    in property <string> text;
+    changed text => { input.text = root.text; }
     in property <string> placeholder;
     in property <string> label: root.placeholder;
     in property <bool> enabled: Store.interactive;
@@ -111,7 +112,7 @@ export component EditField inherits Rectangle {
     callback accepted(string);
     property <bool> focused: input.has-focus;
     property <bool> modified: false;
-    changed focused => { if !root.focused && root.modified { root.modified = false; root.committed(root.text); } }
+    changed focused => { if !root.focused && root.modified { root.modified = false; root.committed(input.text); } }
     height: max(32px, 12px * Theme.text-scale + 16px);
     vertical-stretch: 0;
     min-width: 0px;
@@ -122,7 +123,7 @@ export component EditField inherits Rectangle {
     forward-focus: input;
     input := TextInput {
         x: 9px; y: 6px; width: parent.width - 18px; height: parent.height - 12px;
-        text <=> root.text;
+        text: root.text;
         enabled: root.enabled;
         single-line: true;
         vertical-alignment: center;
