@@ -46,6 +46,54 @@ fn snapshot(window: &MinimalSoftwareWindow, name: &str) -> Result<()> {
 }
 
 #[test]
+fn layer_eye_click_dispatches_visibility_toggle() -> Result<()> {
+    struct Headless(Rc<MinimalSoftwareWindow>);
+    impl Platform for Headless {
+        fn create_window_adapter(&self) -> Result<Rc<dyn WindowAdapter>, slint::PlatformError> {
+            Ok(self.0.clone())
+        }
+    }
+    let window = MinimalSoftwareWindow::new(RepaintBufferType::NewBuffer);
+    slint::platform::set_platform(Box::new(Headless(window.clone())))?;
+    let ui = AppWindow::new()?;
+    ui.window().set_size(slint::LogicalSize::new(1280.0, 800.0));
+    let store = ui.global::<Store>();
+    store.set_connected(true);
+    store.set_page(1);
+    store.set_document_open(true);
+    store.set_wide(true);
+    store.set_layers(
+        Rc::new(slint::VecModel::from(vec![crate::LayerRow {
+            id: "test".into(),
+            name: "Crosshair".into(),
+            kind: "Crosshair".into(),
+            shown: true,
+            selected: true,
+            ..Default::default()
+        }]))
+        .into(),
+    );
+    let events = Rc::new(RefCell::new(Vec::new()));
+    let recorded = events.clone();
+    store.on_action(move |a, v| recorded.borrow_mut().push((a.to_string(), v.to_string())));
+    ui.show()?;
+    snapshot(&window, "layer-eye.png")?;
+    ui.window().dispatch_event(WindowEvent::PointerMoved {
+        position: slint::LogicalPosition::new(221.0, 176.0),
+    });
+    click(&ui, 221.0, 176.0);
+    assert!(
+        events
+            .borrow()
+            .contains(&("layer-visible".into(), "test".into())),
+        "{:?}",
+        events.borrow()
+    );
+    ui.hide()?;
+    Ok(())
+}
+
+#[test]
 fn header_crosshair_stays_centered_when_source_size_changes() -> Result<()> {
     struct Headless(Rc<MinimalSoftwareWindow>);
     impl Platform for Headless {
@@ -309,6 +357,31 @@ fn library_tabs_sort_picker_and_browse_save_use_the_correct_actions() -> Result<
     snapshot(&window, "narrow-large-text.png")?;
     store.set_modal_kind(1);
     snapshot(&window, "discard-large-text.png")?;
+    store.set_modal_kind(0);
+    store.set_page(3);
+    store.set_settings_category(3);
+    store.set_version("0.1.0-alpha.6".into());
+    store.set_error("Launch at sign-in requires the installed application".into());
+    snapshot(&window, "warning-large-text.png")?;
+    ui.global::<crate::Theme>().set_text_scale(1.0);
+    ui.window().set_size(slint::LogicalSize::new(1280.0, 800.0));
+    snapshot(&window, "warning-and-updates.png")?;
+    events.borrow_mut().clear();
+    click(&ui, 1240.0, 89.0);
+    assert_eq!(*events.borrow(), [("dismiss-error".into(), "".into())]);
+    events.borrow_mut().clear();
+    store.set_update_phase(1);
+    click(&ui, 980.0, 330.0);
+    assert!(
+        events.borrow().is_empty(),
+        "Changing update channel must wait for active work"
+    );
+    store.set_update_phase(0);
+    click(&ui, 980.0, 330.0);
+    assert_eq!(
+        *events.borrow(),
+        [("allow-prereleases".into(), "true".into())]
+    );
     ui.hide()?;
     Ok(())
 }

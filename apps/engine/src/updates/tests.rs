@@ -251,7 +251,7 @@ fn missing_release_key_fails_closed_before_network_work() {
         );
         let directory = tempfile::tempdir().unwrap();
         let updates = super::Updates::new(directory.path().to_owned(), |_| {}).unwrap();
-        updates.check().unwrap();
+        updates.check(false).unwrap();
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
         while updates.status().phase == crosshair_core::protocol::UpdatePhase::Checking
             && std::time::Instant::now() < deadline
@@ -270,4 +270,123 @@ fn missing_release_key_fails_closed_before_network_work() {
                 .contains("verification key is missing")
         );
     }
+}
+
+#[test]
+fn release_discovery_pins_api_paths_and_matches_metadata_to_the_selected_tag() {
+    let api = format!("{}?per_page=100&page=1", super::discovery::API);
+    assert_eq!(
+        manifest::request_target(&api, &api, false).unwrap().0,
+        "api.github.com"
+    );
+    for wrong in [
+        format!("{api}&other=true"),
+        api.replace("page=1", "page=11"),
+        api.replace("api.github.com", "api.github.com.evil.test"),
+        format!("{}/latest/../other", super::discovery::API),
+    ] {
+        assert!(manifest::request_target(&wrong, &wrong, false).is_err());
+        assert!(manifest::request_target(&wrong, &api, true).is_err());
+    }
+    assert!(
+        manifest::request_target(
+            "https://release-assets.githubusercontent.com/github-production-release-asset/1/2",
+            &api,
+            true
+        )
+        .is_err()
+    );
+    for file in ["../latest.json", "latest.json?other", "other.exe"] {
+        let url = format!("https://github.com/ohne-b/crosshair-rs/releases/download/v1.2.3/{file}");
+        assert!(manifest::request_target(&url, &url, false).is_err());
+    }
+    let bytes = serde_json::to_vec(&release()).unwrap();
+    assert!(
+        super::discovery::checked_manifest(
+            &bytes,
+            Some(&manifest::release_version("1.2.3").unwrap()),
+            true
+        )
+        .is_ok()
+    );
+    assert!(
+        super::discovery::checked_manifest(
+            &bytes,
+            Some(&manifest::release_version("1.2.4").unwrap()),
+            true
+        )
+        .is_err()
+    );
+}
+
+#[test]
+fn switching_update_channels_discards_previous_offers_and_waits_for_active_work() {
+    use crosshair_core::protocol::UpdatePhase;
+    let directory = tempfile::tempdir().unwrap();
+    let updates = super::Updates::new(directory.path().to_owned(), |_| {}).unwrap();
+    updates.change(|state| {
+        state.available = Some(release());
+        state.ready = Some(super::Ready {
+            job: crosshair_core::Id::new_v4(),
+            manifest: release(),
+            file: tempfile::tempfile().unwrap(),
+            bytes: DATA.len() as u64,
+            sha256: String::new(),
+            family: "test-family".into(),
+        });
+        state.status.phase = UpdatePhase::Available;
+        state.status.version = Some(release().version);
+        state.worker = Some(std::sync::Arc::new(Cancellation::default()));
+    });
+    assert!(updates.ensure_idle().is_err());
+    updates.change(|state| {
+        state.worker = None;
+        state.status.phase = UpdatePhase::Installing;
+    });
+    assert!(updates.ensure_idle().is_err());
+    updates.change(|state| state.status.phase = UpdatePhase::Ready);
+    updates.ensure_idle().unwrap();
+    updates.installation_failed("Installation was cancelled".into());
+    assert_eq!(updates.status().phase, UpdatePhase::Ready);
+    updates.reset_offer();
+    assert_eq!(updates.status().phase, UpdatePhase::Idle);
+    assert!(updates.status().version.is_none());
+    assert!(updates.download().is_err());
+    assert!(
+        updates
+            .prepare_install(super::RestartIntent {
+                visible: true,
+                reopen_editor: false
+            })
+            .is_err()
+    );
+    updates.installation_failed("The update is not ready to install".into());
+    assert_eq!(updates.status().phase, UpdatePhase::Failed);
+    assert!(updates.status().version.is_none());
+    assert!(updates.download().is_err());
+    assert!(
+        updates
+            .prepare_install(super::RestartIntent {
+                visible: true,
+                reopen_editor: false
+            })
+            .is_err()
+    );
+}
+
+#[test]
+#[ignore = "Queries public GitHub release metadata; run deliberately"]
+fn public_github_release_discovery() -> anyhow::Result<()> {
+    for allow in [false, true] {
+        let found = super::discovery::check(allow, &Cancellation::default())?;
+        eprintln!(
+            "include prereleases {allow}: {:?}",
+            found.as_ref().map(|value| &value.version)
+        );
+        if let Some(value) = found {
+            let version = value.validate()?;
+            assert!(allow || version.pre.is_empty());
+        }
+    }
+    Ok(())
 }

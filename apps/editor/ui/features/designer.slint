@@ -104,7 +104,7 @@ component LayerList inherits Rectangle {
                         ActionButton { height: root.row-height; icon: @image-url("../../../../assets/icons/eye.svg"); label: layer.shown ? "Hide layer" : "Show layer"; opacity: layer.shown ? 1 : 0.35; quiet: true; clicked => { Store.action("layer-visible", layer.id); } }
                         ActionButton { height: root.row-height; icon: @image-url("../../../../assets/icons/trash.svg"); label: "Delete " + layer.name; quiet: true; clicked => { layer-keys.focus(); Store.action("delete-layer", layer.id); } }
                     }
-                    TouchArea { width: parent.width - 68px;
+                    TouchArea { x: 0px; width: parent.width - 68px;
                         enabled: Store.interactive;
                         property <length> start-y;
                         property <bool> dragging: false;

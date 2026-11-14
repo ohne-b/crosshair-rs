@@ -1,3 +1,4 @@
+mod discovery;
 mod helper;
 mod http;
 mod manifest;
@@ -97,11 +98,30 @@ impl Updates {
             state.status.error = recovery.error.clone();
         });
     }
-    pub fn check(&self) -> Result<()> {
-        self.start(false)
+    pub fn check(&self, allow_prereleases: bool) -> Result<()> {
+        self.start(false, allow_prereleases)
     }
     pub fn download(&self) -> Result<()> {
-        self.start(true)
+        self.start(true, false)
+    }
+    pub fn ensure_idle(&self) -> Result<()> {
+        let state = self.0.state.lock().unwrap();
+        ensure!(
+            state.worker.is_none() && state.status.phase != UpdatePhase::Installing,
+            "Finish or cancel the update before changing prerelease settings"
+        );
+        Ok(())
+    }
+    pub fn reset_offer(&self) {
+        self.change(|state| {
+            state.available = None;
+            state.status.phase = UpdatePhase::Idle;
+            state.status.version = None;
+            state.status.error = None;
+            state.status.downloaded = 0;
+            state.status.total = None;
+            // The next check or startup cleans the staged files; Idle prevents installation.
+        });
     }
     pub fn cancel(&self) {
         if let Some(worker) = &self.0.state.lock().unwrap().worker {
@@ -111,7 +131,13 @@ impl Updates {
 
     pub fn installation_failed(&self, message: String) {
         self.change(|state| {
-            state.status.phase = if state.ready.is_some() {
+            state.status.phase = if state.ready.as_ref().is_some_and(|ready| {
+                state
+                    .available
+                    .as_ref()
+                    .is_some_and(|available| available.version == ready.manifest.version)
+                    && state.status.version.as_deref() == Some(ready.manifest.version.as_str())
+            }) {
                 UpdatePhase::Ready
             } else {
                 UpdatePhase::Failed
@@ -156,7 +182,7 @@ impl Updates {
         }
     }
 
-    fn start(&self, download: bool) -> Result<()> {
+    fn start(&self, download: bool, allow_prereleases: bool) -> Result<()> {
         let cancellation = Arc::new(http::Cancellation::default());
         {
             let mut state = self.0.state.lock().unwrap();
@@ -187,7 +213,7 @@ impl Updates {
                 let result = if download {
                     updates.download_inner(&cancellation)
                 } else {
-                    updates.check_inner(&cancellation)
+                    updates.check_inner(allow_prereleases, &cancellation)
                 };
                 updates.change(|state| {
                     state.worker = None;
@@ -220,23 +246,19 @@ impl Updates {
         Ok(())
     }
 
-    fn check_inner(&self, cancellation: &http::Cancellation) -> Result<()> {
+    fn check_inner(
+        &self,
+        allow_prereleases: bool,
+        cancellation: &http::Cancellation,
+    ) -> Result<()> {
         let _apartment = package::Apartment::new()?;
         manifest::public_key()?;
         package::current()?;
-        let mut bytes = Vec::new();
-        http::download(
-            manifest::ENDPOINT,
-            &mut bytes,
-            manifest::MAX_MANIFEST,
-            Duration::from_secs(20),
-            cancellation,
-            |_, _| {},
-        )?;
-        let manifest = manifest::Manifest::parse(&bytes)?;
-        let candidate = manifest.validate()?;
+        let manifest = discovery::check(allow_prereleases, cancellation)?;
         let current = semver::Version::parse(PRODUCT_VERSION)?;
-        let newer = candidate > current;
+        let manifest = manifest.filter(|value| {
+            manifest::release_version(&value.version).is_ok_and(|version| version > current)
+        });
         let obsolete = self.0.state.lock().unwrap().ready.take();
         if let Some(ready) = obsolete {
             let job = ready.job;
@@ -244,13 +266,13 @@ impl Updates {
             helper::clean_job(&self.0.root, job);
         }
         self.change(|state| {
-            state.status.phase = if newer {
+            state.status.phase = if manifest.is_some() {
                 UpdatePhase::Available
             } else {
                 UpdatePhase::Current
             };
-            state.status.version = newer.then(|| manifest.version.clone());
-            state.available = newer.then_some(manifest);
+            state.status.version = manifest.as_ref().map(|value| value.version.clone());
+            state.available = manifest;
         });
         Ok(())
     }

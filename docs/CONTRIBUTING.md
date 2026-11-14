@@ -228,8 +228,9 @@ original Validation hash. NSIS and Minisign remain build/release tools; users do
 not download them separately.
 Complete clean-machine installation, authenticated N-to-N+1 update, cancellation,
 interrupted deployment and restart checks before publication. The updater uses
-TDM's stable Latest endpoint, including when running an alpha: alpha-to-alpha
-upgrades use the release installer. Local development packages use `.Preview`
+TDM's stable Latest endpoint by default. Optional prerelease discovery uses GitHub's
+releases API and the selected release's `latest.json`, with the same signature
+checks. Local development packages use `.Preview`
 identity and have updates disabled.
 
 For a release, download and run its setup EXE from the project's GitHub Releases

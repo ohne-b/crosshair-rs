@@ -111,7 +111,6 @@ export component Settings inherits Rectangle {
                                 DropDown { width: 180px; model: ["Simple", "Quote"]; current-index: Store.discord-style; accessible-label: "Discord presence style"; selected(index) => { Store.action("discord-style", index); } }
                             }
                         }
-                        Text { text: "Shares your overlay status or the Soldier: 76 quote. Requires Discord desktop and Activity Sharing."; color: Theme.muted; font-size: 12px * Theme.text-scale; wrap: word-wrap; }
                     }
                     if root.category == 2: VerticalLayout { spacing: 12px; alignment: start;
                         SectionTitle { text: "PROFILES & CROSSHAIRS"; }
@@ -132,7 +131,8 @@ export component Settings inherits Rectangle {
                     if root.category == 3: VerticalLayout { spacing: 12px; alignment: start;
                         SectionTitle { text: "UPDATES"; }
                         Group {
-                            Setting { label: "Check for updates on launch"; last: true; Switch { checked: Store.check-updates; label: "Check for updates on launch"; toggled => { Store.action("check-updates-setting", Store.check-updates ? "false" : "true"); } } }
+                            Setting { label: "Check for updates on launch"; Switch { checked: Store.check-updates; label: "Check for updates on launch"; toggled => { Store.action("check-updates-setting", Store.check-updates ? "false" : "true"); } } }
+                            Setting { label: "Include prereleases"; last: true; Switch { checked: Store.allow-prereleases; label: "Include prereleases"; enabled: Store.interactive && Store.connected && Store.update-phase != 1 && Store.update-phase != 4 && Store.update-phase != 6; toggled => { Store.action("allow-prereleases", Store.allow-prereleases ? "false" : "true"); } } }
                         }
                         Rectangle { height: update-content.preferred-height; vertical-stretch: 0;
                             update-content := VerticalLayout { padding: 16px; spacing: 12px;
