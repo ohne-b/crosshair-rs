@@ -77,9 +77,9 @@ export component Library inherits Rectangle {
                 property <length> stride: (parent.width - 12px) / root.columns;
                 x: column-index * self.stride;
                 width: (parent.width - 12px) / root.columns - 12px; height: 170px;
-                background: card-focus.has-focus || card-touch.has-hover ? Theme.raised : Theme.field; border-radius: 12px; border-width: !Store.browsing && (preset.selected || Store.preset-drop-index == self.index) ? 1px : 0px; border-color: Theme.orange;
-                accessible-role: button; accessible-label: Store.browsing ? "Save " + preset.name : preset.name;
-                accessible-action-default => { if !Store.browsing || (!Store.browse-saving && Store.connected) { Store.action(Store.browsing ? "save-browse" : "select-preset", preset.id); } }
+                background: card-focus.has-focus || card-touch.has-hover ? Theme.raised : Theme.field; border-radius: 12px; border-width: (preset.selected || (!Store.browsing && Store.preset-drop-index == self.index)) ? 1px : 0px; border-color: Theme.orange;
+                accessible-role: button; accessible-label: Store.browsing ? "Equip " + preset.name : preset.name;
+                accessible-action-default => { if Store.interactive && (!Store.browsing || (!Store.browse-saving && Store.connected)) { Store.action(Store.browsing ? "equip-browse" : "select-preset", preset.id); } }
                 card-touch := TouchArea {
                         enabled: Store.interactive;
                         property <bool> show-actions: self.has-hover || card-focus.has-focus || name.has-focus || favorite.has-focus || trash.has-focus;
@@ -92,7 +92,7 @@ export component Library inherits Rectangle {
                             if event.kind == PointerEventKind.down && event.button == PointerEventButton.left { self.start-x = self.mouse-x; self.start-y = self.mouse-y; self.dragging = false; card-focus.focus(); }
                             if event.kind == PointerEventKind.up && event.button == PointerEventButton.left {
                                 if self.dragging && Store.preset-drop-index >= 0 { Store.action("preset-drop", preset.id + ":" + Store.presets[Store.preset-drop-index].id); }
-                                else if !Store.browsing { Store.action("select-preset", preset.id); }
+                                else if !Store.browsing || (!Store.browse-saving && Store.connected) { Store.action(Store.browsing ? "equip-browse" : "select-preset", preset.id); }
                                 self.dragging = false; Store.dragged-preset = ""; Store.preset-drop-index = -1;
                             }
                             if !Store.browsing && event.kind == PointerEventKind.down && event.button == PointerEventButton.right {
@@ -135,7 +135,7 @@ export component Library inherits Rectangle {
                         key-pressed(event) => {
                             if Store.browsing {
                                 if event.text == Key.Return || event.text == Key.Space {
-                                    if !Store.browse-saving && Store.connected { Store.action("save-browse", preset.id); }
+                                    if !Store.browse-saving && Store.connected { Store.action("equip-browse", preset.id); }
                                     return accept;
                                 }
                                 return reject;

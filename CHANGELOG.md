@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Equip Browse crosshairs by clicking their cards without adding them to Saved.
+  The bookmark button still saves an editable copy.
+
 ## [v0.1.0-alpha.6](https://github.com/ohne-b/crosshair-rs/releases/tag/v0.1.0-alpha.6) 2026-11-14
 
 - Add an optional Include prereleases switch for alpha, beta and release-candidate

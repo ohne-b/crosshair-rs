@@ -18,6 +18,7 @@ pub struct App {
     pub state: AppState,
     pub history: History,
     pub input: InputState,
+    pub browse_preset: Option<Preset>,
     pub status: EngineStatus,
     pub clients: BTreeMap<Id, Connection>,
     pub edit_owner: Option<Id>,
@@ -52,6 +53,7 @@ impl App {
             state,
             history: History::default(),
             input: InputState::default(),
+            browse_preset: None,
             status,
             clients: BTreeMap::new(),
             edit_owner: None,
@@ -71,7 +73,7 @@ impl App {
         let presentation = self.input.presentation(&self.state);
         EngineStatus {
             active_profile: Some(self.state.active_profile),
-            selected_preset: presentation.map(|p| p.preset),
+            selected_preset: self.selected_preset_of(&self.state).map(|p| p.id),
             visible: !self.status.recovery_required && presentation.is_some_and(|p| p.visible),
             can_undo: self.history.can_undo(),
             can_redo: self.history.can_redo(),
@@ -126,6 +128,7 @@ impl App {
         }
         let mouse_held = self.input.mouse_buttons_held();
         let outcome = self.input.handle(event, self.elapsed_ms(), &mut self.state);
+        let browse_cleared = outcome.preset_selected && self.browse_preset.take().is_some();
         let captured = outcome.capture.is_some();
         if let Some(capture) = outcome.capture {
             self.captured(capture);
@@ -133,12 +136,13 @@ impl App {
         if outcome.state_changed {
             self.dirty();
         }
-        if outcome.state_changed || outcome.presentation_changed {
+        if outcome.state_changed || outcome.presentation_changed || browse_cleared {
             self.changed(None, false);
         }
         captured
             || outcome.state_changed
             || outcome.presentation_changed
+            || browse_cleared
             || mouse_held != self.input.mouse_buttons_held()
     }
 
@@ -190,17 +194,37 @@ impl App {
         self.presentation_of(&self.state, false)
     }
 
+    pub fn selected_preset_of<'a>(&'a self, state: &'a AppState) -> Option<&'a Preset> {
+        self.browse_preset
+            .as_ref()
+            .filter(|_| same_selection(&self.state, state))
+            .or_else(|| state.selected_preset())
+    }
+
+    pub fn render_preset<'a>(&'a self, state: &'a AppState, id: Id) -> Option<&'a Preset> {
+        self.browse_preset
+            .as_ref()
+            .filter(|p| p.id == id && same_selection(&self.state, state))
+            .or_else(|| state.preset(id))
+    }
+
+    pub fn replace_state(&mut self, next: AppState) {
+        if !same_selection(&self.state, &next) {
+            self.browse_preset = None;
+        }
+        self.state = next;
+    }
+
     pub fn presentation_of(
         &self,
         state: &AppState,
         include_hidden: bool,
     ) -> Option<(Key, [i32; 2])> {
-        let presentation = self
-            .input
+        self.input
             .presentation(state)
             .filter(|p| include_hidden || p.visible)?;
         let profile = state.active_profile()?;
-        let preset = state.preset(presentation.preset)?;
+        let preset = self.selected_preset_of(state)?;
         let monitor = self
             .status
             .monitors
@@ -216,4 +240,10 @@ impl App {
         ];
         Some((Key::new(preset, profile.scale), center))
     }
+}
+
+fn same_selection(before: &AppState, after: &AppState) -> bool {
+    before.active_profile == after.active_profile
+        && before.active_profile().map(|p| p.selected_preset)
+            == after.active_profile().map(|p| p.selected_preset)
 }

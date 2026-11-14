@@ -241,7 +241,7 @@ impl App {
                     self.preview_sent = self.preview_inflight.take();
                     self.preview_scale = self.preview_inflight_scale;
                     self.send_document()?;
-                } else if tag == "clear-preview" {
+                } else if tag == "clear-preview" || tag == "equip-browse" {
                 } else if tag == "save-cancel" {
                     self.client.refresh();
                     EVENTS.with(|events| {

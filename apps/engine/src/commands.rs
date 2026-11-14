@@ -84,8 +84,22 @@ impl App {
             Command::SelectPreset { preset } => {
                 self.preset(preset)?;
                 self.reset_input();
+                self.browse_preset = None;
                 self.state.active_profile_mut().unwrap().selected_preset = preset;
                 self.bump()?;
+            }
+            Command::SelectBrowse { preset } => {
+                ensure!(
+                    self.state.preset(preset).is_none(),
+                    "Crosshair ID is already saved"
+                );
+                let preset = browse::presets()
+                    .into_iter()
+                    .find(|p| p.id == preset)
+                    .ok_or_else(|| anyhow::anyhow!("Unknown built-in crosshair"))?;
+                self.reset_input();
+                self.browse_preset = Some(preset);
+                self.changed(None, false);
             }
             Command::ToggleVisibility => self.input.toggle_visibility(&mut self.state),
             Command::SetVisibility { visible } => {
@@ -118,10 +132,22 @@ impl App {
                 self.edit_owner = None;
             }
             Command::Undo | Command::Redo => {
+                let before = self
+                    .state
+                    .active_profile()
+                    .map(|p| (p.id, p.selected_preset));
                 if matches!(command, Command::Undo) {
                     self.history.undo(&mut self.state)?;
                 } else {
                     self.history.redo(&mut self.state)?;
+                }
+                if before
+                    != self
+                        .state
+                        .active_profile()
+                        .map(|p| (p.id, p.selected_preset))
+                {
+                    self.browse_preset = None;
                 }
                 self.reset_input();
             }
@@ -227,6 +253,7 @@ impl App {
                 );
                 self.reset_input();
                 self.state.active_profile = profile;
+                self.browse_preset = None;
                 self.bump()?;
             }
             Command::SetBindings {
@@ -352,7 +379,7 @@ impl App {
         }
         validate_state(&next)?;
         self.history.record(&self.state, &next)?;
-        self.state = next;
+        self.replace_state(next);
         self.reset_input();
         Ok(())
     }

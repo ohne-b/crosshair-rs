@@ -168,7 +168,7 @@ fn header_crosshair_stays_centered_when_source_size_changes() -> Result<()> {
 }
 
 #[test]
-fn library_tabs_sort_picker_and_browse_save_use_the_correct_actions() -> Result<()> {
+fn library_tabs_sort_picker_and_browse_actions_are_independent() -> Result<()> {
     struct Headless(Rc<MinimalSoftwareWindow>);
     impl Platform for Headless {
         fn create_window_adapter(&self) -> Result<Rc<dyn WindowAdapter>, slint::PlatformError> {
@@ -265,15 +265,18 @@ fn library_tabs_sort_picker_and_browse_save_use_the_correct_actions() -> Result<
     );
     events.borrow_mut().clear();
     click(&ui, 270.0, 246.0);
-    assert!(
-        events.borrow().is_empty(),
-        "Browse body must not select a saved design"
-    );
-    key(&ui, Key::Return);
     assert_eq!(
         *events.borrow(),
-        [("save-browse".into(), rows[0].id.to_string())]
+        [("equip-browse".into(), rows[0].id.to_string())]
     );
+    for trigger in [Key::Return, Key::Space] {
+        events.borrow_mut().clear();
+        key(&ui, trigger);
+        assert_eq!(
+            *events.borrow(),
+            [("equip-browse".into(), rows[0].id.to_string())]
+        );
+    }
     events.borrow_mut().clear();
     store.set_browse_saving(true);
     key(&ui, Key::Return);
@@ -282,6 +285,14 @@ fn library_tabs_sort_picker_and_browse_save_use_the_correct_actions() -> Result<
         "Saving must not queue duplicate requests"
     );
     store.set_browse_saving(false);
+    store.set_connected(false);
+    click(&ui, 270.0, 246.0);
+    key(&ui, Key::Return);
+    assert!(
+        events.borrow().is_empty(),
+        "Disconnected cards cannot equip"
+    );
+    store.set_connected(true);
     key(&ui, Key::F2);
     key(&ui, Key::Delete);
     assert!(
