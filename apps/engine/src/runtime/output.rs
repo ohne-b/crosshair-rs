@@ -194,9 +194,9 @@ impl Runtime {
                 "The destination crosshair could not be rendered"
             );
             if self.rendering != Some(key) {
-                let preset = change
-                    .candidate
-                    .preset(key.preset)
+                let preset = self
+                    .app
+                    .render_preset(&change.candidate, key.preset)
                     .ok_or(HistoryError::Missing)?;
                 self.render.submit(render::Job {
                     key,
@@ -335,9 +335,9 @@ impl Runtime {
         };
         let Some(raster) = self.cache.get(key) else {
             if self.rendering != Some(key) && !self.failed_render.contains(&key) {
-                let preset = change
-                    .candidate
-                    .preset(key.preset)
+                let preset = self
+                    .app
+                    .render_preset(&change.candidate, key.preset)
                     .ok_or(HistoryError::Missing)?;
                 self.render.submit(render::Job {
                     key,
@@ -380,7 +380,7 @@ impl Runtime {
                 .checked_add(1)
                 .ok_or(HistoryError::RevisionExhausted)?,
         );
-        self.app.state = state;
+        self.app.replace_state(state);
         if change.before.settings.allow_prereleases != self.app.state.settings.allow_prereleases {
             self.updates.reset_offer();
         }

@@ -1,5 +1,6 @@
 #![forbid(unsafe_code)]
 
+pub mod browse;
 pub mod history;
 pub mod input;
 pub mod model;

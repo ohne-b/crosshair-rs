@@ -33,6 +33,7 @@ pub enum CaptureOutcome {
 pub struct InputOutcome {
     pub state_changed: bool,
     pub presentation_changed: bool,
+    pub preset_selected: bool,
     pub capture: Option<CaptureOutcome>,
 }
 
@@ -174,6 +175,8 @@ impl InputState {
                 best.map(|binding| binding.action.clone())
             };
             if let Some(action) = action {
+                result.preset_selected = matches!(action, BindingAction::SelectPreset { preset }
+                    if state.preset(preset).is_some());
                 result.state_changed = self.press_action(action, state);
             }
         }

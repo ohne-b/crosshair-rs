@@ -13,6 +13,159 @@ fn application() -> Result<(tempfile::TempDir, Store, App)> {
 }
 
 #[test]
+fn browse_selection_is_renderable_and_session_only() -> Result<()> {
+    let (_directory, store, mut app) = application()?;
+    let before = app.state.clone();
+    let owner = Id::new_v4();
+    app.status.monitors.push(protocol::DisplayInfo {
+        id: "test".into(),
+        name: "Test monitor".into(),
+        bounds: [0, 0, 1920, 1080],
+        primary: true,
+    });
+    for preset in browse::presets() {
+        let revision = app.status().revision;
+        app.command(owner, Command::SelectBrowse { preset: preset.id })?;
+        assert_eq!(app.state, before);
+        assert_eq!(app.status().selected_preset, Some(preset.id));
+        assert!(app.status().revision > revision);
+        let (key, center) = app.presentation_of(&app.state, true).unwrap();
+        assert_eq!(key.preset, preset.id);
+        assert_eq!(center, [960, 540]);
+        let rendered = app.render_preset(&app.state, key.preset).unwrap();
+        assert_eq!(rendered.name, preset.name);
+        assert_eq!(rendered.layers.len(), preset.layers.len());
+        app.disconnect(owner);
+        assert_eq!(app.status().selected_preset, Some(preset.id));
+    }
+    assert!(!app.history.can_undo());
+    assert!(!app.status().unsaved);
+    assert!(app.save_at.is_none());
+    assert!(app.dirty_since.is_none());
+    let selected = app.status().selected_preset;
+    assert!(
+        app.command(owner, Command::SelectBrowse { preset: Id::nil() })
+            .is_err()
+    );
+    assert!(
+        app.command(
+            owner,
+            Command::SelectBrowse {
+                preset: before.presets[0].id
+            }
+        )
+        .is_err()
+    );
+    assert_eq!(app.status().selected_preset, selected);
+    app.command(owner, Command::SetVisibility { visible: false })?;
+    assert!(app.presentation().is_none());
+    app.command(
+        owner,
+        Command::SelectBrowse {
+            preset: selected.unwrap(),
+        },
+    )?;
+    assert!(!app.status().visible);
+    app.command(owner, Command::ToggleVisibility)?;
+    assert_eq!(app.status().selected_preset, selected);
+    assert!(app.presentation().is_some());
+    store.save(&app.state)?;
+    let restarted = App::open(&store, true)?;
+    assert_eq!(restarted.state.presets, before.presets);
+    assert_eq!(
+        restarted.status().selected_preset,
+        Some(before.selected_preset().unwrap().id)
+    );
+    Ok(())
+}
+
+#[test]
+fn saved_selection_and_hotkeys_replace_browse_even_for_the_same_saved_id() -> Result<()> {
+    let (_directory, _store, mut app) = application()?;
+    let owner = Id::new_v4();
+    let saved = app.state.selected_preset().unwrap().id;
+    let browse = browse::presets()[0].id;
+    let chord = InputChord::key(0x12);
+    app.state.profiles[0].bindings.push(Binding::new(
+        chord.clone(),
+        BindingAction::SelectPreset { preset: saved },
+    ));
+    let event = InputEvent {
+        device: 1,
+        key: chord.trigger,
+        down: true,
+    };
+    app.command(owner, Command::SelectBrowse { preset: browse })?;
+    let before = app.state.clone();
+    assert!(app.input(event));
+    assert_eq!(app.status().selected_preset, Some(saved));
+    assert_eq!(app.state, before);
+    assert!(!app.status().unsaved);
+
+    // A held trigger must not immediately replace a newly chosen Browse card.
+    app.command(owner, Command::SelectBrowse { preset: browse })?;
+    assert!(!app.input(event));
+    assert_eq!(app.status().selected_preset, Some(browse));
+    app.input(InputEvent {
+        down: false,
+        ..event
+    });
+    app.command(
+        owner,
+        Command::BeginCapture {
+            token: Id::new_v4(),
+        },
+    )?;
+    app.input(event);
+    assert_eq!(app.status().selected_preset, Some(browse));
+    app.command(owner, Command::SelectPreset { preset: saved })?;
+    assert_eq!(app.status().selected_preset, Some(saved));
+    app.command(owner, Command::SelectBrowse { preset: browse })?;
+    app.command(
+        owner,
+        Command::SelectProfile {
+            profile: app.state.active_profile,
+        },
+    )?;
+    assert_eq!(app.status().selected_preset, Some(saved));
+    Ok(())
+}
+
+#[test]
+fn saving_browse_and_output_changes_keep_the_temporary_selection() -> Result<()> {
+    let (_directory, _store, mut app) = application()?;
+    let owner = Id::new_v4();
+    let preset = browse::presets().remove(0);
+    app.command(owner, Command::SelectBrowse { preset: preset.id })?;
+    app.command(
+        owner,
+        Command::AddPreset {
+            preset: preset.clone(),
+        },
+    )?;
+    assert_eq!(app.status().selected_preset, Some(preset.id));
+    assert_ne!(app.state.presets.last().unwrap().id, preset.id);
+    app.command(owner, Command::Undo)?;
+    assert_eq!(app.status().selected_preset, Some(preset.id));
+    let mut next = app.state.clone();
+    next.profiles[0].scale = 2.0;
+    next.settings.output_mode = OutputMode::GameBar;
+    assert_eq!(app.selected_preset_of(&next).unwrap().id, preset.id);
+    assert!(app.render_preset(&next, preset.id).is_some());
+    app.replace_state(next.clone());
+    assert_eq!(app.status().selected_preset, Some(preset.id));
+    next.profiles[0].selected_preset = next.presets[1].id;
+    assert_eq!(
+        app.selected_preset_of(&next).unwrap().id,
+        next.presets[1].id
+    );
+    assert!(app.render_preset(&next, preset.id).is_none());
+    app.replace_state(next);
+    assert!(app.browse_preset.is_none());
+    Ok(())
+}
+
+#[test]
 fn adding_a_design_is_independent_undoable_and_keeps_selection() -> Result<()> {
     let (_directory, _store, mut app) = application()?;
     let before = app.state.clone();

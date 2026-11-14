@@ -298,6 +298,7 @@ impl App {
             store.set_active_name(
                 self.state
                     .preset(active)
+                    .or_else(|| self.browse.iter().find(|preset| preset.id == active))
                     .map(|preset| preset.name.clone())
                     .unwrap_or_default()
                     .into(),

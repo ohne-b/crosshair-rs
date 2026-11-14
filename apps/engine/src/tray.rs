@@ -161,7 +161,12 @@ impl Worker {
         }
     }
 
-    pub fn update(&self, state: &AppState, visible: bool, enabled: bool) {
+    pub fn update(
+        &self,
+        state: &AppState,
+        status: &crosshair_core::protocol::EngineStatus,
+        enabled: bool,
+    ) {
         let mut menu = self.shared.menu.lock().unwrap();
         if menu.revision != Some(state.revision) {
             menu.presets = state
@@ -169,10 +174,10 @@ impl Worker {
                 .iter()
                 .map(|preset| (preset.id, preset.name.clone()))
                 .collect();
-            menu.selected = state.selected_preset().map(|preset| preset.id);
             menu.revision = Some(state.revision);
         }
-        menu.visible = visible;
+        menu.selected = status.selected_preset;
+        menu.visible = status.visible;
         menu.enabled = enabled;
     }
 

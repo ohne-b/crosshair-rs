@@ -143,7 +143,13 @@ Edit, Rename, Duplicate, Export, Create keybind, order and Delete. Menus and hel
 popovers anchor to their controls, dismiss outside/on Escape and return focus.
 Browse contains built-in designs made from editable native layers, based on
 the supplied references. Names are fixed; a bookmark appears on hover or keyboard
-focus. Save adds an independent copy to Saved without activating it or removing
+focus. Clicking a Browse card (or pressing Enter/Space) equips it for the engine
+session without saving, changing visibility or opening Designer. The selection
+survives dashboard closure; selecting a saved crosshair, using its hotkey or
+switching profiles replaces it. Quitting the engine restores the saved selection
+on next launch. The engine and dashboard share the built-in catalog in core;
+temporary selection stays outside persisted state and undo history.
+Save adds an independent copy to Saved without activating it or removing
 the original. Saved copies use the existing edit, favorite and delete controls.
 The engine validates and adds each copy atomically with fresh preset/layer IDs;
 Undo removes the copy. There are no downloads or shared image assets.

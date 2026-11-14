@@ -542,7 +542,7 @@ impl Runtime {
             self.app.status().visible && !self.suspended,
         );
         self.tray
-            .update(&self.app.state, self.app.status().visible, !self.frozen);
+            .update(&self.app.state, &self.app.status(), !self.frozen);
         if let Some(input) = &mut self.input
             && let Err(error) = input.update(
                 &self.app.state,
@@ -652,8 +652,7 @@ impl Runtime {
     fn render_key(&mut self, key: render::Key) {
         if let Some(preset) = self
             .app
-            .state
-            .preset(key.preset)
+            .render_preset(&self.app.state, key.preset)
             .filter(|p| p.revision == key.revision)
         {
             self.render.submit(render::Job {
@@ -675,6 +674,7 @@ impl Runtime {
             .filter(|b| b.enabled)
             .filter_map(|b| b.action.target())
             .chain(Some(profile.selected_preset))
+            .chain(self.app.browse_preset.as_ref().map(|p| p.id))
             .collect();
         targets.sort_unstable();
         targets.dedup();
@@ -682,8 +682,7 @@ impl Runtime {
             .into_iter()
             .filter_map(|id| {
                 self.app
-                    .state
-                    .preset(id)
+                    .render_preset(&self.app.state, id)
                     .map(|p| render::Key::new(p, profile.scale))
             })
             .collect();

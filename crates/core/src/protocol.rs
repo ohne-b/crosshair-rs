@@ -44,6 +44,9 @@ pub enum Command {
     SelectPreset {
         preset: Id,
     },
+    SelectBrowse {
+        preset: Id,
+    },
     ToggleVisibility,
     SetVisibility {
         visible: bool,

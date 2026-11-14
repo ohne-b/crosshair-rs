@@ -99,6 +99,7 @@ impl Runtime {
         let structure = !matches!(
             request.command,
             Command::SelectPreset { .. }
+                | Command::SelectBrowse { .. }
                 | Command::ToggleVisibility
                 | Command::SetVisibility { .. }
                 | Command::ReplacePreset { .. }
@@ -140,6 +141,7 @@ impl Runtime {
                 || matches!(
                     command,
                     Command::SelectPreset { .. }
+                        | Command::SelectBrowse { .. }
                         | Command::SelectProfile { .. }
                         | Command::ToggleVisibility
                         | Command::SetVisibility { .. }

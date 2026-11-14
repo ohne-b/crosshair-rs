@@ -168,6 +168,12 @@ impl App {
                     preset: value.parse()?,
                 },
             )?,
+            "equip-browse" => self.send(
+                "equip-browse",
+                Command::SelectBrowse {
+                    preset: value.parse()?,
+                },
+            )?,
             "use-document" => self.send(
                 "select-preset",
                 Command::SelectPreset {
