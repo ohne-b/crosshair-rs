@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/logo.svg" alt="crosshair-rs logo" width="256" height="256">
+  <img src="assets/logo.svg" alt="crosshair-rs logo" width="128" height="128">
 </p>
 
 <h1 align="center">crosshair-rs</h1>
@@ -9,6 +9,8 @@
 <p align="center">
   <a href="LICENSE.md"><img src="https://img.shields.io/badge/license-PolyForm_Noncommercial-F97316?style=flat-square" alt="License: PolyForm Noncommercial"></a>
 </p>
+
+![crosshair-rs dashboard showing the Browse crosshair collection](.github/assets/crosshairs.webp)
 
 Create layered crosshairs, save presets and switch them with keyboard or mouse
 shortcuts. Close the editor to leave the overlay running.
