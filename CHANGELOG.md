@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## [v0.1.0-alpha.7](https://github.com/ohne-b/crosshair-rs/releases/tag/v0.1.0-alpha.7) 2026-11-16
+
 - Add profile-specific Aim actions for visibility and saved-crosshair switching,
   with Fire and Reload bindings. Keep the Global toggle tied to the master switch.
 - Add simple per-layer animations in Designer's top-right Animate inspector,
@@ -10,6 +12,9 @@
   0 ms for instant changes.
 - Equip Browse crosshairs by clicking their cards without adding them to Saved.
   The bookmark button still saves an editable copy.
+- Fix persistent mouse focus highlights, align Aim controls and center their square
+  previews. Restore compact notification strips that fill the panel corners.
+  ([#17](https://github.com/ohne-b/crosshair-rs/pull/17))
 
 ## [v0.1.0-alpha.6](https://github.com/ohne-b/crosshair-rs/releases/tag/v0.1.0-alpha.6) 2026-11-14
 
