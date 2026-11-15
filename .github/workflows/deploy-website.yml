@@ -27,7 +27,6 @@ jobs:
           node-version: 24
           cache: npm
           cache-dependency-path: website/package-lock.json
-      - uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5
       - name: Install dependencies
         run: npm --prefix website ci
       - name: Check website
