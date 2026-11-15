@@ -35,7 +35,7 @@ export component PresetPicker inherits Rectangle {
             background: Theme.panel; border-radius: 12px; border-width: 1px; border-color: Theme.border;
             keys := FocusScope {
                 focus-on-click: false;
-                key-pressed(event) => { if event.text == Key.Escape { root.close(); return accept; } return reject; }
+                key-pressed(event) => { Store.keyboard-navigation = true; if event.text == Key.Escape { root.close(); return accept; } return reject; }
                 VerticalLayout { spacing: 0px;
                     HorizontalLayout { padding: 16px; spacing: 12px;
                         Text { text: "Choose crosshair"; color: Theme.text; font-size: 15px * Theme.text-scale; font-weight: 600; vertical-alignment: center; horizontal-stretch: 1; }
@@ -72,8 +72,8 @@ export component PresetPicker inherits Rectangle {
                                             forward-focus: card-focus;
                                             Image { x: (parent.width - self.width) / 2; y: 44px - self.height / 2; width: min(64px, card.preset.thumbnail.width * 1px); height: min(64px, card.preset.thumbnail.height * 1px); source: card.preset.thumbnail; image-fit: contain; image-rendering: pixelated; }
                                             Text { x: 10px; y: 90px; width: parent.width - 20px; height: 32px; text: card.preset.name; color: Theme.text; font-size: 12px * Theme.text-scale; overflow: elide; horizontal-alignment: center; vertical-alignment: center; }
-                                            card-focus := FocusScope { enabled: root.enabled; key-pressed(event) => { if event.text == Key.Return || event.text == Key.Space { root.choose(card.preset.id); return accept; } return reject; } }
-                                            touch := TouchArea { enabled: root.enabled; clicked => { card-focus.focus(); root.choose(card.preset.id); } }
+                                            card-focus := FocusScope { enabled: root.enabled; key-pressed(event) => { Store.keyboard-navigation = true; if event.text == Key.Return || event.text == Key.Space { root.choose(card.preset.id); return accept; } return reject; } }
+                                            touch := TouchArea { enabled: root.enabled; clicked => { Store.keyboard-navigation = false; card-focus.focus(); root.choose(card.preset.id); } }
                                         }
                                     }
                                 }

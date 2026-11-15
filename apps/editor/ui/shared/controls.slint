@@ -14,6 +14,7 @@ export component ActionButton inherits Rectangle {
     in property <bool> danger: false;
     in property <bool> align-left: false;
     out property <bool> has-focus: focus.has-focus;
+    out property <bool> focus-visible: root.has-focus && Store.keyboard-navigation;
     callback clicked;
     callback held(bool);
     property <bool> held-state: false;
@@ -27,8 +28,8 @@ export component ActionButton inherits Rectangle {
     horizontal-stretch: 0;
     vertical-stretch: 0;
     border-radius: Theme.radius;
-    background: !root.enabled ? transparent : root.danger && touch.has-hover ? #B4232A : root.primary ? (touch.has-hover ? Theme.orange.brighter(0.18) : Theme.orange) : touch.has-hover ? Theme.hover : root.selected ? Theme.raised : root.quiet ? transparent : Theme.raised;
-    border-width: focus.has-focus ? 1px : 0px;
+    background: !root.enabled ? transparent : root.danger && touch.has-hover ? #B4232A : root.primary ? (touch.has-hover || root.focus-visible ? Theme.orange.brighter(0.18) : Theme.orange) : touch.has-hover || root.focus-visible ? Theme.hover : root.selected ? Theme.raised : root.quiet ? transparent : Theme.raised;
+    border-width: 0px;
     border-color: Theme.muted;
     opacity: root.enabled ? 1 : 0.4;
     accessible-role: button;
@@ -51,7 +52,9 @@ export component ActionButton inherits Rectangle {
     }
     focus := FocusScope {
         enabled: root.enabled;
+        focus-on-click: false;
         key-pressed(event) => {
+            Store.keyboard-navigation = true;
             if event.text == "\n" || event.text == " " {
                 if !root.held-state { root.activate(); root.set-held(true); }
                 return accept;
@@ -66,7 +69,7 @@ export component ActionButton inherits Rectangle {
     touch := TouchArea {
         enabled: root.enabled;
         pointer-event(event) => {
-            if event.kind == PointerEventKind.down && event.button == PointerEventButton.left { focus.focus(); Store.commit-focused-input(); root.set-held(true); }
+            if event.kind == PointerEventKind.down && event.button == PointerEventButton.left { Store.keyboard-navigation = false; focus.focus(); Store.commit-focused-input(); root.set-held(true); }
             if (event.kind == PointerEventKind.up && event.button == PointerEventButton.left) || event.kind == PointerEventKind.cancel { root.set-held(false); }
         }
         clicked => { root.activate(); }
@@ -176,12 +179,16 @@ export component Switch inherits Rectangle {
     accessible-action-default => { if root.enabled { root.toggled(); } }
     forward-focus: focus;
     Rectangle { y: (root.height - self.height) / 2; width: 34px; height: 20px; border-radius: 10px;
-        border-width: focus.has-focus ? 1px : 0px; border-color: Theme.text;
-        background: root.checked ? Theme.orange : Theme.border;
+        background: focus.has-focus && Store.keyboard-navigation ? (root.checked ? Theme.orange.brighter(0.18) : Theme.hover) : root.checked ? Theme.orange : Theme.border;
         Rectangle { x: root.checked ? 17px : 3px; y: 3px; width: 14px; height: 14px; border-radius: 7px; background: root.checked ? Theme.canvas : Theme.muted; }
     }
-    focus := FocusScope { enabled: root.enabled; key-pressed(event) => { if event.text == " " { root.toggled(); return accept; } return reject; } }
-    TouchArea { enabled: root.enabled; clicked => { focus.focus(); root.toggled(); } }
+    focus := FocusScope { enabled: root.enabled; focus-on-click: false;
+        key-pressed(event) => { Store.keyboard-navigation = true; if event.text == " " { root.toggled(); return accept; } return reject; }
+    }
+    TouchArea { enabled: root.enabled;
+        pointer-event(event) => { if event.kind == PointerEventKind.down && event.button == PointerEventButton.left { Store.keyboard-navigation = false; focus.focus(); } }
+        clicked => { root.toggled(); }
+    }
 }
 
 export component Divider inherits Rectangle { height: 1px; vertical-stretch: 0; background: Theme.border; horizontal-stretch: 1; }

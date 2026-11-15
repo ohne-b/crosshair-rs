@@ -99,6 +99,7 @@ export component AppWindow inherits Window {
     }
     }
         key-pressed(event) => {
+            Store.keyboard-navigation = true;
             if Store.shortcut(event.text, event.modifiers.control, event.modifiers.shift, event.modifiers.alt) { return accept; }
             return reject;
         }

@@ -11,8 +11,6 @@ component PreviewTrigger inherits ActionButton {
     in property <string> trigger;
     property <bool> down: false;
     primary: root.down;
-    border-width: root.has-focus ? 1px : 0px;
-    border-color: Theme.orange;
     held(value) => { root.down = value; Store.action("animation-preview", root.trigger + (value ? "-down" : "-up")); }
 }
 

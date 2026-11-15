@@ -98,6 +98,34 @@ fn pointer(ui: &AppWindow, kind: i32, x: f32, y: f32) {
     });
 }
 
+#[test]
+fn pointer_clicks_clear_keyboard_focus_styling() {
+    let ui = window();
+    let store = ui.global::<Store>();
+    store.set_connected(true);
+    ui.window().dispatch_event(WindowEvent::KeyPressed {
+        text: Key::Tab.into(),
+    });
+    ui.window().dispatch_event(WindowEvent::KeyReleased {
+        text: Key::Tab.into(),
+    });
+    assert!(store.get_keyboard_navigation());
+    // The Designer navigation button keeps focus, but a pointer click must not
+    // retain the keyboard highlight when the pointer leaves.
+    pointer(&ui, 0, 28.0, 124.0);
+    pointer(&ui, 2, 28.0, 124.0);
+    pointer(&ui, 1, 600.0, 400.0);
+    assert!(!store.get_keyboard_navigation());
+    ui.window().dispatch_event(WindowEvent::KeyPressed {
+        text: Key::Tab.into(),
+    });
+    ui.window().dispatch_event(WindowEvent::KeyReleased {
+        text: Key::Tab.into(),
+    });
+    assert!(store.get_keyboard_navigation());
+    ui.hide().unwrap();
+}
+
 fn complete_preview(app: &mut App, adjusted: Option<Preset>) -> Result<()> {
     app.event(Event::Preview(preview::Event::Document {
         scale: 1.0,

@@ -7,6 +7,7 @@ export struct BindingRow { id: string, name: string, action: string, target: str
 export struct BoundsRow { id: string, x: float, y: float, width: float, height: float, selected: bool }
 
 export global Store {
+    in-out property <bool> keyboard-navigation: false;
     in-out property <float> work-width: 1280;
     in-out property <float> work-height: 800;
     in-out property <bool> wide: true;
