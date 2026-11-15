@@ -397,6 +397,7 @@ fn same_content(a: &AppState, b: &AppState) -> bool {
                 && a.offset == b.offset
                 && a.positions == b.positions
                 && a.bindings == b.bindings
+                && a.actions == b.actions
         })
 }
 
@@ -713,6 +714,26 @@ mod tests {
             state.settings.global_toggle,
             Some(crate::InputChord::key(0x12))
         );
+    }
+
+    #[test]
+    fn action_configuration_is_undoable_without_changing_runtime_selection() {
+        let before = AppState::default();
+        let mut state = before.clone();
+        let alternate = state.presets[1].id;
+        state.profiles[0].actions.aim_action = crate::AimAction::TogglePreset { preset: alternate };
+        state.profiles[0].actions.fire = Some(crate::InputChord::key(0x20));
+        let after = state.profiles[0].actions.clone();
+        let mut history = History::default();
+        history.record(&before, &state).unwrap();
+        assert!(history.can_undo());
+        state.profiles[0].selected_preset = alternate;
+        history.undo(&mut state).unwrap();
+        assert_eq!(state.profiles[0].actions, before.profiles[0].actions);
+        assert_eq!(state.profiles[0].selected_preset, alternate);
+        history.redo(&mut state).unwrap();
+        assert_eq!(state.profiles[0].actions, after);
+        assert_eq!(state.profiles[0].selected_preset, alternate);
     }
 
     #[test]

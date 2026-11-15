@@ -1,5 +1,8 @@
 # Application design and implementation plan
 
+> Proposed next feature: [Aim actions and simple animations](#proposed-aim-actions-and-simple-animations).
+> That section is a plan, not a claim about implemented behavior.
+
 This defines the application architecture and its complete acceptance contract.
 Source implementation does not establish compatibility or performance: native
 acceptance, installation and update qualification remain separate gates.
@@ -987,3 +990,410 @@ automated and native evidence above, including the authenticated update handoff.
 [tdm-styles]: https://github.com/ohne-b/twitch-drops-miner/blob/f3f3b88e13d52108a5176b828965ac86ab457594/frontend/src/styles.css
 [tdm-verify]: https://github.com/ohne-b/twitch-drops-miner/blob/f3f3b88e13d52108a5176b828965ac86ab457594/desktop/src/updates.rs
 [tdm-release]: https://github.com/ohne-b/twitch-drops-miner/blob/f3f3b88e13d52108a5176b828965ac86ab457594/.github/scripts/release.mjs
+
+
+## Proposed Aim actions and simple animations
+
+### Primary goal
+
+Let users change crosshair visibility or temporarily use a saved crosshair while
+aiming, and create simple per-layer responses to aiming or firing. Everything
+continues working with the dashboard closed, with no additional animation work
+for static designs.
+
+Status: planning only. Keyboard and mouse first, as requested; no controller
+column. This proposal changes the earlier static-only/no-press-hold baseline
+only when implemented. It does not authorize a merge, deployment or release.
+The behavior below is our proposed contract, not a claim of exact Crosshair X
+compatibility.
+
+### User interface and behavior
+
+**Keybinds.** Expand the existing application table to four fixed rows:
+Global toggle, Aim, Fire, Reload. Keep the separate Crosshair shortcuts table
+and its empty New row. Use our existing dark surfaces, rounded outer table,
+single separators, centered icons, orange selected accents and keyboard focus.
+No controller placeholders, duplicate switches or explanatory paragraphs in rows.
+
+| Row | Control | Initial key |
+| --- | --- | --- |
+| Global toggle | Existing enable switch and key recording | Shift+Alt+Z |
+| Aim | Action dropdown; saved-crosshair thumbnail when relevant | Right mouse |
+| Fire | Key recording; triggers the design's Fire animations | Left mouse |
+| Reload | Key recording; resets the current design's animations | R |
+
+Global toggle remains application-wide. Aim, Fire, Reload and crosshair shortcuts
+belong to the active profile. Show the profile scope in the section label/help,
+not in every row. Default keys must never replace existing assignments during
+migration: leave a new conflicting role Unbound. Bound roles participate in
+conflict checks even when the current design has no animation; runtime observation
+can still be dormant until needed. The Aim action defaults to No action and
+existing crosshairs remain static.
+
+| Aim action label | Exact behavior |
+| --- | --- |
+| No action | No visibility or preset override; Aim animations may still respond. |
+| Toggle crosshair (Press) | Each new press toggles the same master visibility state as Global toggle. |
+| Hide crosshair (Hold) | Hide while held; release removes this visibility override. |
+| Show crosshair (Hold) | With the master enabled, hide until Aim is held, then show while held. |
+| Toggle saved crosshair (Press) | First press temporarily shows the chosen saved design; next press returns to the current base design. |
+| Show saved crosshair (Hold) | Show the chosen saved design while held; otherwise show the current base design. |
+
+For both saved-crosshair actions, choosing the dropdown entry immediately opens
+`PresetPicker`, preselecting the previous target if valid. Choosing a card commits
+(action, target ID) together. Escape/outside/Close cancels the whole pending change;
+the old action and target remain. Never save a half-configured action. After
+selection, show a square thumbnail beside the dropdown; clicking it reopens the
+picker. Its tooltip/accessibility name includes the target name. Return focus
+to the initiating control. Rename does not break the reference. Only Saved is
+eligible: Browse designs must first be saved to become persistent action targets.
+Use the current picker search, All/Favorites and empty states.
+
+A normal saved shortcut, Browse selection or profile change clears any latched
+Aim alternate. During a held alternate, a normal selection updates the base;
+release reveals that new base, not the design selected before the hold. A base
+can be a saved design or a session-only Browse design. These overrides never
+save a preset, change favorites, rename documents or create undo entries.
+
+The title-bar/tray switch controls master enabled state. Master Off always hides
+the overlay, including Show actions, and clears active overrides/playback. The
+switch reflects that master state; its tooltip can say why an enabled crosshair
+is temporarily hidden, for example 'Hidden until Aim is held'. It must not flicker
+with animation opacity. Enabling while a trigger is held waits for release and a
+fresh press. Only an explicit Global toggle or Aim Toggle crosshair press can enable it
+again; Fire, Reload, saved selection and animation playback cannot.
+
+**Animate.** Add one compact rounded Design / Animate control in the Designer
+inspector header. Use the same position, sizing and focus treatment as our other
+segmented controls. No floating animation panel over the canvas and no second
+copy of the mode switch. Design keeps the existing inspector unchanged.
+
+Animate edits one optional animation on the selected layer: its normal design
+is Base, and a second set of values is Animated. Show the supported properties
+in the existing inspector, with a small reset action only on changed values.
+Unchanged values inherit Base; changing Base later updates those inherited values.
+An empty animation has no effect and no runtime work. An enabled switch permits
+keeping a configured effect without playing it; Remove animation is undoable.
+Switching Design/Animate itself neither dirties nor saves the document.
+
+Start with these animatable properties:
+
+- Every layer: X, Y, uniform scale, rotation and opacity.
+- Crosshair layers: arm length, thickness, gap, center-dot diameter and the
+  existing arm/dot fill colors. A disabled dot remains disabled; enable it in Design.
+- Rectangle, ellipse and triangle: fill color, alongside the common transforms.
+- Images, drawing and legacy text: common transforms/opacity only for now.
+
+Reuse current field widgets and limits. Do not animate topology, arm count,
+asset selection, crop, text content, blur or outline structure in this version.
+Color alpha uses the existing rendering convention; opacity remains a separate
+multiplier. Rotation follows the entered numeric delta (0 to 360 is a full turn).
+Intermediate geometry may be fractional even when endpoint fields use integers.
+Keep the renderer's existing pixel alignment and alpha coverage rules.
+
+| Animation control | Choices / behavior |
+| --- | --- |
+| Trigger | Fire or Aim; Fire initially. |
+| Activation | Hold or Press; Hold initially. |
+| Duration | 150 ms initially; 1-10,000 ms per one-way movement. |
+| Easing | Linear or Smooth; Smooth initially, with a fixed ease-in/out curve. |
+| On release | Return, Reset or Pause; Return initially; shown only for Hold. |
+| Repeat | Off or On; Off initially. |
+| Direction | One way or Back and forth; One way initially. |
+| Delay | 0-10,000 ms, initially 0; delay before a fresh activation, not every repeat. |
+
+Keep Trigger, Activation and Duration visible. Put the remaining timing controls
+in a collapsed Timing section; no timeline, stage list, curve editor or Add stage
+button. Per-layer animations let an outline expand while a dot stays still.
+Different layers can use different triggers; one layer has one trigger.
+
+Playback rules are explicit:
+
+- Hold starts on the physical down edge. With Repeat Off, One way reaches Animated
+  and stays there until release. Back and forth reaches Animated, returns to Base
+  and stays there until release. Duration applies to each leg.
+- On release: Reset immediately restores Base; Pause freezes progress; Return
+  smoothly blends the current values back to Base over Duration, starting from
+  exactly the displayed values. If already at Base, it finishes immediately. A release during Delay returns
+  to Base without a flash. Return never continues repeating.
+- A new Hold resumes a paused effect. A fresh activation otherwise starts from
+  Base; if pressed during Return, blend from the displayed values to Animated over
+  Duration without another Delay. Resuming Pause also skips Delay.
+- Press with Repeat Off plays one complete configured movement then resets to Base.
+  Back and forth gives a smooth outward-and-back pulse; One way resets at its end.
+  Repeated physical presses restart that effect, not queue more copies. Key repeat
+  from holding a keyboard key does not count as a new press.
+- Press with Repeat On toggles playback on/off on successive down edges; stopping
+  restores Base. Hold with Repeat On repeats only while held. A One way loop resets
+  at its boundary; Back and forth reverses there. The UI examples make that
+  distinction visible rather than introducing extra playback modes.
+- Reload stops and restores every animation on the effective crosshair, including
+  paused effects. It changes neither the selected design nor visibility. Held
+  triggers must be released before they can restart. Static crosshairs simply
+  ignore Reload; it never sends a reload command to a game.
+- A target selected by Aim is resolved before delivering that Aim activation, so
+  its Aim animation can start immediately. Switching designs while Fire/Aim is
+  held starts matching Hold effects on the new effective design; it never invents
+  a Press event. Lifecycle resets below are the exception and require rearming.
+
+Provide local preview buttons for Aim, Fire and Reset below the animation controls.
+For Hold, pointer/key down starts and release ends; for Press, click/Space/Enter
+sends one logical press. Preview uses the same evaluator as the engine but a
+separate session, never synthetic OS input. Show Animated values for editing;
+while playing, prevent accidental canvas transforms and provide an obvious Stop.
+Stopping, leaving Animate or closing the document clears local playback. Playback
+never changes the saved document or generates undo entries. Global hotkeys remain
+global while the dashboard is focused, consistent with current behavior; local
+preview does not claim to suppress physical mouse/keyboard input elsewhere.
+
+Design thumbnails, picker thumbnails, PNG and SVG exports show Base. Native
+crosshair documents, clipboard copies and profile/all-data exports retain the
+animation definitions. No animated GIF/video export in this version.
+
+### Phase 0 - Establish the existing contracts (discovery completed)
+
+How this serves the primary goal: reuse working input capture, picker and output
+paths instead of adding a competing implementation.
+
+Read these locations before implementation; line numbers refer to the inspected
+main revision `dd86caa56f546360787bd3de4651da30a8b06cff`:
+
+- `crates/core/src/input.rs:11-118,132`: `InputEvent`, `InputOutcome`,
+  `InputState::handle`, per-device keys, capture/reset/rearm. Outcomes already
+  distinguish persistent changes from presentation changes.
+- `crates/core/src/model.rs:584,748-904`: profiles, binding targets and the legacy
+  deserializer which deliberately discards retired hold/toggle bindings.
+- `crates/core/src/validation.rs:415-454`: target checks and
+  `validate_binding_conflicts`; preserve subset modifiers and specificity rules.
+- `apps/editor/ui/shared/preset-picker.slint:1-90`: `show`, `close`, `chosen`,
+  `dismissed`, focus and filtering; existing callers in `ui/features/keybinds.slint`.
+- `apps/editor/src/app/keybinds.rs:23-173`: tokenized capture, Replace/Cancel and
+  `Command::SetBindings` atomic publication; `core/protocol.rs:95` defines the command.
+- `apps/engine/src/app.rs:190-246`: `presentation_of` currently ignores the
+  presentation preset ID and uses the base/Browse selection. Fix this shared
+  selection resolution when adding temporary overrides, not just the input enum.
+- `apps/engine/src/overlay/render.rs:17-135` and `runtime.rs:414-446,536-736`:
+  render identity, cancellation, result processing, output and native timers.
+- `crates/renderer/src/lib.rs:160,236`: `Renderer::measure` and
+  `render_cancellable`; reuse the existing rasterizer for sampled layer values.
+- `apps/editor/src/features/designer.rs:504-641` and `platform/preview.rs:16-119,220-350`:
+  draft gestures, undo and asynchronous canvas rendering.
+- `apps/engine/src/overlay/widget.rs:184-214`: `Widget::present`, newest generation;
+  `apps/gamebar/CrosshairWidget/app.cpp:151-175` already receives the latest bitmap.
+
+Allowed platform patterns: retain passive Raw Input and the engine's existing
+`WM_TIMER` route. Editor-only preview may use
+[Slint Timer::start/stop](https://docs.slint.dev/latest/docs/rust/slint/struct.Timer/),
+on the Slint event-loop thread; it must not own real overlay playback.
+
+Verification: independently trace these paths and the reference-maintenance callers
+before edits. The current schema is 1, protocol is 4 and portable format is 1.
+Do not revive retired bindings just because similar action names return.
+
+### Phase 1 - Model, validation and migration
+
+How this serves the primary goal: designs and key assignments survive saving,
+sharing and upgrading without changing existing crosshairs.
+
+Add one typed optional animation definition to Layer and one profile-owned action
+configuration holding Aim/Fire/Reload chords and the Aim action/optional target.
+Reuse InputChord, IDs, field validation and Command::SetBindings rather than
+string-based property expressions or separate settings stores. Keep playback
+progress, pressed keys, paused values and alternate selection outside AppState.
+
+Use typed optional target values, limited to the supported properties above;
+no arbitrary JSON paths, scripts or duplicated full layers. Validate finite
+numbers, legal enums, duration/delay bounds, target existence, supported property
+for the layer type and no unknown fields. Preserve existing document/asset bounds.
+One disabled animation per layer is enough; no unbounded track list.
+
+Introduce schema 2, protocol 5 and portable format 2 with explicit old-format
+loaders. Migrate v1 into defaults before strict validation; keep the original and
+backup until atomic persistence succeeds. Retired v1 bindings remain retired.
+Old application versions must refuse new formats rather than silently strip data.
+Accept both native/portable versions for import; write the new version. Preserve
+existing static content and asset IDs byte-for-byte where representation permits.
+
+Cover every reference operation: preset deletion/replacement, duplication,
+profile copy, export inclusion, import ID remapping and cache warming. Reuse
+`BindingAction::target`-style centralized target enumeration for the new Aim target;
+update `commands.rs:184-213`, `storage/portable.rs:157-170,434`,
+`features/library.rs:43` and `runtime.rs:675`. Deleting an Aim target uses the
+existing affected-reference confirmation and atomic remapping, never a dangling ID.
+
+Verification: v1 migration fixtures including retired bindings/conflicting default
+keys; v2 native/profile/all-data/clipboard round trips; duplicate IDs; target
+replacement; malformed/nonfinite values; unsupported versions fail without writes.
+No new package, dependency or general animation framework is needed.
+
+### Phase 2 - Action input and crosshair selection
+
+How this serves the primary goal: Aim behaves predictably during actual play,
+including quick switching, interruptions and cancelled configuration changes.
+
+Extend InputState with Aim/Fire down/up and Reload edges, keeping the existing
+per-device state, modifier specificity and capture token model. Required modifier
+release terminates a held chord; a second device holding the same input prevents
+premature release. Aim and Fire always require release-capable keyboard/mouse
+inputs, even when the current effect uses Press. Wheel/Pause pulses remain available
+for ordinary press shortcuts and Reload. This keeps shared designs compatible with
+all profiles without a Hold animation invalidating another profile's input. Reload
+is always a press.
+
+Aim action plus Aim animation are two effects of the same resolved logical event.
+An independent Fire, Reload, preset shortcut or global toggle cannot also win that
+physical event. Use the existing conflict evaluator and atomic Replace/Cancel;
+include new roles across active-profile/global assignments, while preserving the
+existing more-specific chord rule. Validate the release-capable Aim/Fire restriction
+on binding changes, every imported profile and migration. Validate shared animation
+definitions independently of the currently selected profile.
+
+Create one effective-selection/visibility resolution used by status, rendering,
+editor active indicators and tray. Layer Aim overrides over the latest saved or
+Browse base; never restore a stale snapshot of all AppState. Clear latched/held
+runtime state on profile change, binding edit, capture entry, lock/suspend,
+device loss, output reconfiguration, import/reset and shutdown. Do not clear
+normal held state merely because the dashboard closes. Existing commit/reset
+paths must be audited explicitly, as `commands.rs:367-383` resets input on commits.
+
+Observe releases during capture/frozen operations; block affected held inputs
+until release after a lifecycle reset. Keep global input passive and global:
+no game detection, hooks, suppression, injection or keyboard/mouse polling.
+Register mouse Raw Input only when a relevant action/animation, capture or pending
+release needs it. Motion stays discarded without allocations.
+
+Wire the four table rows and pending picker transaction to existing Slint controls.
+Do not alter the separate New shortcut flow. Handle late picker/capture/save replies
+using tokens/revisions so they cannot commit into a different profile or action.
+
+Verification: each of the six Aim actions, master Off, repeat keys, two devices,
+modifier release, Browse restoration, base change during hold, profile changes,
+target deletion, capture cancel/disconnect/expiry, lock/unlock and lost key-up.
+Include Cancel/Replace and picker Cancel tests that assert no persistent changes.
+
+### Phase 3 - Deterministic animation evaluation and overlay playback
+
+How this serves the primary goal: the overlay responds smoothly without keeping
+the dashboard open or making static crosshairs more expensive.
+
+Put a small pure evaluator in core, using monotonic elapsed time passed by the
+caller. It returns sampled ordinary layer values and whether another frame is
+needed. No renderer/window/clock dependencies in core, no persistent mutation.
+Implement the trigger, pause, return, repeat and reload rules above with a fake
+clock in tests. Different layer animations remain independent and deterministic.
+
+The engine owns actual playback. Use the current render worker and output paths,
+with a distinct runtime generation/sample identity separate from saved revisions.
+Keep static render keys/cache unchanged. Animated frames bypass the static LRU;
+retain only bounded in-flight/latest presentation buffers. Never precompute a
+filmstrip or duplicate decoded images per frame.
+
+A frame must not call full Runtime::refresh, publish AppState, write storage,
+update Discord or rebuild tray menus. Add a presentation-only route using the
+existing Desktop/Game Bar output functions. Send semantic status changes only
+when selection/visibility/action state changes; bitmap frames stay on the widget
+channel. C++ displays frames and receives no animation engine.
+
+Use at most one in-flight render and one newest desired sample. Timer ticks must
+not cancel a still-valid render repeatedly: that would starve expensive designs.
+When it finishes, present a result valid for the current design/output generation
+and sample the current time for the next job. Selection, reset or output changes
+invalidate obsolete generations immediately. Drop overdue frames instead of
+queueing them or slowing logical animation time.
+
+Target at most 60 presentation frames/sec while values are changing. Use elapsed
+time, never frame counts, and no global high-resolution timer request. Stop the
+animation timer for static/paused/settled states. Hidden/disconnected/unpinned
+outputs do not rasterize; keep logical timing from timestamps and sample the
+current state if they become visible again. Suspend/lock instead clears/rearms
+playback. Complex effects may achieve less than 60 fps; measure rather than promise.
+
+Validate sampled frames as well as endpoints: rotation/combined transforms can
+exceed raster limits between valid endpoints. Preserve the last valid frame and
+stop the affected effect with one actionable error; do not flood status or retry
+forever. Keep the existing 1024px raster and other resource bounds. Use layer
+anchors consistently; changing sampled bounds must not make the crosshair drift.
+
+Verification: fake-clock boundary/zero-change/repeat/pause/return/retrigger tests;
+mid-transition bounds failures; stale render completion after reset; no-starvation
+slow-render test; alpha/rotation/centering goldens on both output paths. Confirm
+no animation frame changes document revisions, undo, persistence or Discord state.
+
+### Phase 4 - Designer controls and local preview
+
+How this serves the primary goal: users can create the intended effect in one
+place and see it without learning an animation authoring tool.
+
+Reuse `features/designer.rs::fields`, numeric/color controls and draft
+begin_gesture/finish_gesture for definition edits. Animation target editing creates
+one undo step per gesture; Reset property/Remove animation are ordinary undoable
+edits. Multi-selection shows only compatible common controls, or asks the user
+to select one layer for animation configuration; initial implementation uses the
+latter to keep the UI unambiguous.
+
+Reuse the asynchronous Preview worker, with a playback path that does not rebuild
+all hit-test geometry, layer thumbnails and inspector models every frame. The
+same core evaluator samples the document; a local timer exists only during a
+running local preview. A dirty definition uses the existing transient-draft
+protocol, sent when edited, not as a stream of evaluated document snapshots.
+Editing an inactive document stays pinned to that document even while global
+keys switch the actual overlay.
+
+Use current Theme tokens and Tabler icons. Match field heights, align dropdowns,
+keep normal spacing between actions, and anchor tooltips to controls. Keep animated
+properties readable without showing floating-point noise. Labels, selected state,
+focus outlines and per-property reset must be usable by keyboard. Respect reduced
+motion for UI transitions; preview playback is explicit, and designed overlay
+animations remain an intentional user feature rather than decorative UI motion.
+
+Verification: save/discard/conflict/reconnect while editing animation; undo/redo;
+keyboard-only configure/picker/preview; no stuck Hold on pointer cancellation;
+Design/Animate toggling without dirtying; static export versus native-definition
+round-trip; small window and 100/125/150/200% scaling. Native visual checks required.
+
+### Phase 5 - Acceptance, review and delivery
+
+How this serves the primary goal: ship a complete feature whose controls, saved
+state and real overlays agree, with measured overhead.
+
+Build optimized engine/editor together and compare the same representative designs
+against the current static release. Measure idle CPU/private memory with dashboard
+open/closed, first-trigger delay, frame-time distribution and sustained playback
+for simple and maximum-practical designs. Repeat on Desktop and Game Bar, and under
+8 kHz mouse motion. Include simultaneous Aim+Fire, rapid preset switching and
+repeated dashboard open/close. Check memory stabilizes after repeated use; investigate
+regressions before expanding scope. Active animation uses CPU; no RAM/CPU guarantee
+is made before these measurements. Static operation must add no animation timer,
+render job or per-frame transport traffic.
+
+Run relevant core/renderer/engine/editor tests, Rust formatting/Clippy, source and
+workflow validation and the normal Windows package CI. Validate both successful
+upgrade and refusal by an older app using synthetic data, plus portable imports.
+Use deliberate native acceptance for focus/click-through, fullscreen, key capture,
+input cleanup and install/upgrade; do not call these passed from headless tests.
+
+Use separate implementation commits for model/migration, action input and UI,
+engine animation playback, Designer controls, and final regression/docs work.
+Keep the feature PR in draft until the whole slice works; do not expose dead Fire
+or Reload controls in a partial release. Obtain an independent read-only review of
+the final revision and actual evidence, then provide a local test build
+when implementation is authorized. Merge/release remain separate actions.
+
+Update the existing architecture sections to the implemented contract, user guides
+with short Aim/animation examples, and CHANGELOG. Keep README a short introduction.
+Document that these are input-driven visual effects, not measurements of weapon
+spread/recoil or game state. Defaults add no movement to existing designs.
+
+Not in this version: controllers, autoplay, multiple stages/keyframe timelines,
+custom easing curves, arbitrary animated properties, animated image/video exports,
+game detection or game-specific recoil/ammo tracking. These omissions keep the
+requested Aim/Fire/Reload behavior complete without adding another editor inside
+our editor.
+
+
+Plan review: a separate read-only reviewer checked the input, UI, persistence and
+rendering contracts. The review clarified exact Return/retrigger timing, required
+release-capable Aim/Fire inputs across profiles, and the explicit visibility-toggle
+exception to master Off. These clarifications are incorporated above. Source
+inspection and document whitespace validation were performed; implementation,
+performance measurement and native acceptance have not been performed.

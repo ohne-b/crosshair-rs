@@ -153,6 +153,7 @@ pub enum Command {
 pub struct BindingSet {
     pub profile: Id,
     pub bindings: Vec<Binding>,
+    pub actions: crate::ActionBindings,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
