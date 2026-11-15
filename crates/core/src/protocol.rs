@@ -289,6 +289,9 @@ pub struct EngineStatus {
     pub revision: u64,
     pub active_profile: Option<Id>,
     pub selected_preset: Option<Id>,
+    /// Master switch; temporary Aim visibility does not change this state.
+    #[serde(default)]
+    pub enabled: bool,
     pub visible: bool,
     pub monitors: Vec<DisplayInfo>,
     pub widget: WidgetStatus,
@@ -310,7 +313,7 @@ pub struct DisplayInfo {
     pub primary: bool,
 }
 
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct WidgetStatus {
     pub installed: bool,
@@ -396,6 +399,23 @@ pub fn read_frame<T: DeserializeOwned>(reader: &mut impl Read) -> io::Result<T> 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn engine_status_keeps_master_enabled_separate_from_effective_visibility() {
+        let status = EngineStatus {
+            enabled: true,
+            visible: false,
+            ..Default::default()
+        };
+        let mut encoded = serde_json::to_value(&status).unwrap();
+        let restored: EngineStatus = serde_json::from_value(encoded.clone()).unwrap();
+        assert!(restored.enabled);
+        assert!(!restored.visible);
+        encoded.as_object_mut().unwrap().remove("enabled");
+        let placeholder: EngineStatus = serde_json::from_value(encoded).unwrap();
+        assert!(!placeholder.enabled);
+        assert!(!EngineStatus::default().enabled);
+    }
 
     #[test]
     fn framing_rejects_oversize_before_reading_payload() {

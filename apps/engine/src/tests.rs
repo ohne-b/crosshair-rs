@@ -13,6 +13,163 @@ fn application() -> Result<(tempfile::TempDir, Store, App)> {
 }
 
 #[test]
+fn aim_hold_restores_latest_browse_or_saved_base_without_persisting_override() -> Result<()> {
+    let (_directory, _store, mut app) = application()?;
+    let target = app.state.presets[1].id;
+    let base = app.state.presets[0].id;
+    app.state.profiles[0].actions.aim_action = AimAction::ShowPresetWhileHeld { preset: target };
+    let browsing = browse::presets()[0].id;
+    app.command(Id::nil(), Command::SelectBrowse { preset: browsing })?;
+    let before = app.state.clone();
+    let aim = InputEvent {
+        device: 1,
+        key: InputKey::Mouse { button: 2 },
+        down: true,
+    };
+    assert!(app.input(aim));
+    assert_eq!(app.status().selected_preset, Some(target));
+    assert_eq!(app.state, before);
+    app.disconnect(Id::nil());
+    assert_eq!(app.status().selected_preset, Some(target));
+    let next_browse = browse::presets()[1].id;
+    app.command(
+        Id::nil(),
+        Command::SelectBrowse {
+            preset: next_browse,
+        },
+    )?;
+    assert_eq!(app.status().selected_preset, Some(target));
+    app.input(InputEvent { down: false, ..aim });
+    assert_eq!(app.status().selected_preset, Some(next_browse));
+    assert_eq!(app.state, before);
+    app.input(aim);
+    app.command(Id::nil(), Command::SelectPreset { preset: base })?;
+    assert_eq!(app.status().selected_preset, Some(target));
+    app.input(InputEvent { down: false, ..aim });
+    assert_eq!(app.status().selected_preset, Some(base));
+    assert!(!app.history.can_undo());
+    Ok(())
+}
+
+#[test]
+fn aim_target_matching_saved_base_publishes_browse_selection_changes() -> Result<()> {
+    for held in [true, false] {
+        let (_directory, _store, mut app) = application()?;
+        let target = app.state.profiles[0].selected_preset;
+        app.state.profiles[0].actions.aim_action = if held {
+            AimAction::ShowPresetWhileHeld { preset: target }
+        } else {
+            AimAction::TogglePreset { preset: target }
+        };
+        let browsing = browse::presets()[0].id;
+        app.command(Id::nil(), Command::SelectBrowse { preset: browsing })?;
+        let before = app.state.clone();
+        let revision = app.status.revision;
+        let aim = InputEvent {
+            device: 1,
+            key: InputKey::Mouse { button: 2 },
+            down: true,
+        };
+        assert!(app.input(aim));
+        assert_eq!(app.status().selected_preset, Some(target));
+        assert_eq!(app.status.revision, revision + 1);
+        app.input(InputEvent { down: false, ..aim });
+        if !held {
+            assert_eq!(app.status.revision, revision + 1);
+            assert!(app.input(aim));
+        }
+        assert_eq!(app.status().selected_preset, Some(browsing));
+        assert_eq!(app.status.revision, revision + 2);
+        assert_eq!(app.state, before);
+    }
+    Ok(())
+}
+
+#[test]
+fn action_configuration_is_atomic_undoable_and_unrelated_edits_keep_holds() -> Result<()> {
+    let (_directory, _store, mut app) = application()?;
+    let mut actions = app.state.profiles[0].actions.clone();
+    actions.aim_action = AimAction::HideWhileHeld;
+    let command = |app: &App, actions: ActionBindings| Command::SetBindings {
+        profiles: vec![protocol::BindingSet {
+            profile: app.state.active_profile,
+            bindings: app.state.profiles[0].bindings.clone(),
+            actions,
+        }],
+        global_toggle: app.state.settings.global_toggle.clone(),
+        expected_revision: app.state.revision,
+    };
+    app.command(Id::nil(), command(&app, actions.clone()))?;
+    let configured = app.state.clone();
+    actions.fire = actions.aim.clone();
+    assert!(app.command(Id::nil(), command(&app, actions)).is_err());
+    assert_eq!(app.state, configured);
+    let aim = InputEvent {
+        device: 1,
+        key: InputKey::Mouse { button: 2 },
+        down: true,
+    };
+    app.input(aim);
+    assert!(app.status().enabled);
+    assert!(!app.status().visible);
+    app.command(
+        Id::nil(),
+        Command::SetFavorite {
+            preset: app.state.presets[0].id,
+            favorite: !app.state.presets[0].favorite,
+        },
+    )?;
+    assert!(app.input.held(AnimationTrigger::Aim));
+    app.command(Id::nil(), Command::Undo)?;
+    assert!(app.input.held(AnimationTrigger::Aim));
+    app.command(Id::nil(), Command::Undo)?;
+    assert_eq!(app.state.profiles[0].actions.aim_action, AimAction::None);
+    assert!(!app.input.held(AnimationTrigger::Aim));
+    assert!(!app.input(aim));
+    Ok(())
+}
+
+#[test]
+fn fire_edges_and_animation_samples_do_not_change_durable_state_or_status() -> Result<()> {
+    let (_directory, store, mut app) = application()?;
+    app.state.presets[0].layers[0].animation = Some(Animation {
+        target: AnimationTarget {
+            x: Some(25.0),
+            ..Default::default()
+        },
+        ..Default::default()
+    });
+    store.save(&app.state)?;
+    let original = app.state.clone();
+    let status_revision = app.status.revision;
+    let event = InputEvent {
+        device: 1,
+        key: InputKey::Mouse { button: 1 },
+        down: true,
+    };
+    app.input(event);
+    let preset = app.selected_preset_of(&app.state).unwrap().clone();
+    let mut playback = Playback::default();
+    for event in app.animation_events.drain(..) {
+        playback.event(&preset, event, 0);
+    }
+    for now in 0..1000 {
+        let _ = playback.sample(&preset, now);
+    }
+    app.input(InputEvent {
+        down: false,
+        ..event
+    });
+    assert_eq!(app.state, original);
+    assert_eq!(app.status.revision, status_revision);
+    assert!(!app.status.unsaved);
+    assert!(app.save_at.is_none());
+    assert!(!app.history.can_undo());
+    assert_eq!(store.load()?, original);
+    Ok(())
+}
+
+#[test]
 fn browse_selection_is_renderable_and_session_only() -> Result<()> {
     let (_directory, store, mut app) = application()?;
     let before = app.state.clone();
@@ -392,6 +549,7 @@ fn deleting_referenced_preset_remaps_once_and_undo_restores_references() -> Resu
         InputChord::key(0x12),
         BindingAction::SelectPreset { preset: target },
     ));
+    app.state.profiles[0].actions.aim_action = AimAction::ShowPresetWhileHeld { preset: target };
     let before = app.state.clone();
     app.command(
         owner,
@@ -403,11 +561,16 @@ fn deleting_referenced_preset_remaps_once_and_undo_restores_references() -> Resu
     assert!(app.state.preset(target).is_none());
     assert_eq!(app.state.profiles[0].selected_preset, replacement);
     assert_eq!(
+        app.state.profiles[0].actions.aim_action.target(),
+        Some(replacement)
+    );
+    assert_eq!(
         app.state.profiles[0].bindings[0].action.target(),
         Some(replacement)
     );
     app.command(owner, Command::Undo)?;
     assert_eq!(app.state.profiles[0].bindings, before.profiles[0].bindings);
+    assert_eq!(app.state.profiles[0].actions, before.profiles[0].actions);
     assert!(app.state.preset(target).is_some());
     Ok(())
 }

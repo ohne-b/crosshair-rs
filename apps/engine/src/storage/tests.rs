@@ -66,6 +66,124 @@ fn import_file(
 }
 
 #[test]
+fn portable_v1_is_order_independent_and_v2_preserves_animations_and_aim_targets() -> Result<()> {
+    use crosshair_core::{AimAction, Animation, AnimationTarget};
+    let directory = tempfile::tempdir()?;
+    let exports = tempfile::tempdir()?;
+    let mut store = Store::open(directory.path())?;
+    let mut renderer = Renderer::new()?;
+    let mut state = AppState::default();
+    state.profiles[0].actions.aim_action = AimAction::ShowPresetWhileHeld {
+        preset: state.presets[1].id,
+    };
+    state.presets[1].layers[0].animation = Some(Animation {
+        target: AnimationTarget {
+            x: Some(10.0),
+            ..Default::default()
+        },
+        ..Default::default()
+    });
+    let path = exports.path().join("profile.json");
+    store.export(
+        &state,
+        ExportKind::Profile {
+            profile: state.active_profile,
+        },
+        &path,
+        &mut renderer,
+    )?;
+    let value: serde_json::Value = serde_json::from_slice(&fs::read(&path)?)?;
+    assert_eq!(value["version"], 2);
+    let imported = import_file(
+        &mut store,
+        &AppState::default(),
+        &mut renderer,
+        &path,
+        false,
+    )?;
+    let profile = imported.profiles.last().unwrap();
+    let target = profile.actions.aim_action.target().unwrap();
+    assert_ne!(target, state.presets[1].id);
+    assert_eq!(
+        imported.preset(target).unwrap().layers[0].animation,
+        state.presets[1].layers[0].animation
+    );
+    let mut legacy = serde_json::to_value(AppState::default())?;
+    legacy["schema_version"] = 1.into();
+    for profile in legacy["profiles"].as_array_mut().unwrap() {
+        profile.as_object_mut().unwrap().remove("actions");
+    }
+    for preset in legacy["presets"].as_array_mut().unwrap() {
+        for layer in preset["layers"].as_array_mut().unwrap() {
+            layer.as_object_mut().unwrap().remove("animation");
+        }
+    }
+    // State arrives before the version; decoding must defer migration until the complete envelope.
+    fs::write(
+        &path,
+        format!(
+            "{{\"state\":{legacy},\"assets\":[],\"kind\":\"all\",\"version\":1,\"format\":\"crosshair-rs\"}}"
+        ),
+    )?;
+    let restored = import_file(&mut store, &state, &mut renderer, &path, true)?;
+    assert_eq!(restored.schema_version, 2);
+    assert!(
+        restored
+            .presets
+            .iter()
+            .flat_map(|p| &p.layers)
+            .all(|l| l.animation.is_none())
+    );
+    assert_eq!(
+        restored.profiles[0].actions,
+        crosshair_core::ActionBindings::default()
+    );
+    let invalid = fs::read_to_string(&path)?.replace("\"version\":1", "\"version\":3");
+    fs::write(&path, invalid)?;
+    assert!(import_file(&mut store, &state, &mut renderer, &path, false).is_err());
+    assert_eq!(fs::read_dir(directory.path().join("staging"))?.count(), 0);
+    Ok(())
+}
+
+#[test]
+fn png_and_svg_export_the_base_pose_with_animation_definitions_present() -> Result<()> {
+    use crosshair_core::{Animation, AnimationTarget};
+    let directory = tempfile::tempdir()?;
+    let exports = tempfile::tempdir()?;
+    let store = Store::open(directory.path())?;
+    let mut renderer = Renderer::new()?;
+    let mut state = AppState::default();
+    for svg in [false, true] {
+        let kind = if svg {
+            ExportKind::Svg {
+                preset: state.presets[0].id,
+            }
+        } else {
+            ExportKind::Png {
+                preset: state.presets[0].id,
+            }
+        };
+        let path = exports
+            .path()
+            .join(if svg { "base.svg" } else { "base.png" });
+        state.presets[0].layers[0].animation = None;
+        store.export(&state, kind.clone(), &path, &mut renderer)?;
+        let original = fs::read(&path)?;
+        state.presets[0].layers[0].animation = Some(Animation {
+            target: AnimationTarget {
+                x: Some(30.0),
+                opacity: Some(0.0),
+                ..Default::default()
+            },
+            ..Default::default()
+        });
+        store.export(&state, kind, &path, &mut renderer)?;
+        assert_eq!(fs::read(&path)?, original);
+    }
+    Ok(())
+}
+
+#[test]
 fn existing_assets_or_backup_prevent_missing_settings_defaults() -> Result<()> {
     for evidence in ["asset", "backup", "marker"] {
         let directory = tempfile::tempdir()?;

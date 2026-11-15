@@ -177,7 +177,7 @@ impl Worker {
             menu.revision = Some(state.revision);
         }
         menu.selected = status.selected_preset;
-        menu.visible = status.visible;
+        menu.visible = status.enabled;
         menu.enabled = enabled;
     }
 
