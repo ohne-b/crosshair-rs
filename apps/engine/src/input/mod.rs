@@ -1,7 +1,7 @@
 use std::mem::size_of;
 
 use anyhow::{Result, ensure};
-use crosshair_core::{AppState, InputEvent, InputKey};
+use crosshair_core::{AimAction, AnimationTrigger, AppState, InputEvent, InputKey, Preset};
 use windows::Win32::{
     Foundation::{HWND, LPARAM},
     UI::Input::{
@@ -23,33 +23,57 @@ impl Registration {
         Ok(Self { hwnd, mouse: false })
     }
 
-    pub fn update(
-        &mut self,
-        state: &AppState,
-        capture: bool,
-        mouse_buttons_held: bool,
-    ) -> Result<()> {
-        let uses_mouse =
-            |key: InputKey| matches!(key, InputKey::Mouse { .. } | InputKey::Wheel { .. });
-        // Keep receiving releases after capture/profile changes remove the last mouse binding.
-        let mouse = mouse_buttons_held
-            || capture
-            || state
-                .settings
-                .global_toggle
-                .as_ref()
-                .is_some_and(|c| uses_mouse(c.trigger))
-            || state.active_profile().is_some_and(|p| {
-                p.bindings
-                    .iter()
-                    .any(|b| b.enabled && uses_mouse(b.chord.trigger))
-            });
+    pub fn update(&mut self, mouse: bool) -> Result<()> {
         if mouse != self.mouse {
             register(self.hwnd, 2, mouse)?;
             self.mouse = mouse;
         }
         Ok(())
     }
+}
+
+pub fn needs_mouse(state: &AppState, presets: &[&Preset], capture: bool, held: bool) -> bool {
+    let mouse = |key| matches!(key, InputKey::Mouse { .. } | InputKey::Wheel { .. });
+    let animated = |trigger| {
+        state
+            .presets
+            .iter()
+            .chain(presets.iter().copied())
+            .any(|preset| {
+                preset.layers.iter().any(|layer| {
+                    layer
+                        .animation
+                        .as_ref()
+                        .is_some_and(|a| a.effective_for(layer) && a.trigger == trigger)
+                })
+            })
+    };
+    held || capture
+        || state
+            .settings
+            .global_toggle
+            .as_ref()
+            .is_some_and(|c| mouse(c.trigger))
+        || state.active_profile().is_some_and(|profile| {
+            profile
+                .bindings
+                .iter()
+                .any(|b| b.enabled && mouse(b.chord.trigger))
+                || profile.actions.aim.as_ref().is_some_and(|c| {
+                    mouse(c.trigger)
+                        && (profile.actions.aim_action != AimAction::None
+                            || animated(AnimationTrigger::Aim))
+                })
+                || profile
+                    .actions
+                    .fire
+                    .as_ref()
+                    .is_some_and(|c| mouse(c.trigger) && animated(AnimationTrigger::Fire))
+                || profile.actions.reload.as_ref().is_some_and(|c| {
+                    mouse(c.trigger)
+                        && (animated(AnimationTrigger::Aim) || animated(AnimationTrigger::Fire))
+                })
+        })
 }
 
 impl Drop for Registration {
@@ -163,6 +187,78 @@ fn keyboard(raw: RAWKEYBOARD) -> Option<(InputKey, bool)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn saved_animation_observes_held_mouse_before_selection() {
+        let mut state = AppState::default();
+        let selected = state.profiles[0].selected_preset;
+        let target = state.presets.iter_mut().find(|p| p.id != selected).unwrap();
+        target.layers[0].animation = Some(crosshair_core::Animation {
+            target: crosshair_core::AnimationTarget {
+                opacity: Some(0.5),
+                ..Default::default()
+            },
+            ..Default::default()
+        });
+        let target_id = target.id;
+        assert!(needs_mouse(&state, &[], false, false));
+        assert!(state.profiles[0].bindings.is_empty());
+        let mut input = crosshair_core::InputState::default();
+        input.handle(
+            InputEvent {
+                device: 1,
+                key: InputKey::Mouse { button: 1 },
+                down: true,
+            },
+            0,
+            &mut state,
+        );
+        state.profiles[0].selected_preset = target_id;
+        let target = state.preset(target_id).unwrap();
+        let mut playback = crosshair_core::Playback::default();
+        playback.select(
+            target,
+            input.held(AnimationTrigger::Aim),
+            input.held(AnimationTrigger::Fire),
+            0,
+        );
+        assert!(playback.sample(target, 75).preset.layers[0].opacity < 1.0);
+        state
+            .presets
+            .iter_mut()
+            .find(|p| p.id == target_id)
+            .unwrap()
+            .layers[0]
+            .animation
+            .as_mut()
+            .unwrap()
+            .enabled = false;
+        assert!(!needs_mouse(&state, &[], false, false));
+    }
+
+    #[test]
+    fn unused_defaults_do_not_register_mouse_but_actions_and_pending_releases_do() {
+        let mut state = AppState::default();
+        assert!(!needs_mouse(&state, &[&state.presets[0]], false, false));
+        assert!(needs_mouse(&state, &[], true, false));
+        assert!(needs_mouse(&state, &[], false, true));
+        state.profiles[0].actions.aim_action = AimAction::HideWhileHeld;
+        assert!(needs_mouse(&state, &[], false, false));
+        state.profiles[0].actions.aim_action = AimAction::None;
+        state.presets[0].layers[0].animation = Some(crosshair_core::Animation {
+            target: crosshair_core::AnimationTarget {
+                x: Some(10.0),
+                ..Default::default()
+            },
+            ..Default::default()
+        });
+        assert!(needs_mouse(&state, &[&state.presets[0]], false, false));
+        state.presets[0].layers[0]
+            .animation
+            .as_mut()
+            .unwrap()
+            .enabled = false;
+        assert!(!needs_mouse(&state, &[&state.presets[0]], false, false));
+    }
     #[test]
     fn keyboard_distinguishes_extended_keys_and_pause() {
         let key = |code, flags, vkey| {

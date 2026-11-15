@@ -186,6 +186,226 @@ pub fn fields(layer: &Layer, fonts: &[String], common_only: bool) -> Vec<Field> 
     rows
 }
 
+fn animation_property(key: &str) -> Option<&'static str> {
+    Some(match key {
+        "/transform/x" => "x",
+        "/transform/y" => "y",
+        "/transform/scale" => "scale",
+        "/transform/rotation" => "rotation",
+        "/opacity" => "opacity",
+        "/content/properties/length" => "length",
+        "/content/properties/thickness" => "thickness",
+        "/content/properties/gap" => "gap",
+        "/content/properties/dot/diameter" => "dot_diameter",
+        "/content/properties/color" => "color",
+        "/content/properties/dot/color" => "dot_color",
+        _ => return None,
+    })
+}
+
+pub fn animated_document(base: &Preset, selected: &BTreeSet<Id>) -> Preset {
+    let mut animated = base.clone();
+    for layer in &mut animated.layers {
+        if selected.contains(&layer.id)
+            && let Some(animation) = layer.animation.clone()
+        {
+            animation.target.apply(layer, 1.0);
+        }
+    }
+    animated
+}
+
+pub fn animation_fields(layer: &Layer, fonts: &[String]) -> Vec<Field> {
+    let a = layer.animation.clone().unwrap_or_default();
+    let mut rows = vec![
+        Field::toggle("/animation/enabled", "Enabled", a.enabled),
+        Field::choice(
+            "/animation/trigger",
+            "Trigger",
+            if a.trigger == AnimationTrigger::Fire {
+                "fire"
+            } else {
+                "aim"
+            },
+            &[("fire", "Fire"), ("aim", "Aim")],
+        ),
+        Field::choice(
+            "/animation/activation",
+            "Activation",
+            if a.activation == Activation::Hold {
+                "hold"
+            } else {
+                "press"
+            },
+            &[("hold", "Hold"), ("press", "Press")],
+        ),
+        Field::number(
+            "/animation/duration_ms",
+            "Duration (ms)",
+            a.duration_ms as f32,
+            0.0,
+            10_000.0,
+        ),
+        Field::section("Animated"),
+    ];
+    let mut animated = layer.clone();
+    a.target.apply(&mut animated, 1.0);
+    rows.extend(
+        fields(&animated, fonts, false)
+            .into_iter()
+            .filter_map(|mut field| {
+                let property = animation_property(&field.key)?;
+                if property == "color"
+                    && !matches!(
+                        layer.content,
+                        Content::Crosshair(_)
+                            | Content::Rectangle(_)
+                            | Content::Ellipse(_)
+                            | Content::Triangle(_)
+                    )
+                {
+                    return None;
+                }
+                if property == "dot_diameter" {
+                    field.label = "Dot diameter".into();
+                }
+                if property == "dot_color" {
+                    field.label = "Dot color".into();
+                }
+                if property == "color" && matches!(layer.content, Content::Crosshair(_)) {
+                    field.label = "Line color".into();
+                }
+                field.key = format!("@animated:{}", field.key);
+                Some(field)
+            }),
+    );
+    let enum_value = |value| {
+        serde_json::to_value(value)
+            .unwrap()
+            .as_str()
+            .unwrap()
+            .to_owned()
+    };
+    rows.extend([
+        Field::section("Timing"),
+        Field::choice(
+            "/animation/easing",
+            "Easing",
+            &enum_value(a.easing),
+            &[("linear", "Linear"), ("smooth", "Smooth")],
+        ),
+    ]);
+    if a.activation == Activation::Hold {
+        let release = serde_json::to_value(a.release).unwrap();
+        rows.push(Field::choice(
+            "/animation/release",
+            "On release",
+            release.as_str().unwrap(),
+            &[("return", "Return"), ("reset", "Reset"), ("pause", "Pause")],
+        ));
+    }
+    rows.push(Field::toggle("/animation/repeat", "Repeat", a.repeat));
+    let direction = serde_json::to_value(a.direction).unwrap();
+    rows.extend([
+        Field::choice(
+            "/animation/direction",
+            "Direction",
+            direction.as_str().unwrap(),
+            &[("one_way", "One way"), ("back_and_forth", "Back and forth")],
+        ),
+        Field::number(
+            "/animation/delay_ms",
+            "Delay (ms)",
+            a.delay_ms as f32,
+            0.0,
+            10_000.0,
+        ),
+    ]);
+    rows
+}
+
+pub fn animation_changed(layer: &Layer, key: &str) -> bool {
+    key.strip_prefix("@animated:")
+        .and_then(animation_property)
+        .is_some_and(|property| {
+            layer
+                .animation
+                .as_ref()
+                .is_some_and(|a| !serde_json::to_value(&a.target).unwrap()[property].is_null())
+        })
+}
+
+pub fn apply_animation_field(
+    layer: &mut Layer,
+    key: &str,
+    input: &str,
+    fonts: &[String],
+) -> Result<()> {
+    ensure!(!layer.locked, "Unlock this layer to edit it");
+    if key == "@animation-remove" {
+        layer.animation = None;
+        return Ok(());
+    }
+    let mut changed = layer.clone();
+    if let Some(key) = key.strip_prefix("@inherit:") {
+        let property = animation_property(key.trim_start_matches("@animated:"))
+            .context("This property cannot be animated")?;
+        if let Some(animation) = &mut changed.animation {
+            let mut target = serde_json::to_value(&animation.target)?;
+            target[property] = Value::Null;
+            animation.target = serde_json::from_value(target)?;
+        }
+    } else if let Some(key) = key.strip_prefix("@animated:") {
+        let property = animation_property(key).context("This property cannot be animated")?;
+        let mut animated = changed.clone();
+        if let Some(a) = &changed.animation {
+            a.target.apply(&mut animated, 1.0);
+        }
+        apply_field(&mut animated, key, input, fonts)?;
+        let value = serde_json::to_value(&animated)?
+            .pointer(key)
+            .context("This property is unavailable")?
+            .clone();
+        let animation = changed.animation.get_or_insert_with(Animation::default);
+        let mut target = serde_json::to_value(&animation.target)?;
+        target[property] = value;
+        animation.target = serde_json::from_value(target)?;
+    } else {
+        let field = animation_fields(layer, fonts)
+            .into_iter()
+            .find(|field| field.key == key)
+            .context("This animation field is unavailable")?;
+        let value = match field.kind {
+            FieldKind::Number { min, max, .. } => {
+                let number: f32 = input.parse().context("Enter a whole number")?;
+                ensure!(
+                    number.is_finite() && number.fract() == 0.0 && (min..=max).contains(&number),
+                    "Enter a whole number from {min} to {max}"
+                );
+                json!(number as u32)
+            }
+            FieldKind::Toggle => json!(input.parse::<bool>()?),
+            FieldKind::Choice(choices) => {
+                ensure!(
+                    choices.iter().any(|(value, _)| value == input),
+                    "Choose a valid option"
+                );
+                json!(input)
+            }
+            _ => bail!("This animation field is not editable"),
+        };
+        changed.animation.get_or_insert_with(Animation::default);
+        let mut encoded = serde_json::to_value(&changed)?;
+        *encoded
+            .pointer_mut(key)
+            .context("The animation field is unavailable")? = value;
+        changed = serde_json::from_value(encoded)?;
+    }
+    validation::validate_layer_geometry(&changed)?;
+    *layer = changed;
+    Ok(())
+}
+
 fn content_fields(content: &Content, fonts: &[String], rows: &mut Vec<Field>) {
     let p = "/content/properties";
     match content {
@@ -924,7 +1144,7 @@ pub fn parse_clipboard(text: &str, assets: &BTreeMap<Id, Asset>) -> Result<Vec<L
     let value: Value =
         serde_json::from_str(text).context("The clipboard does not contain crosshair layers")?;
     ensure!(
-        value["format"] == "crosshair-rs-layers-1",
+        value["format"] == "crosshair-rs-layers-1" || value["format"] == "crosshair-rs-layers-2",
         "The clipboard does not contain crosshair layers"
     );
     let layers: Vec<Layer> = serde_json::from_value(value["layers"].clone())?;
@@ -941,6 +1161,73 @@ pub fn parse_clipboard(text: &str, assets: &BTreeMap<Id, Asset>) -> Result<Vec<L
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn animated_values_inherit_base_until_changed_and_validate_without_mutating_base() {
+        let mut layer = Preset::new("Animated").layers.remove(0);
+        let base = layer.clone();
+        apply_animation_field(&mut layer, "@animated:/transform/x", "12", &[]).unwrap();
+        apply_animation_field(&mut layer, "/animation/duration_ms", "250", &[]).unwrap();
+        assert_eq!(layer.transform, base.transform);
+        assert_eq!(layer.animation.as_ref().unwrap().target.x, Some(12.0));
+        assert!(animation_changed(&layer, "@animated:/transform/x"));
+        apply_animation_field(&mut layer, "/animation/duration_ms", "0", &[]).unwrap();
+        assert_eq!(layer.animation.as_ref().unwrap().duration_ms, 0);
+        let before = layer.clone();
+        for (key, value) in [
+            ("/animation/duration_ms", "10001"),
+            ("/animation/delay_ms", "10001"),
+            ("@animated:/transform/x", "NaN"),
+            ("@animated:/transform/x", "1.5"),
+            ("@animated:/effects/blur", "10"),
+        ] {
+            assert!(apply_animation_field(&mut layer, key, value, &[]).is_err());
+            assert_eq!(layer, before);
+        }
+        apply_animation_field(&mut layer, "@inherit:@animated:/transform/x", "", &[]).unwrap();
+        layer.transform.x = 7.0;
+        assert!(!animation_changed(&layer, "@animated:/transform/x"));
+        assert_eq!(
+            animation_fields(&layer, &[])
+                .iter()
+                .find(|field| field.key == "@animated:/transform/x")
+                .unwrap()
+                .value,
+            "7"
+        );
+        apply_animation_field(&mut layer, "@animation-remove", "", &[]).unwrap();
+        assert!(layer.animation.is_none());
+    }
+
+    #[test]
+    fn clipboard_reads_static_v1_and_preserves_v2_animation_and_asset_ids() {
+        let mut preset = Preset::new("Clipboard");
+        let old = json!({"format": "crosshair-rs-layers-1", "layers": preset.layers});
+        assert_eq!(
+            parse_clipboard(&old.to_string(), &BTreeMap::new()).unwrap(),
+            preset.layers
+        );
+        apply_animation_field(&mut preset.layers[0], "@animated:/opacity", "0.25", &[]).unwrap();
+        let v2 = json!({"format": "crosshair-rs-layers-2", "layers": preset.layers});
+        assert_eq!(
+            parse_clipboard(&v2.to_string(), &BTreeMap::new()).unwrap(),
+            preset.layers
+        );
+        let future = json!({"format": "crosshair-rs-layers-3", "layers": preset.layers});
+        assert!(parse_clipboard(&future.to_string(), &BTreeMap::new()).is_err());
+        let mut layer = Layer::new(
+            "Image",
+            Content::Image(Image::new(Id::new_v4(), 20.0, 10.0)),
+        );
+        let id = layer.content.asset_id();
+        apply_animation_field(&mut layer, "@animated:/transform/scale", "2", &[]).unwrap();
+        assert_eq!(layer.content.asset_id(), id);
+        assert!(
+            !animation_fields(&layer, &[])
+                .iter()
+                .any(|field| field.key.contains("/color"))
+        );
+    }
 
     #[test]
     fn numbers_hide_float_noise_without_trailing_zeroes() {

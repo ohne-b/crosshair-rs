@@ -1,4 +1,65 @@
-use crosshair_core::{Binding, BindingAction, Id, InputChord, InputKey, Modifier};
+use crosshair_core::{ActionBindings, Binding, BindingAction, Id, InputChord, InputKey, Modifier};
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Target {
+    Global,
+    Binding(Id),
+    Aim,
+    Fire,
+    Reload,
+}
+
+impl Target {
+    pub fn parse(value: &str) -> anyhow::Result<Self> {
+        Ok(match value {
+            "global" => Self::Global,
+            "aim" => Self::Aim,
+            "fire" => Self::Fire,
+            "reload" => Self::Reload,
+            _ => Self::Binding(value.parse()?),
+        })
+    }
+    pub fn chord_mut(self, actions: &mut ActionBindings) -> Option<&mut Option<InputChord>> {
+        match self {
+            Self::Aim => Some(&mut actions.aim),
+            Self::Fire => Some(&mut actions.fire),
+            Self::Reload => Some(&mut actions.reload),
+            _ => None,
+        }
+    }
+}
+
+pub fn role_conflicts(
+    bindings: &[Binding],
+    actions: &ActionBindings,
+    global: Option<&InputChord>,
+    own: Option<Target>,
+    chord: &InputChord,
+) -> Vec<Target> {
+    let mut conflicts = Vec::new();
+    for (target, assigned) in [
+        (Target::Global, global),
+        (Target::Aim, actions.aim.as_ref()),
+        (Target::Fire, actions.fire.as_ref()),
+        (Target::Reload, actions.reload.as_ref()),
+    ] {
+        if Some(target) != own && assigned.is_some_and(|assigned| chords_conflict(assigned, chord))
+        {
+            conflicts.push(target);
+        }
+    }
+    conflicts.extend(
+        bindings
+            .iter()
+            .filter(|binding| {
+                binding.enabled
+                    && own != Some(Target::Binding(binding.id))
+                    && chords_conflict(&binding.chord, chord)
+            })
+            .map(|binding| Target::Binding(binding.id)),
+    );
+    conflicts
+}
 
 pub fn action_name(action: &BindingAction) -> &'static str {
     match action {
@@ -66,25 +127,6 @@ fn keyboard_name(scan_code: u16, extended: bool) -> String {
     )
 }
 
-pub fn conflict(
-    bindings: &[Binding],
-    global: Option<&InputChord>,
-    own: Option<Id>,
-    chord: &InputChord,
-) -> Option<Option<Id>> {
-    if let Some(global) = global
-        && chords_conflict(global, chord)
-    {
-        return Some(None);
-    }
-    bindings
-        .iter()
-        .find(|binding| {
-            binding.enabled && Some(binding.id) != own && chords_conflict(&binding.chord, chord)
-        })
-        .map(|binding| Some(binding.id))
-}
-
 fn chords_conflict(a: &InputChord, b: &InputChord) -> bool {
     let bindings = [
         Binding::new(a.clone(), BindingAction::ToggleVisibility),
@@ -97,19 +139,17 @@ fn chords_conflict(a: &InputChord, b: &InputChord) -> bool {
 mod tests {
     use super::*;
     #[test]
-    fn conflict_detection_excludes_edited_and_disabled_bindings() {
+    fn role_conflicts_exclude_own_and_disabled_but_include_inactive_actions() {
         let chord = InputChord::key(0x12);
         let mut binding = Binding::new(chord.clone(), BindingAction::ToggleVisibility);
+        let mut actions = ActionBindings::unbound();
+        actions.aim = Some(chord.clone());
+        let conflicts = role_conflicts(&[binding.clone()], &actions, Some(&chord), None, &chord);
         assert_eq!(
-            conflict(&[binding.clone()], None, None, &chord),
-            Some(Some(binding.id))
-        );
-        assert_eq!(
-            conflict(&[binding.clone()], None, Some(binding.id), &chord),
-            None
+            conflicts,
+            vec![Target::Global, Target::Aim, Target::Binding(binding.id)]
         );
         binding.enabled = false;
-        assert_eq!(conflict(&[binding], None, None, &chord), None);
-        assert_eq!(conflict(&[], Some(&chord), None, &chord), Some(None));
+        assert!(role_conflicts(&[binding], &actions, None, Some(Target::Aim), &chord).is_empty());
     }
 }

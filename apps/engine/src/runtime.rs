@@ -1,3 +1,4 @@
+mod animation;
 mod commands;
 mod completion;
 mod output;
@@ -58,6 +59,7 @@ const SAVE_TIMER: usize = 1;
 const CAPTURE_TIMER: usize = 2;
 const CLOSE_TIMER: usize = 3;
 const OUTPUT_TIMER: usize = 4;
+const ANIMATION_TIMER: usize = 5;
 
 enum Event {
     Ipc(ipc::Event),
@@ -145,11 +147,13 @@ struct Runtime {
     widget_clear_required: Option<u64>,
     preview: Option<LivePreview>,
     preview_generation: u64,
+    animation: animation::AnimationOutput,
 }
 
 struct LivePreview {
     owner: Id,
     key: render::Key,
+    preset: Preset,
     raster: Arc<crosshair_renderer::Raster>,
 }
 
@@ -303,6 +307,7 @@ pub fn run(options: Options) -> Result<()> {
         widget_clear_required: None,
         preview: None,
         preview_generation: 0,
+        animation: animation::AnimationOutput::default(),
     };
     if recovery.as_ref().is_some_and(|r| r.restart.reopen_editor) {
         runtime.open_editor()?;
@@ -333,12 +338,15 @@ pub fn run(options: Options) -> Result<()> {
                 WM_INPUT => {
                     let mut changed = false;
                     let _ = input::read(message.lParam, |event| {
-                        if runtime.frozen {
+                        if runtime.frozen || runtime.suspended {
                             let mouse_held = runtime.app.input.mouse_buttons_held();
                             runtime.app.input.observe_suspended(event);
+                            runtime.app.reset_playback();
+                            runtime.sync_animation();
                             changed |= mouse_held != runtime.app.input.mouse_buttons_held();
                         } else {
                             changed |= runtime.app.input(event);
+                            runtime.sync_animation();
                         }
                     });
                     if changed {
@@ -356,6 +364,7 @@ pub fn run(options: Options) -> Result<()> {
                 WM_INPUT_DEVICE_CHANGE => {
                     if message.wParam.0 == 2 {
                         runtime.app.input.remove_device(message.lParam.0 as u64);
+                        runtime.app.reset_input();
                         runtime.refresh();
                     }
                 }
@@ -415,6 +424,10 @@ impl Runtime {
             Event::Tray(action) => self.tray_action(action),
             Event::Work(result) => self.completed(result),
             Event::Render(result) => {
+                if result.frame.is_some() {
+                    self.animation_completed(result);
+                    return;
+                }
                 if self.rendering == Some(result.key) {
                     self.rendering = None;
                 }
@@ -452,11 +465,14 @@ impl Runtime {
                 }
             },
             Event::Widget(status) => {
+                let semantic = self.app.status.widget != status.widget;
                 self.app.status.widget = status.widget.clone();
                 self.widget_status = status;
                 self.acknowledge_widget_blank();
-                self.refresh();
-                self.app.changed(None, false);
+                if semantic || self.change.is_some() {
+                    self.refresh();
+                    self.app.changed(None, false);
+                }
             }
             Event::Update(status) => {
                 self.app.status.update = status.clone();
@@ -501,11 +517,12 @@ impl Runtime {
                 }
                 self.refresh();
             }
-            Event::Ipc(ipc::Event::Request(owner, request)) => self.request(owner, request),
+            Event::Ipc(ipc::Event::Request(owner, request)) => self.request(owner, *request),
         }
     }
 
     fn displays(&mut self) {
+        self.app.reset_input();
         self.widget_center = true;
         self.failed_render.clear();
         self.invalidate_output_geometry();
@@ -537,26 +554,43 @@ impl Runtime {
     }
 
     fn refresh(&mut self) {
+        self.sync_animation();
         self.discord.update(
             &self.app.state.settings,
             self.app.status().visible && !self.suspended,
         );
         self.tray
             .update(&self.app.state, &self.app.status(), !self.frozen);
+        let mut presets: Vec<_> = self.app.browse_preset.iter().collect();
+        presets.extend(self.preview.as_ref().map(|p| &p.preset));
+        let mouse = input::needs_mouse(
+            &self.app.state,
+            &presets,
+            self.app.input.capturing(),
+            self.app.input.mouse_buttons_held(),
+        );
         if let Some(input) = &mut self.input
-            && let Err(error) = input.update(
-                &self.app.state,
-                self.app.input.capturing(),
-                self.app.input.mouse_buttons_held(),
-            )
+            && let Err(error) = input.update(mouse)
         {
             self.app.status.render_error = Some(error.to_string());
         }
-        if self.suspended {
+        self.refresh_presentation();
+        self.advance_change();
+        if self.rendering.is_none() && self.change.is_none() && !self.animation.busy() {
+            self.prewarm();
+        }
+        self.refresh_timers();
+    }
+
+    fn refresh_presentation(&mut self) {
+        self.stop_animation_timer();
+        if self.suspended || self.frozen {
+            self.cancel_animation_frame();
             self.hide();
         } else if self.widget_clear_required.is_some()
             && self.app.state.settings.output_mode == OutputMode::Desktop
         {
+            self.cancel_animation_frame();
             self.overlay.hide();
             self.last_image = None;
             self.app.status.render_error = Some(
@@ -565,53 +599,22 @@ impl Runtime {
             );
         } else if !self.previous_output_hidden() {
             if let Some((key, center)) = self.app.presentation() {
+                if self.animation.active() && self.change.is_none() {
+                    self.present_animation(key, center);
+                    return;
+                }
                 let preview = self
                     .preview
                     .as_ref()
                     .filter(|preview| preview.key == key)
                     .map(|preview| preview.raster.clone());
                 if let Some(raster) = preview.or_else(|| self.cache.get(key)) {
-                    let origin = [center[0] + raster.origin[0], center[1] + raster.origin[1]];
-                    if self.app.state.settings.output_mode == OutputMode::GameBar {
-                        self.overlay.hide();
-                        self.last_image = None;
-                        if let Some(widget) = &self.widget {
-                            widget.present(Some(raster), origin, self.widget_center);
-                            self.widget_center = false;
-                            self.app.status.render_error = None;
-                        } else {
-                            self.app.status.render_error =
-                                Some("Install the Windows package to use Game Bar output".into());
-                        }
-                    } else {
-                        if !self.changing_output()
-                            && let Some(widget) = &self.widget
-                        {
-                            widget.present(None, [0, 0], false);
-                        }
-                        if self.last_image.as_ref().is_none_or(|(previous, position)| {
-                            !Arc::ptr_eq(previous, &raster) || *position != origin
-                        }) {
-                            match self.overlay.present_at(
-                                [raster.width, raster.height],
-                                &raster.pixels,
-                                origin,
-                            ) {
-                                Ok(()) => {
-                                    self.app.status.render_error = None;
-                                    self.last_image = Some((raster, origin));
-                                }
-                                Err(error) => {
-                                    self.hide();
-                                    self.app.status.render_error = Some(error.to_string());
-                                }
-                            }
-                        }
-                    }
+                    self.present_raster(raster, center);
                 } else if self.rendering != Some(key) && !self.failed_render.contains(&key) {
                     self.render_key(key);
                 }
             } else {
+                self.cancel_animation_frame();
                 self.overlay.hide();
                 self.last_image = None;
                 if !self.changing_output()
@@ -621,10 +624,9 @@ impl Runtime {
                 }
             }
         }
-        self.advance_change();
-        if self.rendering.is_none() && self.change.is_none() {
-            self.prewarm();
-        }
+    }
+
+    fn refresh_timers(&mut self) {
         unsafe {
             let _ = KillTimer(Some(self.window.0), SAVE_TIMER);
             if self.change.is_none()
@@ -657,6 +659,7 @@ impl Runtime {
         {
             self.render.submit(render::Job {
                 key,
+                frame: None,
                 preset: preset.clone(),
                 assets: self.app.state.assets.clone(),
             });
@@ -665,6 +668,9 @@ impl Runtime {
     }
 
     fn prewarm(&mut self) {
+        if self.animation.changing() {
+            return;
+        }
         let Some(profile) = self.app.state.active_profile() else {
             return;
         };
@@ -673,6 +679,7 @@ impl Runtime {
             .iter()
             .filter(|b| b.enabled)
             .filter_map(|b| b.action.target())
+            .chain(profile.actions.aim_action.target())
             .chain(Some(profile.selected_preset))
             .chain(self.app.browse_preset.as_ref().map(|p| p.id))
             .collect();
@@ -726,6 +733,9 @@ impl Runtime {
         if timer == OUTPUT_TIMER {
             self.output_timeout();
         }
+        if timer == ANIMATION_TIMER {
+            self.refresh_presentation();
+        }
     }
 
     fn open_editor(&self) -> Result<()> {
@@ -747,6 +757,7 @@ impl Runtime {
             }
             tray::Action::Toggle if !self.app.status.recovery_required => {
                 self.app.input.toggle_visibility(&mut self.app.state);
+                self.app.reset_playback();
                 self.app.dirty();
                 self.app.changed(None, false);
             }

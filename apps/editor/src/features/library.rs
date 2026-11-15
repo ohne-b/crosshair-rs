@@ -41,7 +41,12 @@ pub fn delete_message(state: &AppState, id: Id, replacement: Id) -> String {
         .iter()
         .flat_map(|profile| &profile.bindings)
         .filter(|binding| binding.action.target() == Some(id))
-        .count();
+        .count()
+        + state
+            .profiles
+            .iter()
+            .filter(|profile| profile.actions.aim_action.target() == Some(id))
+            .count();
     let name = state
         .preset(replacement)
         .map(|preset| preset.name.as_str())

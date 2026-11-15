@@ -147,6 +147,9 @@ fn validate_layer_inner(layer: &Layer, assets: Option<&BTreeMap<Id, Asset>>) -> 
     number(layer.transform.scale, 0.01, 100.0, "layer.scale")?;
     number(layer.transform.rotation, -360.0, 360.0, "layer.rotation")?;
     number(layer.opacity, 0.0, 1.0, "layer.opacity")?;
+    if let Some(animation) = &layer.animation {
+        validate_animation(layer, animation)?;
+    }
     number(layer.effects.blur, 0.0, 64.0, "layer.blur")?;
     number(
         layer.effects.outline.thickness,
@@ -420,7 +423,18 @@ pub fn validate_state(state: &AppState) -> Result {
                 )?;
             }
         }
-        validate_binding_conflicts(&profile.bindings, state.settings.global_toggle.as_ref())?;
+        if let Some(target) = profile.actions.aim_action.target() {
+            require(
+                state.preset(target).is_some(),
+                "aim.target",
+                "referenced preset is missing",
+            )?;
+        }
+        validate_action_conflicts(
+            &profile.bindings,
+            &profile.actions,
+            state.settings.global_toggle.as_ref(),
+        )?;
     }
     require(
         state.active_profile().is_some(),
@@ -452,6 +466,72 @@ pub fn validate_state(state: &AppState) -> Result {
     )
 }
 
+pub fn validate_animation(layer: &Layer, animation: &Animation) -> Result {
+    require(
+        animation.duration_ms <= 10_000,
+        "animation.duration",
+        "must be from 0 to 10000 ms",
+    )?;
+    require(
+        animation.delay_ms <= 10_000,
+        "animation.delay",
+        "must be from 0 to 10000 ms",
+    )?;
+    let t = &animation.target;
+    let crosshair = matches!(layer.content, Content::Crosshair(_));
+    require(
+        crosshair
+            || (t.length.is_none()
+                && t.thickness.is_none()
+                && t.gap.is_none()
+                && t.dot_diameter.is_none()
+                && t.dot_color.is_none()),
+        "animation.target",
+        "crosshair properties require a crosshair layer",
+    )?;
+    require(
+        t.color.is_none()
+            || matches!(
+                layer.content,
+                Content::Crosshair(_)
+                    | Content::Rectangle(_)
+                    | Content::Ellipse(_)
+                    | Content::Triangle(_)
+            ),
+        "animation.color",
+        "fill animation is not supported by this layer",
+    )?;
+    let mut target = layer.clone();
+    target.animation = None;
+    t.apply(&mut target, 1.0);
+    validate_layer_geometry(&target)
+}
+
+pub fn validate_action_conflicts(
+    bindings: &[Binding],
+    actions: &ActionBindings,
+    global: Option<&InputChord>,
+) -> Result {
+    for chord in actions.chords() {
+        validate_chord(chord)?;
+    }
+    for chord in [&actions.aim, &actions.fire].into_iter().flatten() {
+        require(
+            !chord.trigger.is_pulse(),
+            "actions.chord",
+            "Aim and Fire require a key or mouse button with a release",
+        )?;
+    }
+    let mut chords: Vec<_> = bindings
+        .iter()
+        .filter(|b| b.enabled)
+        .map(|b| &b.chord)
+        .collect();
+    chords.extend(actions.chords());
+    chords.extend(global);
+    validate_chord_conflicts(&chords)
+}
+
 /// Tests all physical modifier combinations so sided and generic chords cannot race.
 pub fn validate_binding_conflicts(bindings: &[Binding], global: Option<&InputChord>) -> Result {
     let mut chords: Vec<&InputChord> = bindings
@@ -462,6 +542,10 @@ pub fn validate_binding_conflicts(bindings: &[Binding], global: Option<&InputCho
     if let Some(global) = global {
         chords.push(global);
     }
+    validate_chord_conflicts(&chords)
+}
+
+fn validate_chord_conflicts(chords: &[&InputChord]) -> Result {
     for (index, chord) in chords.iter().enumerate() {
         for other in chords.iter().skip(index + 1) {
             if chord.trigger != other.trigger {

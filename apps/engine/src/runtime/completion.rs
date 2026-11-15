@@ -95,10 +95,7 @@ impl Runtime {
                         SaveNext::Install => {
                             let updates = self.updates.clone();
                             let wake = self.wake.clone();
-                            let restart = updates::RestartIntent {
-                                visible: self.app.status().visible,
-                                reopen_editor: self.app.clients.values().any(|c| c.subscribed),
-                            };
+                            let restart = restart_intent(&self.app);
                             if let Err(error) = std::thread::Builder::new()
                                 .name("update handoff".into())
                                 .spawn(move || {
@@ -153,6 +150,7 @@ impl Runtime {
                         self.preview = Some(LivePreview {
                             owner: pending.owner.ok_or(HistoryError::Missing)?,
                             key: render::Key::new(stored, scale),
+                            preset: *preset,
                             raster,
                         });
                     }
@@ -243,6 +241,13 @@ impl Runtime {
     }
 }
 
+fn restart_intent(app: &App) -> updates::RestartIntent {
+    updates::RestartIntent {
+        visible: app.state.base_visible,
+        reopen_editor: app.clients.values().any(|c| c.subscribed),
+    }
+}
+
 fn preserve_runtime(live: &AppState, candidate: &mut AppState) {
     candidate.base_visible = live.base_visible;
     if candidate
@@ -261,5 +266,25 @@ fn preserve_runtime(live: &AppState, candidate: &mut AppState) {
         {
             profile.selected_preset = previous.selected_preset;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn update_restart_preserves_master_enabled_while_aim_hides_the_crosshair() -> Result<()> {
+        let directory = tempfile::tempdir()?;
+        let store = Store::open(directory.path())?;
+        let mut app = App::open(&store, true)?;
+        app.state.profiles[0].actions.aim_action = AimAction::ShowWhileHeld;
+        assert!(app.status().enabled);
+        assert!(!app.status().visible);
+        assert!(restart_intent(&app).visible);
+
+        app.state.base_visible = false;
+        assert!(!restart_intent(&app).visible);
+        Ok(())
     }
 }

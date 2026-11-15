@@ -2,3 +2,10 @@
 *.png binary
 *.ico binary
 *.webp binary
+
+# Keep language statistics focused on the application source.
+docs/** -linguist-detectable
+scripts/** -linguist-detectable
+packaging/** -linguist-detectable
+website/** -linguist-detectable
+apps/engine/src/updates/deploy.ps1 -linguist-detectable

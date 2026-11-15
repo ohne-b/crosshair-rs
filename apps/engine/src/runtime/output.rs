@@ -101,6 +101,8 @@ impl Runtime {
                 "Install the Windows package and pin its Game Bar widget before switching output"
             );
         }
+        self.app.reset_input();
+        self.sync_animation();
         self.change = Some(Change {
             before: self.app.state.clone(),
             candidate,
@@ -185,8 +187,7 @@ impl Runtime {
             .ok_or_else(|| anyhow::anyhow!("No display is available for the selected output"))?;
         let visible = self
             .app
-            .input
-            .presentation(&change.candidate)
+            .resolved_presentation(&change.candidate)
             .is_some_and(|p| p.visible);
         let Some(raster) = self.cache.get(key) else {
             ensure!(
@@ -200,6 +201,7 @@ impl Runtime {
                     .ok_or(HistoryError::Missing)?;
                 self.render.submit(render::Job {
                     key,
+                    frame: None,
                     preset: preset.clone(),
                     assets: change.candidate.assets.clone(),
                 });
@@ -341,6 +343,7 @@ impl Runtime {
                     .ok_or(HistoryError::Missing)?;
                 self.render.submit(render::Job {
                     key,
+                    frame: None,
                     preset: preset.clone(),
                     assets: change.candidate.assets.clone(),
                 });

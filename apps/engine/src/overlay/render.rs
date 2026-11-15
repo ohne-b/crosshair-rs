@@ -28,13 +28,32 @@ impl Key {
     }
 }
 
+pub fn validate_animation_bounds(
+    renderer: &mut Renderer,
+    preset: &Preset,
+    scale: f32,
+) -> Result<()> {
+    if preset.layers.iter().any(|layer| layer.animation.is_some()) {
+        let mut target = preset.clone();
+        for layer in &mut target.layers {
+            if let Some(animation) = layer.animation.take() {
+                animation.target.apply(layer, 1.0);
+            }
+        }
+        renderer.measure(&target, scale)?;
+    }
+    Ok(())
+}
+
 pub struct Job {
     pub key: Key,
+    pub frame: Option<(u64, u64)>,
     pub preset: Preset,
     pub assets: BTreeMap<Id, Asset>,
 }
 pub struct Completed {
     pub key: Key,
+    pub frame: Option<(u64, u64)>,
     pub result: Result<Arc<Raster>>,
 }
 struct Shared {
@@ -94,6 +113,7 @@ impl Worker {
                     {
                         notify(Completed {
                             key: job.key,
+                            frame: job.frame,
                             result,
                         });
                     }

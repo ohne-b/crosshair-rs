@@ -93,9 +93,12 @@ impl App {
                 }
             }
             "window-minimize" | "window-maximize" | "window-close" => {
+                self.stop_playback();
+                self.show_animated_target()?;
                 frame::caption_action(self.hwnd()?, action)?
             }
             "navigate" => {
+                self.stop_playback();
                 store.set_page(value.parse()?);
                 if store.get_page() != 2 {
                     store.set_request_shortcut(false);
@@ -109,6 +112,7 @@ impl App {
                         .id;
                     self.open_document(id)?;
                 }
+                self.show_animated_target()?;
             }
             "github" => dialogs::open_url(self.hwnd()?, "https://github.com/ohne-b/crosshair-rs")?,
             "license" => dialogs::open_url(
@@ -749,11 +753,76 @@ impl App {
                     self.send("install-flush", Command::Flush)?;
                 }
             }
-            "capture" => self.begin_capture(if value == "global" {
-                Capture::Global
-            } else {
-                Capture::Existing(value.parse()?)
+            "animation-preview" => self.preview_input(value)?,
+            "animation-stop" => {
+                self.stop_playback();
+                self.show_animated_target()?;
+            }
+            "animation-tick" => self.playback_tick()?,
+            "designer-mode" => {
+                self.stop_playback();
+                if self.document.gesture.is_some() {
+                    self.finish_group = true;
+                    self.finish_edit()?;
+                }
+                self.animate = value == "animate";
+                store.set_drawing(false);
+                self.render();
+                self.refresh_document();
+            }
+            "capture" => self.begin_capture(match keybinds::Target::parse(value)? {
+                keybinds::Target::Global => Capture::Global,
+                keybinds::Target::Binding(id) => Capture::Existing(id),
+                role => Capture::Role(role),
             })?,
+            "aim-action" => {
+                let index = value.parse::<i32>()?;
+                ensure!((0..=5).contains(&index), "Choose a valid Aim action");
+                if index >= 4 {
+                    self.pending_aim = Some((self.state.active_profile, index));
+                } else {
+                    self.pending_aim = None;
+                    let mut profile = self.active_profile()?;
+                    profile.actions.aim_action = match index {
+                        0 => AimAction::None,
+                        1 => AimAction::ToggleVisibility,
+                        2 => AimAction::HideWhileHeld,
+                        3 => AimAction::ShowWhileHeld,
+                        _ => bail!("Choose a valid Aim action"),
+                    };
+                    self.profile_edit(profile)?;
+                }
+            }
+            "aim-target" => {
+                if let Some((profile_id, index)) = self
+                    .pending_aim
+                    .take()
+                    .filter(|(profile, _)| *profile == self.state.active_profile)
+                {
+                    let preset = value.parse::<Id>()?;
+                    ensure!(
+                        self.state.preset(preset).is_some(),
+                        "This saved crosshair was deleted"
+                    );
+                    let mut profile = self
+                        .state
+                        .profiles
+                        .iter()
+                        .find(|p| p.id == profile_id)
+                        .context("This profile was deleted")?
+                        .clone();
+                    profile.actions.aim_action = if index == 4 {
+                        AimAction::TogglePreset { preset }
+                    } else {
+                        AimAction::ShowPresetWhileHeld { preset }
+                    };
+                    self.profile_edit(profile)?;
+                }
+            }
+            "aim-cancel" => {
+                self.pending_aim = None;
+            }
+
             "capture-cancel" => self.cancel_capture()?,
             "discard-shortcut" => {
                 self.cancel_capture()?;
@@ -795,6 +864,8 @@ impl App {
             "binding-remove" => {
                 if value == "global" {
                     self.set_global_toggle(None)?;
+                } else if matches!(value, "aim" | "fire" | "reload") {
+                    self.apply_capture(Capture::Role(keybinds::Target::parse(value)?), None, None)?;
                 } else {
                     let mut profile = self.active_profile()?;
                     profile
@@ -886,6 +957,10 @@ fn requires_finished_edit(action: &str) -> bool {
             | "discord-style"
             | "position-use"
             | "position-delete"
+            | "designer-mode"
+            | "animation-preview"
+            | "aim-action"
+            | "aim-target"
             | "binding-remove"
             | "binding-target"
             | "install-update"

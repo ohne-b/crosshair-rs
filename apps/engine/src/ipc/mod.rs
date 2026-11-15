@@ -54,7 +54,7 @@ enum Outgoing {
 
 pub enum Event {
     Connected(Client),
-    Request(Id, Request),
+    Request(Id, Box<Request>),
     Disconnected(Id),
 }
 
@@ -145,7 +145,7 @@ impl Server {
                                         });
                                     if writer.is_ok() && notify(Event::Connected(client)) {
                                         while let Ok(request) = pipe.read_message::<Request>() {
-                                            if !notify(Event::Request(id, request)) {
+                                            if !notify(Event::Request(id, Box::new(request))) {
                                                 break;
                                             }
                                         }

@@ -40,8 +40,59 @@ the foreground app. There is no game detection or automatic profile switching.
 
 Use the header power button to show or hide the crosshair. Its tooltip shows the
 current shortcut; the default is **Shift+Alt+Z** on a US keyboard layout. Change it
-in the application row in **Keybinds**. Older press/hold and preset-toggle bindings
-are removed when loading; saved crosshairs and ordinary shortcuts are retained.
+in the **Global toggle** row in **Keybinds**.
+
+The **Global toggle** shortcut, header button and tray toggle all control the
+same master switch. Clearing its shortcut does not turn the overlay off.
+
+**Aim**, **Fire** and **Reload** belong to the active profile. Their initial inputs
+are Right mouse, Left mouse and R; an existing conflicting shortcut is kept and
+the new action is left unbound. Aim and Fire accept keys or mouse buttons; Reload
+also accepts the mouse wheel. These inputs still reach the game or other app.
+
+Aim starts at **No action**. Choose **Hide crosshair (Hold)** to hide while holding
+Aim, or **Show crosshair (Hold)** to show only while holding it. **Toggle crosshair
+(Press)** changes the master switch. Both saved-crosshair actions open the picker
+immediately: choose a Saved design, then hold or press Aim to use it. Cancel keeps
+the old setting. Clicking the small thumbnail changes the target.
+
+For example, choose **Show saved crosshair (Hold)** and pick a small dot. Holding
+Right mouse shows the dot; releasing returns to your current crosshair, including
+a Browse design. Choosing another crosshair while holding Aim updates what you
+return to. A normal selection clears a press-toggled alternate.
+
+Master Off always hides the overlay. Fire, Reload and saved-crosshair actions do
+not turn it on. If you enable it while holding a trigger, release and press again.
+
+## Animations
+
+Select one layer in Designer and choose **Animate** at the top right of the
+inspector. **Design** holds its normal Base values. Animate sets its target values;
+untouched properties follow Base. Reset beside a changed property restores that
+inheritance. The Enabled switch keeps an effect configured without playing it;
+**Remove animation** removes it. Changes use normal Save and undo.
+
+For a simple firing effect, choose a crosshair layer, leave Trigger at **Fire** and
+Activation at **Hold**, then increase its Animated gap. The default 150 ms duration
+moves toward that gap while Fire is held and returns smoothly on release. The
+**Fire** preview button lets you try it locally; **Stop** ends preview.
+
+Set Duration to **0 ms** for an instant change after any Delay. With Hold and
+Return, it jumps to Animated on press and back to Base on release.
+
+**Press** plays once per press. In **Timing**, Back and forth returns to Base as
+part of the movement; Repeat loops while held, or toggles looping on successive
+presses. Hold's On release choices are Return, immediate Reset or Pause. A new
+hold resumes Pause. Delay applies before a fresh start, not each repeat.
+
+Reload restores all effects on the current crosshair, including paused ones;
+release held triggers before starting again. It does not change the selected
+crosshair or visibility. Aim/Fire animations work with the dashboard closed.
+They respond to your inputs, not a game's actual spread, recoil or ammunition.
+
+PNG/SVG exports and thumbnails show Base. Saved crosshair documents, layer copies
+and profile backups keep the animation settings. Existing designs remain static
+until you add an effect.
 
 ## Discord Rich Presence
 

@@ -83,7 +83,10 @@ impl App {
             }
             Command::SelectPreset { preset } => {
                 self.preset(preset)?;
-                self.reset_input();
+                if self.input.capturing() {
+                    self.reset_input();
+                }
+                self.input.clear_preset_latch();
                 self.browse_preset = None;
                 self.state.active_profile_mut().unwrap().selected_preset = preset;
                 self.bump()?;
@@ -97,11 +100,17 @@ impl App {
                     .into_iter()
                     .find(|p| p.id == preset)
                     .ok_or_else(|| anyhow::anyhow!("Unknown built-in crosshair"))?;
-                self.reset_input();
+                if self.input.capturing() {
+                    self.reset_input();
+                }
+                self.input.clear_preset_latch();
                 self.browse_preset = Some(preset);
                 self.changed(None, false);
             }
-            Command::ToggleVisibility => self.input.toggle_visibility(&mut self.state),
+            Command::ToggleVisibility => {
+                self.input.toggle_visibility(&mut self.state);
+                self.reset_playback();
+            }
             Command::SetVisibility { visible } => {
                 self.reset_input();
                 self.state.base_visible = visible;
@@ -132,6 +141,7 @@ impl App {
                 self.edit_owner = None;
             }
             Command::Undo | Command::Redo => {
+                let previous = self.state.clone();
                 let before = self
                     .state
                     .active_profile()
@@ -148,8 +158,11 @@ impl App {
                         .map(|p| (p.id, p.selected_preset))
                 {
                     self.browse_preset = None;
+                    self.input.clear_preset_latch();
                 }
-                self.reset_input();
+                if crate::app::input_configuration_changed(&previous, &self.state) {
+                    self.reset_input();
+                }
             }
             Command::NewPreset { name } => {
                 let preset = Preset::new(name);
@@ -194,17 +207,7 @@ impl App {
                 let mut next = self.state.clone();
                 next.presets.retain(|p| p.id != preset);
                 for profile in &mut next.profiles {
-                    if profile.selected_preset == preset {
-                        profile.selected_preset = replacement;
-                    }
-                    for binding in &mut profile.bindings {
-                        match &mut binding.action {
-                            BindingAction::SelectPreset { preset: target } if *target == preset => {
-                                *target = replacement
-                            }
-                            _ => {}
-                        }
-                    }
+                    profile.remap_presets(|id| if id == preset { replacement } else { id });
                 }
                 self.commit(next)?;
             }
@@ -269,11 +272,13 @@ impl App {
                         seen.insert(set.profile),
                         "Profile shortcuts were supplied twice"
                     );
-                    next.profiles
+                    let profile = next
+                        .profiles
                         .iter_mut()
                         .find(|p| p.id == set.profile)
-                        .ok_or_else(|| anyhow::anyhow!("Profile does not exist"))?
-                        .bindings = set.bindings;
+                        .ok_or_else(|| anyhow::anyhow!("Profile does not exist"))?;
+                    profile.bindings = set.bindings;
+                    profile.actions = set.actions;
                 }
                 next.settings.global_toggle = global_toggle;
                 self.commit(next)?;
@@ -308,8 +313,7 @@ impl App {
                 next.settings = settings;
                 validate_state(&next)?;
                 // Native startup changes are applied by the caller before this mutation.
-                self.state = next;
-                self.reset_input();
+                self.replace_state(next);
                 self.bump()?;
             }
             Command::BeginCapture { token } => {
@@ -318,6 +322,7 @@ impl App {
                     "Another shortcut capture is active"
                 );
                 self.input.begin_capture(self.elapsed_ms());
+                self.reset_playback();
                 self.capture_owner = Some((owner, token));
             }
             Command::CancelCapture { token } => {
@@ -380,7 +385,6 @@ impl App {
         validate_state(&next)?;
         self.history.record(&self.state, &next)?;
         self.replace_state(next);
-        self.reset_input();
         Ok(())
     }
 

@@ -12,8 +12,8 @@ use std::{
 use anyhow::{Context, Result, ensure};
 use base64::{Engine, engine::general_purpose::STANDARD, write::EncoderWriter};
 use crosshair_core::{
-    AppState, Asset, BindingAction, Content, Id, MAX_ASSET_BYTES, MAX_CONFIG_BYTES,
-    MAX_PORTABLE_BYTES, Profile, Settings, protocol::ExportKind, validate_state,
+    AppState, Asset, Content, Id, MAX_ASSET_BYTES, MAX_CONFIG_BYTES, MAX_PORTABLE_BYTES, Profile,
+    Settings, migrate_state, protocol::ExportKind, validate_state,
 };
 use crosshair_renderer::{AssetData, Renderer};
 use serde::{
@@ -27,7 +27,7 @@ use super::{
 };
 
 const FORMAT: &str = "crosshair-rs";
-const VERSION: u32 = 1;
+const VERSION: u32 = 2;
 const RECORD_LIMIT: u64 = MAX_ASSET_BYTES.div_ceil(3) * 4 + 1024;
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize)]
@@ -158,14 +158,7 @@ fn select_export(state: &AppState, kind: ExportKind) -> Result<(Kind, AppState)>
                 .find(|candidate| candidate.id == profile)
                 .context("Profile does not exist")?
                 .clone();
-            let ids: BTreeSet<_> = std::iter::once(profile.selected_preset)
-                .chain(
-                    profile
-                        .bindings
-                        .iter()
-                        .filter_map(|binding| binding.action.target()),
-                )
-                .collect();
+            let ids: BTreeSet<_> = profile.referenced_presets().collect();
             result.presets.retain(|preset| ids.contains(&preset.id));
             result.profiles = vec![profile];
             Kind::Profile
@@ -195,7 +188,7 @@ fn select_export(state: &AppState, kind: ExportKind) -> Result<(Kind, AppState)>
 fn write_portable(store: &Store, state: &AppState, kind: Kind, writer: &mut File) -> Result<()> {
     validate_state(state)?;
     let mut writer = LimitWriter { writer, bytes: 0 };
-    writer.write_all(b"{\"format\":\"crosshair-rs\",\"version\":1,\"kind\":")?;
+    writer.write_all(b"{\"format\":\"crosshair-rs\",\"version\":2,\"kind\":")?;
     serde_json::to_writer(&mut writer, &kind)?;
     writer.write_all(b",\"state\":")?;
     serde_json::to_writer(&mut writer, state)?;
@@ -327,6 +320,11 @@ pub(super) fn import(
     };
     for preset in &candidate.presets {
         for scale in &scales {
+            crate::overlay::render::validate_animation_bounds(
+                renderer,
+                preset,
+                f32::from_bits(*scale),
+            )?;
             renderer.render(preset, f32::from_bits(*scale), &source)?;
             renderer.clear_raster_cache();
         }
@@ -423,17 +421,18 @@ fn merge(
         if imported.active_profile == old {
             imported.active_profile = profile.id;
         }
-        profile.selected_preset = *presets
-            .get(&profile.selected_preset)
-            .context("Selected preset reference is missing")?;
+        ensure!(
+            profile
+                .referenced_presets()
+                .all(|id| presets.contains_key(&id)),
+            "Preset reference is missing"
+        );
+        profile.remap_presets(|id| presets[&id]);
         for position in &mut profile.positions {
             position.id = Id::new_v4();
         }
         for binding in &mut profile.bindings {
             binding.id = Id::new_v4();
-            if let BindingAction::SelectPreset { preset } = &mut binding.action {
-                *preset = *presets.get(preset).context("Binding target is missing")?;
-            }
         }
     }
     imported.assets = assets;
@@ -535,7 +534,7 @@ impl<'de> Visitor<'de> for PortableSeed<'_> {
                 }
             }
         }
-        if format.as_deref() != Some(FORMAT) || version != Some(VERSION) {
+        if format.as_deref() != Some(FORMAT) || !matches!(version, Some(1 | VERSION)) {
             return Err(de::Error::custom(
                 "Unsupported portable document format or version",
             ));
@@ -543,9 +542,15 @@ impl<'de> Visitor<'de> for PortableSeed<'_> {
         if !assets_seen {
             return Err(de::Error::missing_field("assets"));
         }
+        let state = state.ok_or_else(|| de::Error::missing_field("state"))?;
+        if Some(state.schema_version) != version {
+            return Err(de::Error::custom(
+                "Portable and state versions do not match",
+            ));
+        }
         Ok(Imported {
             kind: kind.ok_or_else(|| de::Error::missing_field("kind"))?,
-            state: state.ok_or_else(|| de::Error::missing_field("state"))?,
+            state: migrate_state(state).map_err(de::Error::custom)?,
         })
     }
 }

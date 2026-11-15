@@ -6,7 +6,7 @@ use std::{
 };
 
 use anyhow::{Context, Result, ensure};
-use crosshair_core::{AppState, Id, MAX_CONFIG_BYTES, validate_state};
+use crosshair_core::{AppState, Id, MAX_CONFIG_BYTES, migrate_state, validate_state};
 
 pub fn default_data_directory() -> Result<PathBuf> {
     #[cfg(windows)]
@@ -122,11 +122,12 @@ impl Store {
         );
         let destination = self.root.join("state.json");
         if destination.try_exists()? {
-            let old = read_state(open_read(&destination)?)
-                .context("Current settings need recovery before saving")?;
+            let original = read_bounded(open_read(&destination)?, MAX_CONFIG_BYTES as u64)?;
+            let old =
+                decode_state(&original).context("Current settings need recovery before saving")?;
             self.verify_assets(&old, false)?;
             atomic_write(&self.root.join("state.backup.json"), |writer| {
-                serde_json::to_writer(writer, &old)?;
+                writer.write_all(&original)?;
                 Ok(())
             })?;
         }
@@ -253,9 +254,11 @@ pub(super) fn read_state(file: File) -> Result<AppState> {
         bytes.len() <= MAX_CONFIG_BYTES,
         "Settings grew beyond the storage limit"
     );
-    let state: AppState = serde_json::from_slice(&bytes)?;
-    validate_state(&state)?;
-    Ok(state)
+    decode_state(&bytes)
+}
+
+fn decode_state(bytes: &[u8]) -> Result<AppState> {
+    Ok(migrate_state(serde_json::from_slice(bytes)?)?)
 }
 
 pub(super) fn regular_path(path: &Path, directory: bool) -> Result<()> {
@@ -420,6 +423,36 @@ mod tests {
         store.save(&state)?;
         assert!(!store.backup_state()?.base_visible);
         assert!(store.load()?.base_visible);
+        Ok(())
+    }
+
+    #[test]
+    fn migrating_v1_does_not_write_until_save_and_backup_preserves_original_bytes() -> Result<()> {
+        let directory = tempfile::tempdir()?;
+        let store = Store::open(directory.path())?;
+        let mut value = serde_json::to_value(AppState::default())?;
+        value["schema_version"] = 1.into();
+        for profile in value["profiles"].as_array_mut().unwrap() {
+            profile.as_object_mut().unwrap().remove("actions");
+        }
+        for preset in value["presets"].as_array_mut().unwrap() {
+            for layer in preset["layers"].as_array_mut().unwrap() {
+                layer.as_object_mut().unwrap().remove("animation");
+            }
+        }
+        let original = serde_json::to_vec_pretty(&value)?;
+        let path = directory.path().join("state.json");
+        fs::write(&path, &original)?;
+        let state = store.load()?;
+        assert_eq!(state.schema_version, crosshair_core::SCHEMA_VERSION);
+        assert_eq!(fs::read(&path)?, original);
+        assert!(!directory.path().join("state.backup.json").exists());
+        store.save(&state)?;
+        assert_eq!(
+            fs::read(directory.path().join("state.backup.json"))?,
+            original
+        );
+        assert_eq!(store.load()?, state);
         Ok(())
     }
 

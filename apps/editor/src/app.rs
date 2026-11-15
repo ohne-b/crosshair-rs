@@ -1,4 +1,5 @@
 mod actions;
+mod animation;
 mod editing;
 mod events;
 #[cfg(test)]
@@ -119,6 +120,7 @@ fn finish_input(ui: &AppWindow) {
 #[derive(Clone)]
 enum Capture {
     Global,
+    Role(crate::features::keybinds::Target),
     Existing(Id),
     New(BindingAction),
 }
@@ -137,7 +139,7 @@ enum Modal {
     Close,
     OpenDocument(Id),
     Install,
-    Conflict(Capture, InputChord, Option<Id>),
+    Conflict(Capture, InputChord, Id),
     DraftConflict,
     Recovery,
 }
@@ -192,6 +194,13 @@ pub(crate) struct App {
     document: Document,
     fonts: Vec<String>,
     fields: Vec<Field>,
+    animate: bool,
+    playback: Playback,
+    playback_started: std::time::Instant,
+    playback_timer: slint::Timer,
+    playback_generation: u64,
+    playback_next: Option<u64>,
+    playing: bool,
     collapsed: BTreeSet<String>,
     thumbnails: BTreeMap<Id, (u64, slint::Image, slint::Image)>,
     palette: Vec<Preset>,
@@ -220,6 +229,8 @@ pub(crate) struct App {
     image_ready: Option<(Id, u32, u32)>,
     capture: Option<Capture>,
     capture_token: Option<Id>,
+    capture_profile: Option<Id>,
+    pending_aim: Option<(Id, i32)>,
     capture_region: Option<[f32; 4]>,
     failed_shortcut: Option<Id>,
     modal: Modal,
@@ -281,7 +292,14 @@ pub fn run() -> Result<()> {
         document: Document::default(),
         fonts: Vec::new(),
         fields: Vec::new(),
-        collapsed: BTreeSet::new(),
+        animate: false,
+        playback: Playback::default(),
+        playback_started: std::time::Instant::now(),
+        playback_timer: slint::Timer::default(),
+        playback_generation: 0,
+        playback_next: None,
+        playing: false,
+        collapsed: BTreeSet::from(["Timing".to_owned()]),
         thumbnails: BTreeMap::new(),
         palette: crate::features::presets::presets(),
         browse: crate::features::browse::presets(),
@@ -309,6 +327,8 @@ pub fn run() -> Result<()> {
         image_ready: None,
         capture: None,
         capture_token: None,
+        capture_profile: None,
+        pending_aim: None,
         capture_region: None,
         failed_shortcut: None,
         modal: Modal::None,
@@ -401,6 +421,13 @@ pub fn run() -> Result<()> {
     let mut frame_ready = false;
     // A zero-delay timer may run before Winit has created its native window.
     ui.window().on_winit_window_event(move |window, event| {
+        if matches!(
+            event,
+            slint::winit_030::winit::event::WindowEvent::Focused(false)
+                | slint::winit_030::winit::event::WindowEvent::Occluded(true)
+        ) {
+            ui_event(UiEvent::Action("animation-stop".into(), String::new()));
+        }
         if let slint::winit_030::winit::event::WindowEvent::DroppedFile(path) = event {
             ui_event(UiEvent::Action(
                 "drop-image".into(),
@@ -474,6 +501,7 @@ impl App {
         )
     }
     fn render(&mut self) {
+        self.stop_playback();
         self.preview_pending = self.document.draft.is_some();
         if self.image_target.is_none() {
             self.client.pin_assets(self.document.asset_ids());
@@ -513,6 +541,8 @@ impl App {
         });
     }
     fn request_close(&mut self) -> Result<()> {
+        self.stop_playback();
+        self.show_animated_target()?;
         self.cancel_capture()?;
         if self.document.dirty
             || self.inflight.is_some()
@@ -555,6 +585,7 @@ impl App {
         Ok(())
     }
     fn close_now(&mut self) -> Result<()> {
+        self.stop_playback();
         self.closing = true;
         self.close_flush_pending = true;
         self.preview.stop();

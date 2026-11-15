@@ -22,17 +22,17 @@ its interactions are illustrative, not an implementation of the application.
 | Storage | Engine-owned versioned JSON and managed local image assets. |
 | Installation | One unsigned MSIX containing editor, engine and widget. Administrator approval for installation/updates; no Windows service. |
 | Updates | TDM's Settings interaction and signed latest.json contract, adapted to MSIX. |
-| Input | Global keyboard and mouse shortcuts for preset selection and visibility. No controllers. |
+| Input | Global keyboard and mouse shortcuts, Aim actions, Fire and Reload animation triggers. No controllers. |
 | Appearance | Orange placeholder logo, Tabler outline icons, Manrope interface font. |
 | License | GPL-3.0-only with a Game Bar SDK linking exception; third-party components retain their licenses. |
 
-The complete scope includes layered static editing, crosshair arms, primitive
-shapes, images, freehand drawing, outlines, blur, local presets, manual
+The complete scope includes layered editing and input-driven animations,
+crosshair arms, primitive shapes, images, freehand drawing, outlines, blur, local presets, manual
 profiles, global visibility, keybindings, tray lifecycle, fullscreen integration,
 import/export, updates, recovery, accessibility and packaging. The milestones
 sequence this work; they do not make required features optional.
 
-Exclude animations and animation stages, controllers, game detection, automatic
+Exclude animation stages/timelines, autoplay, controllers, game detection, automatic
 profile switching, foreground-process monitoring, cursor replacement, randomizer,
 community feeds, workshop, shop, accounts, cloud sync, telemetry and streaming
 servers. These are exclusions, not empty navigation
@@ -171,7 +171,8 @@ Create/Rename/Duplicate/Import/Export/Delete. No game field.
 Switch profile atomically, rearm held triggers after release and preserve global visibility.
 
 The title switch, tray toggle and default remappable `Shift+Alt+Z` action operate
-the same visibility state. The binding can be disabled. Passive observation does
+the same master visibility state. Clearing
+the chord only removes its keyboard shortcut. Passive observation does
 not reserve OS/app shortcuts; explain collisions in keybinding help and never
 modify Windows shortcuts automatically.
 
@@ -208,7 +209,9 @@ Exact fields cover every transform.
 Bottom tools: Crosshair, Shape (Rectangle/Ellipse/Triangle), Image and Draw.
 Text creation is removed. Existing/imported text remains readable, renderable
 and editable so the simplification never destroys saved documents.
-No Design/Animate split. Inspector contains only the selected type's controls.
+Design/Animate appears only in the fixed top-right inspector header, outside its
+scrolling content. There is no mode switch in the bottom tool palette. Design
+contains the selected type's normal controls; Animate edits one selected layer.
 Lines/Dot/Outline collapse independently; remember expansion during the session.
 
 | Layer/control | Static behavior |
@@ -256,10 +259,105 @@ automatically. A changed saved revision requires explicit conflict resolution.
 Transient preview is session-owned and cleared on discard/disconnect; it never
 enters durable state or engine edit history.
 
+### Animation editing and behavior
+
+Each layer has at most one optional animation: Base is its ordinary design and
+Animated contains only explicitly changed values. Unchanged properties inherit
+Base, including later Base edits. Per-property Reset restores inheritance;
+Remove animation and definition edits use normal draft undo. Mode changes and
+playback never dirty the document. Empty, disabled or unchanged targets do no
+animation work. Multi-selection asks for one layer to configure.
+
+All layers can animate X/Y, uniform scale, rotation and opacity. Crosshairs also
+support arm length, thickness, gap, center-dot diameter and arm/dot fill colors.
+Rectangle, ellipse and triangle support fill color. A disabled dot stays disabled.
+Images, drawing and legacy text support only the common transforms/opacity.
+Topology, assets, crop, text, blur and outline structure remain Design properties.
+Targets use the existing field limits; intermediate geometry may be fractional.
+Rotation follows the entered numeric delta, so 0 to 360 makes a full turn.
+Color interpolation uses premultiplied alpha; layer opacity is a separate multiplier.
+
+Trigger, Activation and Duration remain visible. Easing, On release, Repeat,
+Direction and Delay live in the initially collapsed Timing section.
+
+| Control | Values and initial value |
+| --- | --- |
+| Trigger | Fire (initial) or Aim. |
+| Activation | Hold (initial) or Press. |
+| Duration | 0-10,000 ms per leg; initially 150 ms. Zero is instant. |
+| Easing | Linear or Smooth (initial), a fixed ease-in/out curve. |
+| On release | Hold only: Return (initial), Reset or Pause. |
+| Repeat | Off initially. |
+| Direction | One way (initial) or Back and forth. |
+| Delay | 0-10,000 ms before a fresh activation; initially 0 ms. |
+
+- Hold starts on a logical down edge. With Repeat Off, One way reaches Animated
+  and holds; Back and forth returns to Base and holds there. Duration applies to
+  each leg. Repeat runs only while held, without repeating the initial Delay.
+- Release Reset restores Base immediately. Pause freezes progress. Return blends
+  from the current pose to Base over Duration and never repeats. Release during
+  Delay cancels without a flash; Return already at Base finishes immediately.
+- A new Hold resumes Pause without Delay. During Return it blends from the
+  displayed pose to Animated over Duration without Delay. Other fresh activations
+  start at Base. A One way repeat resets at its boundary; Back and forth reverses.
+- Press with Repeat Off plays one configured movement then resets to Base. New
+  physical presses restart it; keyboard autorepeat does not. Press with Repeat On
+  toggles playback on/off; stopping restores Base.
+- At zero duration, each leg completes immediately after Delay. One-way Hold
+  jumps to Animated; Return and Reset release immediately to Base. A zero-time
+  Repeat settles at Animated for One way or Base for Back and forth, without a
+  frame timer. A nonrepeating Press completes at Base immediately.
+- Reload restores every animation on the effective crosshair, including paused
+  effects. It changes neither selection nor visibility. Held triggers must release
+  before restarting. It does not send input to a game or measure weapon state.
+- Resolve an Aim-selected target before delivering its Aim activation. A design
+  selected while Aim/Fire is held inherits matching Hold effects, never a new
+  Press event. Lifecycle resets require release and a fresh press instead.
+
+Aim, Fire and Reset preview controls sit below the animation fields. Pointer/key
+down and release drive Hold; click or Space/Enter supplies Press. Local preview
+uses the same core evaluator in a separate session, without synthetic OS input.
+Animate shows target values for editing and disables canvas transformations
+during playback. Stop, leaving Animate, changing documents and closing clear
+local playback. Global shortcuts remain global even while previewing.
+
+Preview uses the existing asynchronous bitmap worker and a timer only while
+values change; it does not rebuild inspector models, thumbnails or hit-test
+geometry per frame. Edited definitions use the transient-draft protocol once per
+edit, never a stream of sampled snapshots. Edits remain pinned to the document
+while global input changes the actual overlay.
+
+Thumbnails, pickers and PNG/SVG exports show Base. Native documents, clipboard,
+profile and all-data exports retain animation definitions. There is no animated
+image/video export, custom easing, game detection or recoil/ammunition tracking.
+
 ### Keybinds
 
-One application table owns Toggle visibility; a separate full-width shortcut
-table has Crosshair, Shortcut name and Keyboard / mouse columns plus trash.
+The Action keybinds table contains Global toggle, Aim, Fire and Reload. Global
+toggle records the shortcut for the title/tray master switch. Aim has an
+action dropdown and a target thumbnail when relevant. Fire triggers animation;
+Reload resets it. Initial chords are Shift+Alt+Z, Right mouse, Left mouse and R,
+respectively. Global toggle is application-wide; the other roles and preset
+shortcuts belong to the active profile. There is no controller column.
+
+| Aim action | Behavior |
+| --- | --- |
+| No action | No selection/visibility override; Aim animations may still respond. |
+| Toggle crosshair (Press) | Toggle master visibility on each fresh press. |
+| Hide crosshair (Hold) | Hide while held; remove this override on release. |
+| Show crosshair (Hold) | Hide until held, then show while held, subject to master enabled. |
+| Toggle saved crosshair (Press) | Alternate between a chosen saved design and the current base. |
+| Show saved crosshair (Hold) | Use a chosen saved design only while held. |
+
+Choosing either saved action opens PresetPicker immediately. Choosing a card
+commits action and target together; Escape/outside/Close retains the previous
+configuration. The thumbnail reopens the picker, preselecting the existing target.
+Only Saved designs are eligible; names never identify targets. Capture uses tokens;
+both capture and the pending picker action are pinned to their initiating profile
+and cancelled when that profile changes.
+
+A separate full-width shortcut table has Crosshair, Shortcut name and
+Keyboard / mouse columns plus trash.
 Headers and body share column borders. The first row always contains only the
 plus button and New; either opens the picker. Choosing a crosshair inserts a
 separate row below New with its thumbnail, name, key recording and cancellation.
@@ -270,16 +368,19 @@ The thumbnail opens a reusable picker with search, All/Favorites counts and
 named cards; clicking a card chooses immediately. Escape/outside dismisses and
 returns focus. Shortcut names edit inline and default to the target preset name;
 names never identify targets. Recording a disabled shortcut enables it.
-Preset shortcuts select on press and belong to the active profile; the visibility
-chord is application-wide. There are no press/hold or preset-toggle actions.
-Legacy profile loading drops those retired bindings while preserving presets,
-profiles and supported shortcuts; malformed or unknown actions still fail.
+Preset shortcuts select the base on press. The legacy per-shortcut hold/toggle
+variants remain retired; loading old profiles drops them rather than reviving
+them as Aim actions. Presets, profiles and supported shortcuts are retained;
+malformed or unknown actions still fail.
 
 Click a chip to listen: `Press a key`, highlighted background. Escape cancels, Backspace
 clears, outside click cancels. Each capture has a unique token; delayed results
 from a cancelled capture cannot finish a newer one. Wait for already-held keys/buttons to release so
 the click opening capture is not assigned as Mouse 1. Support keyboard chords,
-mouse buttons 1-5 and wheel up/down (wheel is press-only).
+mouse buttons 1-5 and wheel up/down (wheel is press-only). Aim/Fire require
+release-capable keyboard/mouse inputs; Wheel and Pause are allowed for Reload
+and ordinary press shortcuts. Roles participate in conflict checks even when
+the current design has no animation.
 
 The engine captures; shortcut dispatch is suspended during capture, but input
 continues reaching all other apps normally. Restore dispatch on commit/cancel,
@@ -403,12 +504,12 @@ editable labels, never identity or filesystem paths.
 | Entity | Contents |
 | --- | --- |
 | App state | Schema version, settings, profiles/active ID, preset library, asset index, base selection/visibility, revisions. |
-| Profile | ID/name, selected preset, bindings, scale/offset, saved positions. |
+| Profile | ID/name, selected preset, bindings, Aim/Fire/Reload chords and Aim action, scale/offset, saved positions. |
 | Preset | ID/name, ordered layers, favorite, manual order, document revision and engine-owned global edit order for recency. |
-| Layer | ID/name, visible/locked, transform, opacity, typed content/effects. |
+| Layer | ID/name, visible/locked, transform, opacity, typed content/effects and one optional animation definition. |
 | Content | Crosshair, rectangle, ellipse, triangle, text, image or freehand strokes. |
 | Binding | ID, optional display name, chord, preset-selection or visibility action, target if needed, enabled. |
-| Runtime only | Pressed devices/keys, capture, transient draft previews, connections, caches, edit history and update state. |
+| Runtime only | Pressed devices/keys, Aim overrides, animation progress/paused poses, capture, transient draft previews, connections, caches, edit history and update state. |
 
 Geometry uses physical design pixels. UI logical pixels/display scale never
 silently change thickness. Profile scale is an explicit transform; offsets are
@@ -427,6 +528,13 @@ preview documents but never persists them or advances the saved document revisio
 Only explicit Save submits an authoritative revision-checked replacement.
 Lost connections retain dirty drafts for deliberate retry; never overwrite a
 changed saved document or silently replay edits after reconnect.
+
+Animation targets are typed optional values, not full copied layers or arbitrary
+property expressions. Validate finite/bounded values, legal enums, timing limits,
+supported layer properties and unknown fields even when an animation is disabled.
+Profile target enumeration/remapping includes selected preset, saved shortcuts
+and the Aim target. Deletion/replacement, duplication, export inclusion, import
+ID remapping and cache warming all use that shared reference contract.
 
 ### Imports and limits
 
@@ -487,8 +595,8 @@ glyph outlines, the selected image codecs and resvg. Implement only the required
 bounded mask/effect operations; blur and alpha-silhouette outlines need golden
 tests. [DirectWrite exposes glyph outlines through geometry sinks][directwrite].
 
-Render only on relevant state/display changes. Prewarm shortcut targets that fit
-the cache while keeping input dispatch responsive. Evicted complex targets render on demand
+Static designs render only on relevant state/display changes. Prewarm shortcut
+targets that fit the cache while keeping input dispatch responsive. Evicted complex targets render on demand
 with newest-request-wins cancellation; never present an obsolete result. Benchmark
 warm and cold switching. Integer-aligned edges stay crisp; fractional/rotated
 geometry is antialiased intentionally. For odd thickness/even monitor centers,
@@ -497,6 +605,36 @@ than blurring a one-pixel line. Use identical rounding on both outputs.
 Apply this alignment to rectangular contours after all layer and output transforms,
 based on their final pixel spans. Preserve fractional spans and positions with
 coverage antialiasing; do not infer alignment from scale factors alone.
+
+### Animation playback
+
+The engine owns overlay playback for both Desktop and Game Bar, including when
+the dashboard is closed. Core evaluates ordinary layer values from caller-supplied
+monotonic elapsed time, without a renderer, clock or persistent state mutation.
+Samples omit animation definitions to prevent double evaluation. Different layer
+triggers remain independent.
+
+The current render worker handles sampled poses. Runtime generation/sample IDs
+are separate from saved revisions; animated frames bypass the static LRU. Keep
+bounded latest/in-flight buffers, never a precomputed filmstrip. A frame uses the
+presentation-only path: no full refresh, AppState event, persistence, Discord
+update or tray rebuild. Unchanged widget status acknowledgements do not publish
+semantic changes. C++ displays pixels and has no animation evaluator.
+
+Allow one render in flight. Timer ticks never cancel a still-valid slow render;
+after it completes, sample current time for the next job. Selection, definition,
+reset and output generations invalidate obsolete results. Drop overdue frames
+rather than queueing them or slowing logical time. Native timer scheduling caps
+submissions/presentations below 60 per second, without a global high-resolution
+timer request. Complex designs may run more slowly.
+
+Static, hidden-layer, empty, unchanged, disabled, paused and settled poses request
+no animation frames. Hidden or unavailable/unpinned output does not rasterize;
+timestamps determine the resumed pose. Lock/suspend clears and rearms playback.
+Validate endpoints and every sampled raster against the existing 1024px/resource
+limits: combined rotation/scale can exceed bounds between valid endpoints. Keep
+the last valid bitmap, stop playback and report one actionable error instead of
+retrying indefinitely. Shared anchors and raster origins preserve positioning.
 
 ### Desktop
 
@@ -549,8 +687,11 @@ latest frame across reconnection. Normal transitions never draw both outputs.
 ## Global input
 
 Keyboard Raw Input: `RegisterRawInputDevices` with `RIDEV_INPUTSINK`, engine
-`WM_INPUT`/`RAWKEYBOARD`. Register mouse only while mouse bindings/capture need it;
-discard motion immediately. Wheel is a pulse, never held state. No
+`WM_INPUT`/`RAWKEYBOARD`. Register mouse while bindings, capture, pending releases
+or a bound animation role need it. Consider all saved animated designs so a
+held button is known before selecting one; also include Browse and live drafts.
+A static library with unused default action keys leaves mouse input dormant.
+Discard motion immediately. Wheel is a pulse, never held state. No
 `RIDEV_NOLEGACY`, gameplay `RegisterHotKey`, suppression, injection, foreground
 filtering or `GetAsyncKeyState` polling.
 
@@ -563,11 +704,22 @@ keyboards. Track pressed state by device so one device cannot release another.
 - Required modifiers are a subset: plain E still works while sprinting with
   Shift; a matching Shift+E wins over E. Choose the most specific chord and reject
   equally specific ambiguous overlaps. At most one action per event.
-- Select changes the base preset permanently; release never restores another
-  preset. Visibility toggle changes the shared visibility state immediately.
-- Profile change, removal, lock/suspend, lost input and capture cancellation
-  block affected held triggers until release. Track releases without overrides;
-  lost key-up must not leave stuck state.
+- A saved shortcut updates the base selection. Aim overlays its held or latched
+  saved target over the latest base, which can also be a session-only Browse
+  design. Release reveals the latest base, never a stale snapshot. Normal saved
+  or Browse selection clears a latch; selection while held still updates Base.
+- `EngineStatus.enabled` reports master visibility; `visible` reports effective
+  output visibility. Master Off always wins over Show actions and clears runtime
+  overrides/playback. Re-enabling while held waits for release and a fresh press.
+  Only Global toggle or Aim Toggle crosshair can turn the master on; Fire, Reload,
+  selection and animation cannot. Animation opacity never changes the switch.
+- Aim action and Aim animation share one resolved event. Other roles, saved
+  shortcuts and Global toggle cannot also win that input. Required-modifier
+  release ends a hold; another device holding the trigger prevents early release.
+- Profile/binding changes, capture entry, device loss, lock/suspend, output
+  reconfiguration, imports/reset and shutdown clear runtime state and block held
+  triggers until release. Capture/frozen operations still consume releases.
+  Ordinary dashboard closure does not clear gameplay holds or stop playback.
 - Bindings work globally in the editor and every other foreground application.
   Only explicit capture suspends dispatch. Never log keys or foreground apps.
 
@@ -591,8 +743,9 @@ newest results to its event loop.
 Desktop pipe: current-user logon-session ACL, remote rejection, authenticated
 peer identity. Names include user/session but are not the security boundary.
 Prevent first-instance squatting; verify expected packaged executable identity.
-Handshake verifies build/protocol before accepting commands. Control protocol v3
-has capture tokens and independently ordered engine status. Connection epochs are
+Handshake verifies build/protocol before accepting commands. Control protocol v5
+includes profile action configuration in atomic SetBindings commands, capture
+tokens and independently ordered engine status. Connection epochs are
 checked when queued events reach the editor, so a retired connection cannot change
 the current UI. Both executables must be rebuilt together.
 
@@ -639,6 +792,15 @@ Forced OS termination cannot guarantee saving acknowledged RAM-only changes;
 preserve the last durable snapshot/backup and report recovery on next launch.
 Atomic rename alone is not a proven
 power-loss guarantee: exercise interruption boundaries.
+
+State schema 2, portable format 2 and layer clipboard format 2 retain action and
+animation definitions. Loaders accept version 1 explicitly and writers emit 2;
+unknown newer versions fail rather than discard data. The v1 migration adds
+default action chords only when they do not conflict, leaving conflicting roles
+Unbound and Aim at No action. Existing static geometry/assets are preserved.
+Loading migrates in memory without writing; the first atomic save preserves the
+validated original bytes as backup. Portable and embedded-state versions must
+agree. Import remaps all IDs and Aim references together.
 
 Explicit schema migrations have backups/tests. Unknown newer versions, corruption,
 missing assets, full disk or denied writes never silently become defaults.
@@ -902,7 +1064,8 @@ Game Bar cost separately, not a favorable engine-only figure.
 | Editor idle | No continuous rendering; private working set target <120 MiB with ordinary vector presets. |
 | Cached switch | Input receipt to native submission p95 <5 ms; separately measure displayed frame at actual refresh rate. |
 | Ordinary live edit | Preview/update p95 <16 ms; never decode/save on UI thread. Maximum-bound jobs stay cancellable/responsive. |
-| Game Bar | Compare incremental CPU/GPU/memory against Game Bar alone, reject continuous app redraws; establish numeric budget from first real spike before release acceptance. |
+| Active animation | At most 60 presentations/sec; measure first-trigger latency, frame times and CPU/memory for ordinary and complex designs. No guaranteed frame rate. |
+| Game Bar | Compare incremental CPU/GPU/memory against Game Bar alone, reject idle app redraws; establish numeric budget from first real spike before release acceptance. |
 | Stress | Rapid keys, 8 kHz mouse, max assets/layers, repeated open/close/mode changes: bounded memory/handles, no stale frames/lost ups. |
 
 Use ETW/WPR or equivalent, release builds and repeatable synthetic fixtures.
@@ -911,7 +1074,7 @@ evidence and a recorded decision, not quietly removing a failed criterion.
 
 | Owner | Required automated coverage |
 | --- | --- |
-| Core | Bounds/references/revisions, history, transactions, profiles, input dispatch and release tracking. |
+| Core | Bounds/references/revisions, history, transactions, profiles, action input/release tracking and fake-clock animation timing/retrigger/repeat/pause/reset. |
 | Renderer | Goldens for every layer/effect, channels/alpha, overlap, odd/even alignment, text/circular text, crop/SVG/blur, 100/125/150/175/200% cases. |
 | Storage | Round trips/migrations/newer versions, corruption/assets, interrupted save/failed Quit, disk/access failures, aggregate export-size admission and full-limit backup/restore, two-session exclusion. |
 | IPC | Oversize/truncated/timeouts, coherent multi-frame snapshot during mutation, stale/wrong build, reconnect and denied user/session/package identities. |
@@ -934,6 +1097,11 @@ Manual release acceptance:
   keyboards, capture loss, global switches while typing, rapid profile changes.
 - Every static control, circular text/import/drawing/erasing/effects, exact edits,
   undo after deletion/import, keyboard access/screen reader/high contrast/text scale.
+- Aim/Fire together, picker/capture cancellation, held Browse restoration,
+  preview pointer cancellation, animation save/discard/undo/export and stale or
+  slow render completion. Compare optimized Desktop/Game Bar playback with the
+  static release, dashboard open/closed and under 8 kHz mouse load. Measure steady
+  memory and CPU; headless tests do not establish native performance or delivery.
 - Cold/concurrent launch, editor/engine crash, Quit with widget active, tray,
   startup disabled by Windows, repeated cycles without orphan processes.
 - Administrator-approved clean install, missing dependencies/Game Bar, offline use,

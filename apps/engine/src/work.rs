@@ -331,6 +331,7 @@ fn validate_preset_scales(
     preset: &Preset,
 ) -> Result<()> {
     for scale in scales(state) {
+        crate::overlay::render::validate_animation_bounds(renderer, preset, f32::from_bits(scale))?;
         renderer.render(preset, f32::from_bits(scale), &|id| {
             store.read_asset(state, id)
         })?;

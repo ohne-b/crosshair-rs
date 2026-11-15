@@ -1,12 +1,13 @@
 export struct PresetRow { id: string, name: string, thumbnail: image, selected: bool, favorite: bool }
 export struct PresetGroup { items: [PresetRow] }
 export struct LayerRow { id: string, name: string, kind: string, selected: bool, shown: bool, locked: bool }
-export struct FieldRow { selection: string, key: string, label: string, value: string, kind: int, minimum: float, maximum: float, step: float, numeric: float, checked: bool, choices: [string], selected: int, swatch: color }
+export struct FieldRow { selection: string, key: string, label: string, value: string, kind: int, minimum: float, maximum: float, step: float, numeric: float, checked: bool, choices: [string], selected: int, swatch: color, reset: bool }
 export struct FieldGroup { first: FieldRow, second: FieldRow, paired: bool }
 export struct BindingRow { id: string, name: string, action: string, target: string, target-index: int, chord: string, enabled: bool, shortcut: bool, global: bool }
 export struct BoundsRow { id: string, x: float, y: float, width: float, height: float, selected: bool }
 
 export global Store {
+    in-out property <bool> keyboard-navigation: false;
     in-out property <float> work-width: 1280;
     in-out property <float> work-height: 800;
     in-out property <bool> wide: true;
@@ -33,6 +34,7 @@ export global Store {
     in-out property <bool> can-redo: false;
     in-out property <bool> visible: false;
     in-out property <string> visibility-shortcut;
+    in-out property <string> visibility-reason;
     in-out property <[string]> profiles;
     in-out property <int> profile-index: 0;
     in-out property <image> active-thumbnail;
@@ -54,6 +56,11 @@ export global Store {
     in-out property <string> document-name;
     in-out property <string> document-id;
     in-out property <bool> document-active: true;
+    in-out property <string> inspector-selection;
+    in-out property <bool> animate: false;
+    in-out property <bool> single-selection: false;
+    in-out property <bool> has-animation: false;
+    in-out property <bool> animation-playing: false;
     in-out property <bool> document-open: false;
     in-out property <bool> selection-editable: false;
     in-out property <[LayerRow]> layers;
@@ -73,6 +80,11 @@ export global Store {
     in-out property <color> brush-swatch: #F97316;
     in-out property <[BindingRow]> bindings;
     in-out property <string> capture-id;
+    in-out property <int> aim-action: 0;
+    in-out property <string> aim-target;
+    in-out property <string> aim-target-name;
+    in-out property <int> aim-target-index: -1;
+    in-out property <string> action-profile;
     in-out property <int> action-type: 0;
     in-out property <[string]> preset-names;
     in-out property <[image]> preset-thumbnails;

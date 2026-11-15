@@ -18,6 +18,8 @@ pub struct App {
     pub state: AppState,
     pub history: History,
     pub input: InputState,
+    pub animation_events: Vec<AnimationEvent>,
+    pub playback_epoch: u64,
     pub browse_preset: Option<Preset>,
     pub status: EngineStatus,
     pub clients: BTreeMap<Id, Connection>,
@@ -44,6 +46,7 @@ impl App {
             state.base_visible = state.settings.show_on_launch;
         }
         let status = EngineStatus {
+            enabled: state.base_visible,
             recovery_required: error.is_some(),
             save_error: error,
             ..Default::default()
@@ -53,6 +56,8 @@ impl App {
             state,
             history: History::default(),
             input: InputState::default(),
+            animation_events: Vec::new(),
+            playback_epoch: 0,
             browse_preset: None,
             status,
             clients: BTreeMap::new(),
@@ -70,8 +75,9 @@ impl App {
     }
 
     pub fn status(&self) -> EngineStatus {
-        let presentation = self.input.presentation(&self.state);
+        let presentation = self.resolved_presentation(&self.state);
         EngineStatus {
+            enabled: self.state.base_visible,
             active_profile: Some(self.state.active_profile),
             selected_preset: self.selected_preset_of(&self.state).map(|p| p.id),
             visible: !self.status.recovery_required && presentation.is_some_and(|p| p.visible),
@@ -127,8 +133,16 @@ impl App {
             return false;
         }
         let mouse_held = self.input.mouse_buttons_held();
+        let presentation = self.resolved_presentation(&self.state);
+        let visible = self.state.base_visible;
         let outcome = self.input.handle(event, self.elapsed_ms(), &mut self.state);
+        if visible != self.state.base_visible {
+            self.reset_playback();
+        }
+        let animated = !outcome.animation_events.is_empty();
+        self.animation_events.extend(outcome.animation_events);
         let browse_cleared = outcome.preset_selected && self.browse_preset.take().is_some();
+        let presentation_changed = presentation != self.resolved_presentation(&self.state);
         let captured = outcome.capture.is_some();
         if let Some(capture) = outcome.capture {
             self.captured(capture);
@@ -136,12 +150,13 @@ impl App {
         if outcome.state_changed {
             self.dirty();
         }
-        if outcome.state_changed || outcome.presentation_changed || browse_cleared {
+        if outcome.state_changed || presentation_changed || browse_cleared {
             self.changed(None, false);
         }
         captured
+            || animated
             || outcome.state_changed
-            || outcome.presentation_changed
+            || presentation_changed
             || browse_cleared
             || mouse_held != self.input.mouse_buttons_held()
     }
@@ -168,6 +183,12 @@ impl App {
             self.captured(outcome);
         }
         self.input.reset();
+        self.reset_playback();
+    }
+
+    pub fn reset_playback(&mut self) {
+        self.playback_epoch = self.playback_epoch.wrapping_add(1);
+        self.animation_events.clear();
     }
 
     pub fn disconnect(&mut self, id: Id) {
@@ -175,6 +196,7 @@ impl App {
         if self.capture_owner.is_some_and(|(owner, _)| owner == id) {
             self.input.cancel_capture();
             self.capture_owner = None;
+            self.reset_playback();
         }
         if self.edit_owner == Some(id) {
             if let Err(error) = self.history.end(&self.state) {
@@ -195,10 +217,19 @@ impl App {
     }
 
     pub fn selected_preset_of<'a>(&'a self, state: &'a AppState) -> Option<&'a Preset> {
-        self.browse_preset
+        self.render_preset(state, self.resolved_presentation(state)?.preset)
+    }
+
+    pub fn resolved_presentation(&self, state: &AppState) -> Option<Presentation> {
+        let base = self
+            .browse_preset
             .as_ref()
             .filter(|_| same_selection(&self.state, state))
-            .or_else(|| state.selected_preset())
+            .map_or_else(
+                || state.active_profile().map(|p| p.selected_preset),
+                |p| Some(p.id),
+            )?;
+        self.input.presentation_for(state, base)
     }
 
     pub fn render_preset<'a>(&'a self, state: &'a AppState, id: Id) -> Option<&'a Preset> {
@@ -209,8 +240,12 @@ impl App {
     }
 
     pub fn replace_state(&mut self, next: AppState) {
+        if input_configuration_changed(&self.state, &next) {
+            self.reset_input();
+        }
         if !same_selection(&self.state, &next) {
             self.browse_preset = None;
+            self.input.clear_preset_latch();
         }
         self.state = next;
     }
@@ -220,8 +255,7 @@ impl App {
         state: &AppState,
         include_hidden: bool,
     ) -> Option<(Key, [i32; 2])> {
-        self.input
-            .presentation(state)
+        self.resolved_presentation(state)
             .filter(|p| include_hidden || p.visible)?;
         let profile = state.active_profile()?;
         let preset = self.selected_preset_of(state)?;
@@ -240,6 +274,17 @@ impl App {
         ];
         Some((Key::new(preset, profile.scale), center))
     }
+}
+
+pub fn input_configuration_changed(before: &AppState, after: &AppState) -> bool {
+    before.active_profile != after.active_profile
+        || before.settings.global_toggle != after.settings.global_toggle
+        || before.settings.output_mode != after.settings.output_mode
+        || before.settings.monitor != after.settings.monitor
+        || before.active_profile().map(|p| (p.scale, p.offset))
+            != after.active_profile().map(|p| (p.scale, p.offset))
+        || before.active_profile().map(|p| (&p.bindings, &p.actions))
+            != after.active_profile().map(|p| (&p.bindings, &p.actions))
 }
 
 fn same_selection(before: &AppState, after: &AppState) -> bool {

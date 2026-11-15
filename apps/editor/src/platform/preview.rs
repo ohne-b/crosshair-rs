@@ -23,6 +23,11 @@ pub struct Request {
 }
 
 pub enum Event {
+    Bitmap {
+        generation: u64,
+        id: Id,
+        result: Result<(Arc<Raster>, f32), String>,
+    },
     Document {
         scale: f32,
         generation: u64,
@@ -78,6 +83,8 @@ struct Pending {
     anchor: Mutex<Option<(Preset, Vec<Id>, Anchor)>>,
     recovery: Mutex<Option<(Preset, RecoveryAction)>>,
     recovering: AtomicBool,
+    bitmap: Mutex<Option<(u64, Preset, f32)>>,
+    bitmap_generation: AtomicU64,
 }
 
 pub struct Preview {
@@ -85,6 +92,30 @@ pub struct Preview {
 }
 
 impl Preview {
+    pub fn bitmap(&self, document: Preset, zoom: f32) -> u64 {
+        let _request = self.pending.request.lock();
+        let generation = self
+            .pending
+            .bitmap_generation
+            .fetch_add(1, Ordering::AcqRel)
+            + 1;
+        if let Ok(mut pending) = self.pending.bitmap.lock() {
+            *pending = Some((generation, document, zoom));
+        }
+        self.pending.ready.notify_one();
+        generation
+    }
+    pub fn cancel_bitmap(&self) -> u64 {
+        let generation = self
+            .pending
+            .bitmap_generation
+            .fetch_add(1, Ordering::AcqRel)
+            + 1;
+        if let Ok(mut pending) = self.pending.bitmap.lock() {
+            *pending = None;
+        }
+        generation
+    }
     #[cfg(test)]
     pub fn idle_for_test() -> Self {
         Self {
@@ -165,6 +196,11 @@ fn worker(
             .map_err(|_| anyhow::anyhow!("Preview queue stopped"))?;
         while queued.is_none()
             && pending
+                .bitmap
+                .lock()
+                .map(|job| job.is_none())
+                .unwrap_or(true)
+            && pending
                 .anchor
                 .lock()
                 .map(|job| job.is_none())
@@ -215,6 +251,32 @@ fn worker(
             }
         }
         let Some((generation, mut request)) = render_job else {
+            if let Some((generation, document, zoom)) =
+                pending.bitmap.lock().ok().and_then(|mut job| job.take())
+            {
+                let cancelled = || {
+                    pending.stopped.load(Ordering::Acquire)
+                        || pending.bitmap_generation.load(Ordering::Acquire) != generation
+                };
+                let source = |id| {
+                    cache
+                        .borrow()
+                        .get(&id)
+                        .cloned()
+                        .or_else(|| client.cached_asset(id))
+                        .context("Preview image is not ready")
+                };
+                let result = render_preview(&mut renderer, &document, zoom, &source, cancelled)
+                    .map_err(|error| error.to_string());
+                renderer.clear_raster_cache();
+                if !cancelled() {
+                    events(Event::Bitmap {
+                        generation,
+                        id: document.id,
+                        result,
+                    });
+                }
+            }
             continue;
         };
         let cancelled = || {

@@ -24,7 +24,7 @@ component VisibilitySwitch inherits Rectangle {
         width: hint-content.preferred-width; height: hint-content.preferred-height;
         background: Theme.panel; border-radius: 10px; border-width: 1px; border-color: Theme.border;
         hint-content := VerticalLayout { padding: 14px; spacing: 10px;
-            Text { text: Store.visible ? "Hide crosshair" : "Show crosshair"; color: Theme.text; font-size: 12px * Theme.text-scale; font-weight: 600; }
+            Text { text: Store.visibility-reason != "" ? Store.visibility-reason : Store.visible ? "Hide crosshair" : "Show crosshair"; color: Theme.text; font-size: 12px * Theme.text-scale; font-weight: 600; }
             Rectangle { height: 1px; background: Theme.border; }
             HorizontalLayout { spacing: 12px;
                 Image { source: @image-url("../../../../assets/icons/keyboard.svg"); colorize: Theme.muted; width: 16px; height: 16px; }
