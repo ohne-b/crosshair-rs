@@ -333,11 +333,10 @@ export component Designer inherits Rectangle {
                 VerticalLayout { spacing: 0px;
                     Rectangle { height: 44px; vertical-stretch: 0;
                         HorizontalLayout { x: 14px; y: 6px; width: parent.width - 28px; height: 32px; spacing: 0px;
-                            Rectangle { horizontal-stretch: 1; }
-                            Rectangle { width: 152px; height: 32px; border-radius: 8px; background: Theme.field; border-width: 1px; border-color: Theme.border;
+                            Rectangle { horizontal-stretch: 1; height: 32px; border-radius: 8px; background: Theme.field; border-width: 1px; border-color: Theme.border;
                                 HorizontalLayout { padding: 2px; spacing: 2px;
-                                    ActionButton { text: "Design"; height: 28px; selected: !Store.animate; quiet: true; horizontal-stretch: 1; clicked => { Store.action("designer-mode", "design"); } }
-                                    ActionButton { text: "Animate"; height: 28px; selected: Store.animate; quiet: true; horizontal-stretch: 1; clicked => { Store.action("designer-mode", "animate"); } }
+                                    ActionButton { text: "Design"; height: 28px; min-width: 0px; preferred-width: 0px; selected: !Store.animate; quiet: true; horizontal-stretch: 1; clicked => { Store.action("designer-mode", "design"); } }
+                                    ActionButton { text: "Animate"; height: 28px; min-width: 0px; preferred-width: 0px; selected: Store.animate; quiet: true; horizontal-stretch: 1; clicked => { Store.action("designer-mode", "animate"); } }
                                 }
                             }
                         }

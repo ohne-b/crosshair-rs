@@ -21,9 +21,9 @@ export component DropDown inherits Rectangle {
     property <length> item-height: max(32px, 12px * Theme.text-scale + 16px);
     min-width: 0px; preferred-width: root.compact ? selected-label.preferred-width + 40px + (root.icons.length > 0 ? 24px : 0px) : 150px;
     height: root.item-height; vertical-stretch: 0;
-    background: touch.has-hover || focus.has-focus || root.expanded ? Theme.hover : Theme.field;
+    background: touch.has-hover || root.expanded ? Theme.hover : Theme.field;
     border-radius: Theme.radius;
-    border-width: 1px; border-color: Theme.border;
+    border-width: 1px; border-color: focus.has-focus ? Theme.muted : Theme.border;
     opacity: root.enabled ? 1 : 0.4;
     accessible-role: combobox;
     accessible-enabled: root.enabled;

@@ -12,15 +12,15 @@ component AimActionEditor inherits Rectangle {
     property <bool> open-picker: false;
     Timer { interval: 1ms; running: root.open-picker; triggered => { root.open-picker = false; aim-picker.show(); } }
         aim-dropdown := DropDown {
-            y: (parent.height - self.height) / 2; width: parent.width - (Store.aim-target != "" ? 44px : 0px);
+            y: (root.height - self.height) / 2; width: root.width - (Store.aim-target != "" ? 48px : 0px);
             enabled: Store.connected && Store.interactive;
             model: ["No action", "Toggle crosshair (Press)", "Hide crosshair (Hold)", "Show crosshair (Hold)", "Toggle saved crosshair (Press)", "Show saved crosshair (Hold)"];
             current-index: Store.aim-action; accessible-label: "Aim action";
             selected(index) => { Store.action("aim-action", "" + index); if index >= 4 { root.thumbnail-origin = false; root.open-picker = true; } }
         }
         aim-thumbnail := ActionButton {
-            x: parent.width - self.width; y: (parent.height - self.height) / 2;
-            visible: Store.aim-target != ""; width: 36px; height: 36px;
+            x: root.width - self.width; y: (root.height - self.height) / 2;
+            visible: Store.aim-target != ""; width: 40px; height: aim-dropdown.height;
             thumbnail: Store.preset-thumbnails[Store.aim-target-index]; label: "Choose saved crosshair: " + Store.aim-target-name;
             clicked => { root.thumbnail-origin = true; Store.action("aim-action", "" + Store.aim-action); aim-picker.show(); }
         }
