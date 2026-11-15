@@ -15,6 +15,13 @@ export component ActionButton inherits Rectangle {
     in property <bool> align-left: false;
     out property <bool> has-focus: focus.has-focus;
     callback clicked;
+    callback held(bool);
+    property <bool> held-state: false;
+    changed has-focus => { if !root.has-focus { root.set-held(false); } }
+    changed enabled => { if !root.enabled { root.set-held(false); } }
+    function set-held(value: bool) {
+        if root.held-state != value { root.held-state = value; root.held(value); }
+    }
     height: root.text == "" ? 32px : max(32px, 12px * Theme.text-scale + 16px);
     preferred-width: root.text == "" ? 32px : content.preferred-width;
     horizontal-stretch: 0;
@@ -26,7 +33,7 @@ export component ActionButton inherits Rectangle {
     accessible-role: button;
     accessible-label: root.label;
     accessible-enabled: root.enabled;
-    accessible-action-default => { root.activate(); }
+    accessible-action-default => { if root.enabled { root.activate(); root.set-held(true); root.set-held(false); } }
     forward-focus: focus;
     function activate() {
         if root.enabled {
@@ -44,12 +51,23 @@ export component ActionButton inherits Rectangle {
     focus := FocusScope {
         enabled: root.enabled;
         key-pressed(event) => {
-            if event.text == "\n" || event.text == " " { root.activate(); return accept; }
+            if event.text == "\n" || event.text == " " {
+                if !root.held-state { root.activate(); root.set-held(true); }
+                return accept;
+            }
+            return reject;
+        }
+        key-released(event) => {
+            if event.text == "\n" || event.text == " " { root.set-held(false); return accept; }
             return reject;
         }
     }
     touch := TouchArea {
         enabled: root.enabled;
+        pointer-event(event) => {
+            if event.kind == PointerEventKind.down && event.button == PointerEventButton.left { focus.focus(); Store.commit-focused-input(); root.set-held(true); }
+            if (event.kind == PointerEventKind.up && event.button == PointerEventButton.left) || event.kind == PointerEventKind.cancel { root.set-held(false); }
+        }
         clicked => { root.activate(); }
     }
     if root.label != "" && (root.text == "" || root.label != root.text): Tooltip {

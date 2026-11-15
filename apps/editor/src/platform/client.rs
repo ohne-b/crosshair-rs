@@ -131,6 +131,22 @@ pub struct Client {
 
 impl Client {
     #[cfg(test)]
+    pub fn recording_for_test() -> (Self, impl Fn() -> Vec<Command>) {
+        let (jobs, receiver) = mpsc::sync_channel(64);
+        let mut client = Self::disconnected_for_test();
+        client.jobs = jobs;
+        client.stopped.store(false, Ordering::Release);
+        (client, move || {
+            receiver
+                .try_iter()
+                .filter_map(|job| match job {
+                    Job::Command(_, command) => Some(command),
+                    _ => None,
+                })
+                .collect()
+        })
+    }
+    #[cfg(test)]
     pub fn disconnected_for_test() -> Self {
         let (jobs, _) = mpsc::sync_channel(1);
         Self {

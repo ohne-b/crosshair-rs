@@ -1,4 +1,6 @@
-use crate::{Color, Content, Crosshair, Dot, Id, Layer, Preset, Rectangle};
+use crate::{
+    Color, Content, Crosshair, Dot, Freehand, Id, Layer, Point, Preset, Rectangle, Shape, Stroke,
+};
 
 /// Built-in designs use native geometry, so saved copies need no image assets.
 pub fn presets() -> Vec<Preset> {
@@ -90,6 +92,83 @@ pub fn presets() -> Vec<Preset> {
     );
     teloqr.transform.x = -0.5;
     teloqr.transform.y = 0.5;
+    let mut nine_reg = vec![Layer::new(
+        "Center dot",
+        Content::Crosshair(Crosshair {
+            length: 0.0,
+            dot: Dot {
+                enabled: true,
+                color: Color::WHITE,
+                ..Default::default()
+            },
+            ..Default::default()
+        }),
+    )];
+    let arms = [
+        ("Top", 0.0, -3.0, 180.0),
+        ("Bottom", 0.0, 3.0, 0.0),
+        ("Left", -3.0, 0.0, 90.0),
+        ("Right", 3.0, 0.0, 270.0),
+    ];
+    // shortcut: strokes round SVG miter corners; use miter joins if native strokes gain them.
+    for (name, x, y, rotation) in arms {
+        let mut layer = Layer::new(
+            format!("{name} outline"),
+            Content::Freehand(Freehand {
+                strokes: vec![Stroke {
+                    points: vec![
+                        Point { x: 0.0, y: -3.0 },
+                        Point { x: 1.0, y: 3.0 },
+                        Point { x: -1.0, y: 3.0 },
+                        Point { x: 0.0, y: -3.0 },
+                    ],
+                    width: 1.0,
+                    color: Color::rgba(0, 0, 0, 61),
+                    erase: false,
+                }],
+            }),
+        );
+        layer.transform.x = x;
+        layer.transform.y = y;
+        layer.transform.rotation = rotation;
+        nine_reg.push(layer);
+    }
+    nine_reg.push(Layer::new(
+        "Diamond outline",
+        Content::Crosshair(Crosshair {
+            length: (2.83 - 1.41) / std::f32::consts::SQRT_2,
+            thickness: 2.83 * std::f32::consts::SQRT_2,
+            gap: 1.41 / std::f32::consts::SQRT_2,
+            rotation: 45.0,
+            color: Color::rgba(0, 0, 0, 61),
+            ..Default::default()
+        }),
+    ));
+    let mut diamond = Layer::new(
+        "Center diamond",
+        Content::Rectangle(Rectangle {
+            width: 1.41 * std::f32::consts::SQRT_2,
+            height: 1.41 * std::f32::consts::SQRT_2,
+            radius: 0.0,
+            color: Color::rgba(255, 255, 255, 184),
+        }),
+    );
+    diamond.transform.rotation = 45.0;
+    nine_reg.push(diamond);
+    for (name, x, y, rotation) in arms {
+        let mut layer = Layer::new(
+            name,
+            Content::Triangle(Shape {
+                width: 2.0,
+                height: 6.0,
+                color: white,
+            }),
+        );
+        layer.transform.x = x;
+        layer.transform.y = y;
+        layer.transform.rotation = rotation;
+        nine_reg.push(layer);
+    }
     let designs = [
         ("Shotgun", shotgun),
         ("Blue outline", outlined(Color::rgba(0, 0, 255, 204))),
@@ -123,6 +202,7 @@ pub fn presets() -> Vec<Preset> {
         ),
         ("Small white", vec![cross("Cross", white, 4.0, 0.0)]),
         ("TeloqR (CS Pro)", vec![teloqr]),
+        ("9reg (Pro Gamer)", nine_reg),
     ];
     designs
         .into_iter()

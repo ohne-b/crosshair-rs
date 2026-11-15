@@ -249,7 +249,21 @@ impl App {
             return;
         };
         let store = ui.global::<Store>();
-        store.set_visible(self.status.visible);
+        store.set_visible(self.status.enabled);
+        store.set_visibility_reason(if self.status.enabled && !self.status.visible {
+            match self
+                .state
+                .active_profile()
+                .map(|profile| profile.actions.aim_action)
+            {
+                Some(AimAction::ShowWhileHeld) => "Hidden until Aim is held",
+                Some(AimAction::HideWhileHeld) => "Hidden while Aim is held",
+                _ => "Crosshair temporarily hidden",
+            }
+            .into()
+        } else {
+            SharedString::default()
+        });
         store.set_visibility_shortcut(
             self.state
                 .settings
@@ -384,6 +398,14 @@ impl App {
             return;
         };
         let store = ui.global::<Store>();
+        store.set_inspector_selection(self.selection_token().into());
+        store.set_animate(self.animate);
+        store.set_single_selection(self.document.selected.len() == 1);
+        store.set_has_animation(
+            self.document
+                .selected_layer()
+                .is_some_and(|layer| layer.animation.is_some()),
+        );
         store.set_document_open(self.document.draft.is_some());
         store.set_dirty(self.document.dirty || self.inflight.is_some());
         store.set_save_paused(self.document.save_paused || self.document.conflict);
@@ -417,7 +439,17 @@ impl App {
             self.fields = self
                 .document
                 .selected_layer()
-                .map(|layer| designer::fields(layer, &self.fonts, self.document.selected.len() > 1))
+                .map(|layer| {
+                    if self.animate {
+                        if self.document.selected.len() == 1 {
+                            designer::animation_fields(layer, &self.fonts)
+                        } else {
+                            Vec::new()
+                        }
+                    } else {
+                        designer::fields(layer, &self.fonts, self.document.selected.len() > 1)
+                    }
+                })
                 .unwrap_or_default();
             let mut collapsed = false;
             let selection: SharedString = self.selection_token().into();
@@ -435,6 +467,10 @@ impl App {
                         key: field.key.clone().into(),
                         label: field.label.clone().into(),
                         value: field.value.clone().into(),
+                        reset: self.animate
+                            && self.document.selected_layer().is_some_and(|layer| {
+                                designer::animation_changed(layer, &field.key)
+                            }),
                         ..Default::default()
                     };
                     match &field.kind {
@@ -447,14 +483,15 @@ impl App {
                             row.kind = 2;
                             row.minimum = *min;
                             row.maximum = *max;
-                            row.step =
-                                if matches!(field.key.as_str(), "/transform/scale" | "/opacity")
-                                    || field.key.contains("/crop/")
-                                {
-                                    0.01
-                                } else {
-                                    1.0
-                                };
+                            row.step = if matches!(
+                                field.key.trim_start_matches("@animated:"),
+                                "/transform/scale" | "/opacity"
+                            ) || field.key.contains("/crop/")
+                            {
+                                0.01
+                            } else {
+                                1.0
+                            };
                             row.numeric = field.value.parse().unwrap_or_default();
                         }
                         FieldKind::Toggle => {
@@ -503,6 +540,11 @@ impl App {
             .map(|document| document.id)
             .chain(self.document.selected.iter().copied())
             .map(|id| id.to_string())
+            .chain(std::iter::once(if self.animate {
+                "animate".to_owned()
+            } else {
+                "design".to_owned()
+            }))
             .collect::<Vec<_>>()
             .join(":")
     }
@@ -536,7 +578,7 @@ impl App {
         let mut rows = vec![BindingRow {
             id: "global".into(),
             name: SharedString::default(),
-            action: "Toggle visibility".into(),
+            action: "Global toggle".into(),
             target: SharedString::default(),
             target_index: -1,
             chord: self
@@ -552,6 +594,48 @@ impl App {
             global: true,
         }];
         if let Some(profile) = self.state.active_profile() {
+            let store = ui.global::<Store>();
+            store.set_action_profile(profile.name.clone().into());
+            store.set_aim_action(match profile.actions.aim_action {
+                AimAction::None => 0,
+                AimAction::ToggleVisibility => 1,
+                AimAction::HideWhileHeld => 2,
+                AimAction::ShowWhileHeld => 3,
+                AimAction::TogglePreset { .. } => 4,
+                AimAction::ShowPresetWhileHeld { .. } => 5,
+            });
+            let target = profile.actions.aim_action.target();
+            store.set_aim_target(target.map(|id| id.to_string()).unwrap_or_default().into());
+            store.set_aim_target_name(
+                target
+                    .and_then(|id| self.state.preset(id))
+                    .map(|p| p.name.clone())
+                    .unwrap_or_default()
+                    .into(),
+            );
+            store.set_aim_target_index(
+                target
+                    .and_then(|id| self.state.presets.iter().position(|p| p.id == id))
+                    .map_or(-1, |i| i as i32),
+            );
+            for (id, label, chord) in [
+                ("aim", "Aim", &profile.actions.aim),
+                ("fire", "Fire", &profile.actions.fire),
+                ("reload", "Reload", &profile.actions.reload),
+            ] {
+                rows.push(BindingRow {
+                    id: id.into(),
+                    action: label.into(),
+                    chord: chord
+                        .as_ref()
+                        .map(keybinds::chord_label)
+                        .unwrap_or_else(|| "Unbound".into())
+                        .into(),
+                    global: true,
+                    enabled: chord.is_some(),
+                    ..Default::default()
+                });
+            }
             rows.extend(profile.bindings.iter().map(|binding| {
                 BindingRow {
                     id: binding.id.to_string().into(),

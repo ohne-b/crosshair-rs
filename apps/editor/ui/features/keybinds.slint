@@ -2,7 +2,38 @@ import { ScrollView } from "std-widgets.slint";
 import { Store, BindingRow } from "../shared/models.slint";
 import { Theme } from "../shared/tokens.slint";
 import { ActionButton, RenameField, SectionTitle } from "../shared/controls.slint";
+import { DropDown } from "../shared/dropdown.slint";
 import { PresetPicker } from "../shared/preset-picker.slint";
+
+component AimActionEditor inherits Rectangle {
+    in property <length> viewport-width;
+    in property <length> viewport-height;
+    property <bool> thumbnail-origin: false;
+    property <bool> open-picker: false;
+    Timer { interval: 1ms; running: root.open-picker; triggered => { root.open-picker = false; aim-picker.show(); } }
+        aim-dropdown := DropDown {
+            y: (parent.height - self.height) / 2; width: parent.width - (Store.aim-target != "" ? 44px : 0px);
+            enabled: Store.connected && Store.interactive;
+            model: ["No action", "Toggle crosshair (Press)", "Hide crosshair (Hold)", "Show crosshair (Hold)", "Toggle saved crosshair (Press)", "Show saved crosshair (Hold)"];
+            current-index: Store.aim-action; accessible-label: "Aim action";
+            selected(index) => { Store.action("aim-action", "" + index); if index >= 4 { root.thumbnail-origin = false; root.open-picker = true; } }
+        }
+        aim-thumbnail := ActionButton {
+            x: parent.width - self.width; y: (parent.height - self.height) / 2;
+            visible: Store.aim-target != ""; width: 36px; height: 36px;
+            thumbnail: Store.preset-thumbnails[Store.aim-target-index]; label: "Choose saved crosshair: " + Store.aim-target-name;
+            clicked => { root.thumbnail-origin = true; Store.action("aim-action", "" + Store.aim-action); aim-picker.show(); }
+        }
+    aim-picker := PresetPicker {
+        viewport-width: root.viewport-width; viewport-height: root.viewport-height;
+        enabled: Store.connected && Store.interactive;
+        model: Store.selector-presets; selected-id: Store.aim-target;
+        total-count: Store.selector-total; favorite-count: Store.selector-favorite-count;
+        chosen(id) => { Store.action("aim-target", id); }
+        filter-request(search, favorites) => { Store.action("selector-filter", search); Store.action("selector-favorites", favorites ? "true" : "false"); }
+        dismissed => { Store.action("aim-cancel", ""); if root.thumbnail-origin { aim-thumbnail.focus(); } else { aim-dropdown.focus(); } }
+    }
+}
 
 component TableHeader inherits Rectangle {
     in property <bool> application: false;
@@ -33,7 +64,10 @@ component BindingItem inherits Rectangle {
     }
     height: max(56px, 12px * Theme.text-scale + 32px); vertical-stretch: 0; clip: true;
     HorizontalLayout { spacing: 0px;
-        if root.binding.global: Rectangle { horizontal-stretch: 1; Text { x: 12px; width: parent.width - 24px; text: root.binding.action; color: Theme.text; font-size: 12px * Theme.text-scale; vertical-alignment: center; } }
+        if root.binding.global: Rectangle { horizontal-stretch: 1;
+            Text { x: 12px; width: root.binding.id == "aim" ? 88px : parent.width - 80px; text: root.binding.action; color: Theme.text; font-size: 12px * Theme.text-scale; vertical-alignment: center; }
+            if root.binding.id == "aim": AimActionEditor { x: 112px; y: (parent.height - self.height) / 2; height: max(36px, 12px * Theme.text-scale + 16px); width: min(Store.aim-target == "" ? 320px : 364px, max(0px, parent.width - 124px)); viewport-width: root.viewport-width; viewport-height: root.viewport-height; }
+        }
         if root.binding.shortcut: Rectangle { width: 88px;
             trigger := ActionButton { x: 24px; y: (parent.height - self.height) / 2; width: 40px; height: 40px; enabled: Store.connected && Store.interactive && !root.saving; thumbnail: Store.preset-thumbnails[root.binding.target-index]; label: "Choose crosshair for " + root.binding.name; clicked => { picker.show(); } }
             picker := PresetPicker {
@@ -61,10 +95,11 @@ component BindingItem inherits Rectangle {
         }
         Rectangle { width: 1px; background: Theme.border; }
         Rectangle { width: 52px;
-            ActionButton { x: 10px; y: (parent.height - self.height) / 2; width: 32px; enabled: Store.connected && Store.interactive && !root.saving; icon: root.pending ? @image-url("../../../../assets/icons/x.svg") : @image-url("../../../../assets/icons/trash.svg"); label: root.pending ? "Discard new shortcut" : root.binding.global ? "Clear visibility shortcut" : "Remove shortcut"; quiet: true; clicked => { Store.action(root.pending ? "discard-shortcut" : "binding-remove", root.pending ? "" : root.binding.id); } }
+            ActionButton { x: 10px; y: (parent.height - self.height) / 2; width: 32px; enabled: Store.connected && Store.interactive && !root.saving; icon: root.pending ? @image-url("../../../../assets/icons/x.svg") : @image-url("../../../../assets/icons/trash.svg"); label: root.pending ? "Discard new shortcut" : root.binding.global ? "Clear " + root.binding.action + " shortcut" : "Remove shortcut"; quiet: true; clicked => { Store.action(root.pending ? "discard-shortcut" : "binding-remove", root.pending ? "" : root.binding.id); } }
         }
     }
     Rectangle { y: 0px; width: parent.width; height: 1px; background: Theme.border; }
+
 }
 
 export component Keybinds inherits Rectangle {
@@ -79,7 +114,7 @@ export component Keybinds inherits Rectangle {
                 Rectangle { horizontal-stretch: 1; }
                 ActionButton { icon: @image-url("../../../../assets/icons/info-circle.svg"); label: "Shortcut help"; quiet: true; clicked => { Store.action("input-help", ""); } }
             }
-            SectionTitle { text: "APPLICATION"; }
+            SectionTitle { text: "ACTIONS · " + Store.action-profile; }
             Rectangle { vertical-stretch: 0; background: Theme.panel; border-radius: 10px; clip: true; border-width: 1px; border-color: Theme.border;
                 VerticalLayout { padding: 1px; spacing: 0px;
                     TableHeader { application: true; }

@@ -34,6 +34,13 @@ fn app(ui: &AppWindow) -> App {
         document: Document::default(),
         fonts: Vec::new(),
         fields: Vec::new(),
+        animate: false,
+        playback: Playback::default(),
+        playback_started: std::time::Instant::now(),
+        playback_timer: slint::Timer::default(),
+        playback_generation: 0,
+        playback_next: None,
+        playing: false,
         collapsed: BTreeSet::new(),
         thumbnails: BTreeMap::new(),
         palette: Vec::new(),
@@ -62,6 +69,8 @@ fn app(ui: &AppWindow) -> App {
         image_ready: None,
         capture: None,
         capture_token: None,
+        capture_profile: None,
+        pending_aim: None,
         capture_region: None,
         failed_shortcut: None,
         modal: Modal::None,
@@ -114,6 +123,286 @@ fn complete_preview(app: &mut App, adjusted: Option<Preset>) -> Result<()> {
     while let Some(event) = EVENTS.with(|events| events.borrow_mut().pop_front()) {
         app.event(event)?;
     }
+    Ok(())
+}
+
+#[test]
+fn animation_mode_rejects_queued_base_edits_and_undo_restores_inheritance() -> Result<()> {
+    let ui = window();
+    let mut app = app(&ui);
+    let base = app.state.presets[0].clone();
+    app.document.open(base.clone())?;
+    let design_token = app.selection_token();
+    app.action("designer-mode", "animate")?;
+    assert!(!app.document.dirty);
+    app.event(Event::Ui(UiEvent::Property(
+        design_token,
+        "/transform/x".into(),
+        "100".into(),
+        2,
+    )))?;
+    assert_eq!(app.document.draft.as_ref(), Some(&base));
+    app.property_edit("@animated:/transform/x", "12", 2)?;
+    complete_preview(&mut app, None)?;
+    assert_eq!(
+        app.document.draft.as_ref().unwrap().layers[0]
+            .animation
+            .as_ref()
+            .unwrap()
+            .target
+            .x,
+        Some(12.0)
+    );
+    assert_eq!(
+        app.document.draft.as_ref().unwrap().layers[0].transform.x,
+        base.layers[0].transform.x
+    );
+    app.action("undo", "")?;
+    assert_eq!(app.document.draft.as_ref(), Some(&base));
+    ui.hide()?;
+    Ok(())
+}
+
+#[test]
+fn preview_frames_never_edit_the_document_and_stale_bitmaps_are_ignored() -> Result<()> {
+    let ui = window();
+    let mut app = app(&ui);
+    let mut preset = app.state.presets[0].clone();
+    preset.layers[0].animation = Some(Animation {
+        target: AnimationTarget {
+            x: Some(12.0),
+            ..Default::default()
+        },
+        ..Default::default()
+    });
+    app.document.open(preset.clone())?;
+    app.animate = true;
+    let (client, commands) = Client::recording_for_test();
+    app.client = client;
+    app.preview_input("fire-down")?;
+    assert!(app.playing);
+    assert!(
+        !app.playback_timer.running(),
+        "Wait for the worker before scheduling another frame"
+    );
+    let generation = app.playback_generation;
+    let bitmap = || {
+        Arc::new(crosshair_renderer::Raster {
+            width: 1,
+            height: 1,
+            origin: [7, 9],
+            pixels: vec![255; 4],
+        })
+    };
+    app.event(Event::Preview(preview::Event::Bitmap {
+        generation,
+        id: preset.id,
+        result: Ok((bitmap(), 1.0)),
+    }))?;
+    assert_eq!(ui.global::<Store>().get_preview_x(), 7.0);
+    assert_eq!(app.document.draft.as_ref(), Some(&preset));
+    assert!(!app.document.dirty);
+    assert!(!app.document.can_undo());
+    assert!(commands().is_empty());
+    app.stop_playback();
+    ui.global::<Store>().set_preview_x(42.0);
+    app.event(Event::Preview(preview::Event::Bitmap {
+        generation,
+        id: preset.id,
+        result: Ok((bitmap(), 1.0)),
+    }))?;
+    assert_eq!(ui.global::<Store>().get_preview_x(), 42.0);
+    app.preview_input("fire-up")?;
+    assert!(
+        !app.playing,
+        "A late release cannot restart a stopped session"
+    );
+    app.preview_input("fire-down")?;
+    app.action("navigate", "2")?;
+    let hidden_generation = app.playback_generation;
+    app.action("navigate", "1")?;
+    assert!(!app.playing);
+    assert!(
+        app.playback_generation > hidden_generation,
+        "Returning to Designer requests the Animated target pose"
+    );
+    assert_eq!(app.document.draft.as_ref(), Some(&preset));
+    ui.hide()?;
+    Ok(())
+}
+
+#[test]
+fn action_picker_cancellation_and_late_profile_events_do_not_commit() -> Result<()> {
+    let ui = window();
+    let mut app = app(&ui);
+    let (client, commands) = Client::recording_for_test();
+    app.client = client;
+    let target = app.state.presets[0].id.to_string();
+    app.action("aim-action", "4")?;
+    assert!(commands().is_empty());
+    app.action("aim-cancel", "")?;
+    app.action("aim-target", &target)?;
+    assert!(commands().is_empty());
+    app.action("aim-action", "5")?;
+    app.action("aim-target", &target)?;
+    let committed = commands();
+    assert!(
+        matches!(&committed[..], [Command::UpsertProfile { profile, .. }] if matches!(profile.actions.aim_action, AimAction::ShowPresetWhileHeld { preset } if preset.to_string() == target))
+    );
+    app.action("aim-action", "4")?;
+    app.state.active_profile = Id::new_v4();
+    app.action("aim-target", &target)?;
+    assert!(commands().is_empty());
+    ui.hide()?;
+    Ok(())
+}
+
+#[test]
+fn title_switch_reflects_master_state_and_clearing_its_key_only_unbinds() -> Result<()> {
+    let ui = window();
+    let mut app = app(&ui);
+    let (client, commands) = Client::recording_for_test();
+    app.client = client;
+    app.state.profiles[0].actions.aim_action = AimAction::ShowWhileHeld;
+    app.status.enabled = true;
+    app.status.visible = false;
+    app.refresh_status();
+    assert!(ui.global::<Store>().get_visible());
+    assert_eq!(
+        ui.global::<Store>().get_visibility_reason(),
+        "Hidden until Aim is held"
+    );
+    app.action("toggle-visible", "")?;
+    assert!(matches!(&commands()[..], [Command::ToggleVisibility]));
+    app.action("binding-remove", "global")?;
+    assert!(
+        matches!(&commands()[..], [Command::SetBindings { profiles, global_toggle: None, .. }] if profiles[0].actions == app.state.profiles[0].actions)
+    );
+    assert!(app.status.enabled);
+    ui.hide()?;
+    Ok(())
+}
+
+#[test]
+fn captures_pin_profiles_reject_pulses_and_replace_roles_atomically() -> Result<()> {
+    use crate::features::keybinds::Target;
+    let ui = window();
+    let mut app = app(&ui);
+    let (client, commands) = Client::recording_for_test();
+    app.client = client;
+    let profile = app.state.active_profile;
+    app.begin_capture(Capture::Role(Target::Aim))?;
+    commands();
+    assert!(
+        app.complete_capture(Some(InputChord {
+            trigger: InputKey::Pause,
+            modifiers: vec![]
+        }))
+        .is_err()
+    );
+    assert!(commands().is_empty());
+    app.begin_capture(Capture::Role(Target::Fire))?;
+    commands();
+    app.state.active_profile = Id::new_v4();
+    app.complete_capture(Some(InputChord::key(0x20)))?;
+    assert!(commands().is_empty());
+    app.state.active_profile = profile;
+    let mut second = app.state.profiles[0].clone();
+    second.id = Id::new_v4();
+    app.state.profiles.push(second);
+    app.begin_capture(Capture::Global)?;
+    commands();
+    app.complete_capture(Some(InputChord::key(0x13)))?;
+    assert!(matches!(app.modal, Modal::Conflict(..)));
+    assert!(commands().is_empty());
+    app.confirm_modal("", false)?;
+    let committed = commands();
+    assert!(
+        matches!(&committed[..], [Command::SetBindings { profiles, global_toggle: Some(chord), .. }] if *chord == InputChord::key(0x13) && profiles.len() == 2 && profiles.iter().all(|profile| profile.actions.reload.is_none()))
+    );
+    ui.hide()?;
+    Ok(())
+}
+
+#[test]
+fn preview_buttons_pair_pointer_keyboard_and_focus_release_edges() -> Result<()> {
+    let ui = window();
+    let store = ui.global::<Store>();
+    store.set_animate(true);
+    store.set_single_selection(true);
+    let events = Rc::new(RefCell::new(Vec::new()));
+    let recorded = events.clone();
+    store.on_action(move |action, value| {
+        recorded
+            .borrow_mut()
+            .push((action.to_string(), value.to_string()))
+    });
+    pointer(&ui, 0, 1110.0, 158.0);
+    pointer(&ui, 2, 1110.0, 158.0);
+    slint::platform::update_timers_and_animations();
+    assert_eq!(
+        &*events.borrow(),
+        &[
+            ("animation-preview".into(), "fire-down".into()),
+            ("animation-preview".into(), "fire-up".into())
+        ]
+    );
+    events.borrow_mut().clear();
+    for _ in 0..2 {
+        ui.window().dispatch_event(WindowEvent::KeyPressed {
+            text: Key::Space.into(),
+        });
+    }
+    ui.window().dispatch_event(WindowEvent::KeyReleased {
+        text: Key::Space.into(),
+    });
+    assert_eq!(
+        events.borrow().len(),
+        2,
+        "Keyboard repeat must not add presses"
+    );
+    events.borrow_mut().clear();
+    ui.window().dispatch_event(WindowEvent::KeyPressed {
+        text: Key::Space.into(),
+    });
+    ui.window().dispatch_event(WindowEvent::KeyPressed {
+        text: Key::Tab.into(),
+    });
+    ui.window().dispatch_event(WindowEvent::KeyReleased {
+        text: Key::Tab.into(),
+    });
+    slint::platform::update_timers_and_animations();
+    assert!(
+        events.borrow().iter().any(|(_, value)| value == "fire-up"),
+        "Moving focus must release held preview input: {:?}",
+        events.borrow()
+    );
+    pointer(&ui, 0, 1030.0, 158.0);
+    pointer(&ui, 2, 1030.0, 158.0);
+    slint::platform::update_timers_and_animations();
+    ui.window().dispatch_event(WindowEvent::KeyPressed {
+        text: Key::Tab.into(),
+    });
+    ui.window().dispatch_event(WindowEvent::KeyReleased {
+        text: Key::Tab.into(),
+    });
+    slint::platform::update_timers_and_animations();
+    events.borrow_mut().clear();
+    ui.window().dispatch_event(WindowEvent::KeyPressed {
+        text: Key::Space.into(),
+    });
+    ui.window().dispatch_event(WindowEvent::KeyReleased {
+        text: Key::Space.into(),
+    });
+    assert_eq!(
+        &*events.borrow(),
+        &[
+            ("animation-preview".into(), "fire-down".into()),
+            ("animation-preview".into(), "fire-up".into())
+        ],
+        "Tab reaches each preview button once"
+    );
+    ui.hide()?;
     Ok(())
 }
 
@@ -334,13 +623,13 @@ fn numeric_drag_commits_release_position_and_escape_restores_the_start() -> Resu
             fields.set_row_data(0, row);
         }
     });
-    pointer(&ui, 0, 1120.0, 138.0);
-    pointer(&ui, 1, 1126.0, 138.0);
+    pointer(&ui, 0, 1120.0, 182.0);
+    pointer(&ui, 1, 1126.0, 182.0);
     assert_eq!(events.borrow().last(), Some(&(16.0, 1)));
-    pointer(&ui, 2, 1129.0, 138.0);
+    pointer(&ui, 2, 1129.0, 182.0);
     assert_eq!(events.borrow().last(), Some(&(19.0, 2)));
-    pointer(&ui, 0, 1120.0, 138.0);
-    pointer(&ui, 1, 1125.0, 138.0);
+    pointer(&ui, 0, 1120.0, 182.0);
+    pointer(&ui, 1, 1125.0, 182.0);
     assert_eq!(events.borrow().last(), Some(&(24.0, 1)));
     let escape: SharedString = Key::Escape.into();
     ui.window().dispatch_event(WindowEvent::KeyPressed {
@@ -350,8 +639,8 @@ fn numeric_drag_commits_release_position_and_escape_restores_the_start() -> Resu
         .dispatch_event(WindowEvent::KeyReleased { text: escape });
     assert_eq!(events.borrow().last(), Some(&(19.0, 4)));
     events.borrow_mut().clear();
-    pointer(&ui, 1, 1130.0, 138.0);
-    pointer(&ui, 2, 1130.0, 138.0);
+    pointer(&ui, 1, 1130.0, 182.0);
+    pointer(&ui, 2, 1130.0, 182.0);
     assert!(
         events.borrow().is_empty(),
         "A cancelled drag must stay cancelled through release"
@@ -433,8 +722,8 @@ fn text_fields_follow_external_values_after_typing() -> Result<()> {
         .on_property_edit(move |_, _, value, phase| {
             recorded.borrow_mut().push((value.to_string(), phase));
         });
-    pointer(&ui, 0, 1120.0, 138.0);
-    pointer(&ui, 2, 1120.0, 138.0);
+    pointer(&ui, 0, 1120.0, 182.0);
+    pointer(&ui, 2, 1120.0, 182.0);
     ui.window()
         .dispatch_event(WindowEvent::KeyPressed { text: "x".into() });
     ui.window()
@@ -476,8 +765,8 @@ fn color_opacity_drag_does_not_continue_on_a_new_selection() -> Result<()> {
         .on_property_color(move |selection, _, _, phase| {
             recorded.borrow_mut().push((selection.to_string(), phase));
         });
-    pointer(&ui, 0, 1220.0, 138.0);
-    pointer(&ui, 1, 1214.0, 138.0);
+    pointer(&ui, 0, 1220.0, 182.0);
+    pointer(&ui, 1, 1214.0, 182.0);
     assert_eq!(events.borrow().last(), Some(&("layer-a".into(), 1)));
     let mut row = fields.row_data(0).unwrap();
     row.first.selection = "layer-b".into();
@@ -485,8 +774,8 @@ fn color_opacity_drag_does_not_continue_on_a_new_selection() -> Result<()> {
     fields.set_row_data(0, row);
     slint::platform::update_timers_and_animations();
     events.borrow_mut().clear();
-    pointer(&ui, 1, 1208.0, 138.0);
-    pointer(&ui, 2, 1208.0, 138.0);
+    pointer(&ui, 1, 1208.0, 182.0);
+    pointer(&ui, 2, 1208.0, 182.0);
     assert!(events.borrow().is_empty());
     ui.hide()?;
     Ok(())
@@ -513,8 +802,8 @@ fn color_picker_uses_the_final_pointer_position_on_release() -> Result<()> {
     let recorded = events.clone();
     ui.global::<Store>()
         .on_property_color(move |_, _, value, phase| recorded.borrow_mut().push((value, phase)));
-    pointer(&ui, 0, 1030.0, 138.0);
-    pointer(&ui, 2, 1030.0, 138.0);
+    pointer(&ui, 0, 1030.0, 182.0);
+    pointer(&ui, 2, 1030.0, 182.0);
     // Release can arrive at a different position without an intervening move event.
     for (start, end) in [
         ((780.0, 335.0), (900.0, 335.0)),
@@ -563,8 +852,8 @@ fn inspector_choices_follow_restored_document_values() -> Result<()> {
         ui.window()
             .dispatch_event(WindowEvent::KeyReleased { text });
     };
-    pointer(&ui, 0, 1120.0, 138.0);
-    pointer(&ui, 2, 1120.0, 138.0);
+    pointer(&ui, 0, 1120.0, 182.0);
+    pointer(&ui, 2, 1120.0, 182.0);
     key(Key::Escape);
     key(Key::DownArrow);
     assert_eq!(fields.row_data(0).unwrap().first.selected, 1);

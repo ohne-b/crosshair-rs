@@ -7,6 +7,15 @@ import { PresetPicker } from "../shared/preset-picker.slint";
 import { Theme } from "../shared/tokens.slint";
 import { ActionButton, EditField, RenameField, Switch, Divider } from "../shared/controls.slint";
 
+component PreviewTrigger inherits ActionButton {
+    in property <string> trigger;
+    property <bool> down: false;
+    primary: root.down;
+    border-width: root.has-focus ? 1px : 0px;
+    border-color: Theme.orange;
+    held(value) => { root.down = value; Store.action("animation-preview", root.trigger + (value ? "-down" : "-up")); }
+}
+
 component PropertyRow inherits Rectangle {
     in property <FieldRow> field;
     in property <length> viewport-width;
@@ -63,6 +72,7 @@ component PropertyRow inherits Rectangle {
                 committed(value) => { Store.property-edit(root.field.selection, root.field.key, value, 2); }
             }
             if root.field.kind == 5: DropDown { enabled: root.editable; horizontal-stretch: 1; model: root.field.choices; current-index: root.field.selected; accessible-label: root.field.label; selected(index) => { Store.property-edit(root.field.selection, root.field.key, index, 3); } }
+            if root.field.reset: ActionButton { width: 26px; enabled: root.editable; quiet: true; icon: @image-url("../../../../assets/icons/refresh.svg"); label: "Reset " + root.field.label + " to Base"; clicked => { Store.property-edit(root.field.selection, "@inherit:" + root.field.key, "", 2); } }
             if root.field.kind == 6: ActionButton { enabled: root.editable; text: "Choose…"; horizontal-stretch: 1; clicked => { Store.action("property-action", root.field.key); } }
         }
     }
@@ -206,7 +216,7 @@ export component Designer inherits Rectangle {
                 Rectangle { y: canvas.center-y * 1px; height: 1px; width: parent.width; background: #FFFFFF0A; }
                 Image { source: Store.preview; x: (canvas.center-x + Store.preview-x * Store.zoom) * 1px; y: (canvas.center-y + Store.preview-y * Store.zoom) * 1px; width: Store.preview-width * Store.zoom * 1px; height: Store.preview-height * Store.zoom * 1px; image-rendering: smooth; }
                 for bounds in Store.bounds: Rectangle {
-                    visible: bounds.selected && !Store.drawing;
+                    visible: bounds.selected && !Store.drawing && !Store.animate;
                     x: (canvas.center-x + bounds.x * Store.zoom) * 1px; y: (canvas.center-y + bounds.y * Store.zoom) * 1px;
                     width: max(1px, bounds.width * Store.zoom * 1px); height: max(1px, bounds.height * Store.zoom * 1px);
                     border-width: 1px; border-color: Theme.muted; background: transparent;
@@ -220,12 +230,12 @@ export component Designer inherits Rectangle {
                     Rectangle { x: parent.width / 2 - 3px; y: -24px; width: 6px; height: 6px; border-radius: 3px; background: Theme.canvas; border-width: 1px; border-color: Theme.orange; }
                 }
                 for bounds in Store.bounds: Rectangle {
-                    visible: canvas.pressed-button == 1 && bounds.selected && !Store.drawing && abs(bounds.x + bounds.width / 2) < 0.01;
+                    visible: canvas.pressed-button == 1 && bounds.selected && !Store.drawing && !Store.animate && abs(bounds.x + bounds.width / 2) < 0.01;
                     x: canvas.center-x * 1px; y: 0px; width: 1px; height: canvas.height;
                     for dot in ceil(canvas.height / 6px): Rectangle { y: dot * 6px; width: 1px; height: 2px; background: #EAB308; }
                 }
                 for bounds in Store.bounds: Rectangle {
-                    visible: canvas.pressed-button == 1 && bounds.selected && !Store.drawing && abs(bounds.y + bounds.height / 2) < 0.01;
+                    visible: canvas.pressed-button == 1 && bounds.selected && !Store.drawing && !Store.animate && abs(bounds.y + bounds.height / 2) < 0.01;
                     x: 0px; y: canvas.center-y * 1px; height: 1px; width: canvas.width;
                     for dot in ceil(canvas.width / 6px): Rectangle { x: dot * 6px; height: 1px; width: 2px; background: #EAB308; }
                 }
@@ -320,11 +330,24 @@ export component Designer inherits Rectangle {
             Rectangle { width: 1px; background: Theme.border; }
             Rectangle {
                 width: min(400px, 288px * Theme.text-scale); background: Theme.panel;
+                VerticalLayout { spacing: 0px;
+                    Rectangle { height: 44px; vertical-stretch: 0;
+                        HorizontalLayout { x: 14px; y: 6px; width: parent.width - 28px; height: 32px; spacing: 0px;
+                            Rectangle { horizontal-stretch: 1; }
+                            Rectangle { width: 152px; height: 32px; border-radius: 8px; background: Theme.field; border-width: 1px; border-color: Theme.border;
+                                HorizontalLayout { padding: 2px; spacing: 2px;
+                                    ActionButton { text: "Design"; height: 28px; selected: !Store.animate; quiet: true; horizontal-stretch: 1; clicked => { Store.action("designer-mode", "design"); } }
+                                    ActionButton { text: "Animate"; height: 28px; selected: Store.animate; quiet: true; horizontal-stretch: 1; clicked => { Store.action("designer-mode", "animate"); } }
+                                }
+                            }
+                        }
+                    }
                 ScrollView {
                     horizontal-scrollbar-policy: always-off; content-width: self.visible-width;
                     VerticalLayout {
                         padding-left: 14px; padding-right: 14px; padding-top: 6px; padding-bottom: 16px; spacing: 6px; alignment: start;
-                        if Store.drawing: VerticalLayout { spacing: 6px;
+                        if Store.animate && !Store.single-selection: Text { text: "Select one layer to animate."; color: Theme.muted; font-size: 12px * Theme.text-scale; wrap: word-wrap; }
+                        if Store.drawing && !Store.animate: VerticalLayout { spacing: 6px;
                             Text { text: "Brush"; color: Theme.text; font-weight: 600; height: 24px; }
                             HorizontalLayout { spacing: 6px;
                             NumericField { width: 72px; value: Store.brush-size; minimum: 1; maximum: 256; step: 1; icon: @image-url("../../../../assets/icons/pencil.svg"); label: "Brush size"; changed(value, phase) => { Store.action("brush-size", "" + value); } }
@@ -342,8 +365,19 @@ export component Designer inherits Rectangle {
                             PropertyRow { viewport-width: root.width + root.absolute-position.x; viewport-height: root.height + root.absolute-position.y; field: group.first; horizontal-stretch: 1; }
                             if group.paired: PropertyRow { viewport-width: root.width + root.absolute-position.x; viewport-height: root.height + root.absolute-position.y; field: group.second; horizontal-stretch: 1; }
                         }
+                        if Store.animate && Store.single-selection: VerticalLayout {
+                            spacing: 8px;
+                            HorizontalLayout { spacing: 6px;
+                                PreviewTrigger { text: "Aim"; trigger: "aim"; horizontal-stretch: 1; }
+                                PreviewTrigger { text: "Fire"; trigger: "fire"; horizontal-stretch: 1; }
+                                ActionButton { text: "Reset"; clicked => { Store.action("animation-preview", "reset"); } }
+                            }
+                            if Store.animation-playing: ActionButton { text: "Stop"; icon: @image-url("../../../../assets/icons/x.svg"); clicked => { Store.action("animation-stop", ""); } }
+                            if Store.has-animation: ActionButton { text: "Remove animation"; enabled: Store.selection-editable && Store.interactive; quiet: true; clicked => { Store.property-edit(Store.inspector-selection, "@animation-remove", "", 2); } }
+                        }
                         Rectangle { vertical-stretch: 1; }
                     }
+                }
                 }
             }
         }

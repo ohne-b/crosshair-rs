@@ -43,8 +43,10 @@ impl App {
                         self.send_document()?;
                         self.finish_edit()?;
                     } else {
+                        self.stop_playback();
                         self.document.select(id.parse()?, extend);
                         self.refresh_document();
+                        self.show_animated_target()?;
                     }
                 }
                 UiEvent::Canvas(kind, point, button, shift) => {
@@ -122,6 +124,10 @@ impl App {
                 }
                 let ui = self.window()?;
                 let store = ui.global::<Store>();
+                if state.active_profile != self.state.active_profile {
+                    self.pending_aim = None;
+                    self.cancel_capture()?;
+                }
                 let pending = store.get_pending_shortcut();
                 let failed_shortcut = self.failed_shortcut.take();
                 if (self.new_connection
@@ -446,6 +452,9 @@ impl App {
                 self.refresh_document();
             }
             Event::Engine(_, client::Event::Disconnected(message)) => {
+                self.stop_playback();
+                self.pending_aim = None;
+                self.capture_profile = None;
                 self.window()?.global::<Store>().set_browse_saving(false);
                 let close_clean =
                     self.closing && !self.document.dirty && self.deferred_ui.is_empty();
@@ -487,6 +496,37 @@ impl App {
                     self.refresh_document();
                 }
             }
+            Event::Preview(preview::Event::Bitmap {
+                generation,
+                id,
+                result,
+            }) => {
+                if generation == self.playback_generation
+                    && self.animate
+                    && self
+                        .document
+                        .draft
+                        .as_ref()
+                        .is_some_and(|draft| draft.id == id)
+                {
+                    match result {
+                        Ok((raster, scale)) => {
+                            let ui = self.window()?;
+                            let store = ui.global::<Store>();
+                            store.set_preview(preview::image(&raster));
+                            store.set_preview_x(raster.origin[0] as f32 / scale);
+                            store.set_preview_y(raster.origin[1] as f32 / scale);
+                            store.set_preview_width(raster.width as f32 / scale);
+                            store.set_preview_height(raster.height as f32 / scale);
+                            self.schedule_playback();
+                        }
+                        Err(message) => {
+                            self.stop_playback();
+                            self.error(message);
+                        }
+                    }
+                }
+            }
             Event::Preview(preview::Event::Document {
                 scale,
                 generation,
@@ -526,6 +566,7 @@ impl App {
                 store.set_preview_height(raster.height as f32 / scale);
                 self.refresh_bounds();
                 self.refresh_status();
+                self.show_animated_target()?;
             }
             Event::Preview(preview::Event::Thumbnail {
                 id,

@@ -236,6 +236,10 @@ impl App {
             self.refresh_document();
             return Ok(());
         }
+        ensure!(
+            !self.animate || self.document.selected.len() == 1,
+            "Select one layer to animate"
+        );
         let mut value = input.to_owned();
         if phase == 3 {
             let field = self
@@ -295,7 +299,11 @@ impl App {
                 .iter_mut()
                 .filter(|layer| self.document.selected.contains(&layer.id) && !layer.locked)
             {
-                designer::apply_field(layer, key, &value, &self.fonts)?;
+                if self.animate {
+                    designer::apply_animation_field(layer, key, &value, &self.fonts)?;
+                } else {
+                    designer::apply_field(layer, key, &value, &self.fonts)?;
+                }
             }
             validation::validate_preset(&changed, &self.state.assets)?;
             Ok(())
@@ -439,7 +447,7 @@ impl App {
                 dialogs::copy(
                     self.hwnd()?,
                     &serde_json::to_string(
-                        &serde_json::json!({"format":"crosshair-rs-layers-1","layers":self.document.clipboard}),
+                        &serde_json::json!({"format":"crosshair-rs-layers-2","layers":self.document.clipboard}),
                     )?,
                 )?;
                 if action == "cut-layers" {
@@ -481,6 +489,9 @@ impl App {
                 Ok(())
             })?,
             "draw" => {
+                if self.animate {
+                    self.action("designer-mode", "design")?;
+                }
                 if self.window()?.global::<Store>().get_drawing() {
                     self.window()?.global::<Store>().set_drawing(false);
                 } else {
@@ -583,7 +594,7 @@ impl App {
     ) -> Result<()> {
         let ui = self.window()?;
         let store = ui.global::<Store>();
-        if store.get_read_only() {
+        if store.get_read_only() || self.playing || self.animate {
             return Ok(());
         }
         if kind == 0 {
@@ -892,6 +903,9 @@ impl App {
                 || self.window()?.global::<Store>().get_modal_kind() != 0
             {
                 self.action("modal-cancel", "")?;
+            } else if self.playing {
+                self.stop_playback();
+                self.show_animated_target()?;
             } else if self.drag.is_some() || self.group_open {
                 self.drag = None;
                 self.draw_base = None;
@@ -971,6 +985,9 @@ impl App {
             None
         };
         if let Some((x, y)) = delta {
+            if self.animate {
+                return Ok(true);
+            }
             self.edit(|preset, selected| {
                 designer::nudge(preset, selected, x, y);
                 Ok(())
