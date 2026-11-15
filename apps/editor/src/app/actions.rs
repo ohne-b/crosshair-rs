@@ -134,7 +134,7 @@ impl App {
             }
             "notices" => {
                 self.modal = Modal::None;
-                self.show_modal(4, "Third-party notices", "Slint — Royalty-free Desktop License\nTabler Icons — MIT License\nManrope — SIL Open Font License 1.1\nRust logo — CC BY 4.0, modified for crosshair-rs. Rust Foundation trademarks belong to the Rust Foundation.\n\nRendering uses tiny-skia, resvg and Windows DirectWrite. Dependency licenses are included with the application package.", "", "", "");
+                self.show_modal(4, "Third-party notices", "Slint — GNU GPLv3\nTabler Icons — MIT License\nManrope — SIL Open Font License 1.1\nRust logo — CC BY 4.0, modified for crosshair-rs. Rust Foundation trademarks belong to the Rust Foundation.\n\nRendering uses tiny-skia, resvg and Windows DirectWrite. Dependency licenses are included with the application package.", "", "", "");
             }
             "input-help" => {
                 self.modal = Modal::None;

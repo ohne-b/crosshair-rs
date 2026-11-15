@@ -24,7 +24,7 @@ its interactions are illustrative, not an implementation of the application.
 | Updates | TDM's Settings interaction and signed latest.json contract, adapted to MSIX. |
 | Input | Global keyboard and mouse shortcuts for preset selection and visibility. No controllers. |
 | Appearance | Orange placeholder logo, Tabler outline icons, Manrope interface font. |
-| License | PolyForm Noncommercial 1.0.0; third-party components retain their licenses. |
+| License | GPL-3.0-only with a Game Bar SDK linking exception; third-party components retain their licenses. |
 
 The complete scope includes layered static editing, crosshair arms, primitive
 shapes, images, freehand drawing, outlines, blur, local presets, manual
@@ -122,11 +122,10 @@ popovers and update states; adapt its backend to the native architecture.
   no perpetual decorative animation.
 
 Bundle only used [Tabler MIT icons][tabler-license] and Manrope with its license;
-no runtime CDN requests. Use Slint's royalty-free desktop license and retain its
-terms/required attribution. PolyForm does not permit silently selecting Slint's
-GPL route. Add the official Slint badge to the public download README when Slint
-is introduced, plus notices in Settings > About. [Slint's terms][slint-license]
-describe the available choices.
+no runtime CDN requests. Use Slint's GPLv3 license and retain upstream notices
+and the official Slint attribution badge. The project's Game Bar SDK linking
+exception is limited to the separate widget host; it does not change Slint's
+license. [Slint's terms][slint-license] describe the available choices.
 
 ## Screens and behavior
 
@@ -975,7 +974,7 @@ The source tree contains the implementation; release readiness requires the
 automated and native evidence above, including the authenticated update handoff.
 
 [slint-renderers]: https://docs.slint.dev/latest/docs/slint/guide/backends-and-renderers/backend_winit/
-[slint-license]: https://slint.dev/agreements/slint-royalty-free-license.pdf
+[slint-license]: https://github.com/slint-ui/slint/blob/372cf0ee5577c3dfec309a45e7b778ba4e81b734/LICENSE.md
 [tabler-license]: https://github.com/tabler/tabler-icons/blob/main/LICENSE
 [directwrite]: https://learn.microsoft.com/en-us/windows/win32/directwrite/glyphs-and-glyph-runs
 [gamebar-limits]: https://learn.microsoft.com/en-us/xbox/game-bar/known-issues

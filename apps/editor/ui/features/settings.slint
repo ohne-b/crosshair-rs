@@ -160,7 +160,7 @@ export component Settings inherits Rectangle {
                         SectionTitle { text: "ABOUT"; }
                         Group {
                             Setting { label: "crosshair-rs - " + Store.version; ActionButton { text: "Source"; quiet: true; clicked => { Store.action("github", ""); } } }
-                            Setting { label: "PolyForm Noncommercial 1.0.0"; ActionButton { text: "License"; quiet: true; clicked => { Store.action("license", ""); } } }
+                            Setting { label: "GNU GPLv3 + Game Bar exception"; ActionButton { text: "License"; quiet: true; clicked => { Store.action("license", ""); } } }
                             Setting { label: "Built with Slint"; last: true; ActionButton { text: "Third-party notices"; quiet: true; clicked => { Store.action("notices", ""); } } }
                         }
                     }

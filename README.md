@@ -7,7 +7,7 @@
 <p align="center">A lightweight, customizable crosshair overlay for Windows.</p>
 
 <p align="center">
-  <a href="LICENSE.md"><img src="https://img.shields.io/badge/license-PolyForm_Noncommercial-F97316?style=flat-square" alt="License: PolyForm Noncommercial"></a>
+  <a href="LICENSE.md"><img src="https://img.shields.io/badge/license-GPLv3-F97316?style=flat-square" alt="License: GPLv3 with Game Bar exception"></a>
 </p>
 
 ![crosshair-rs dashboard showing the Browse crosshair collection](.github/assets/crosshairs.webp)
@@ -30,7 +30,7 @@ See [CONTRIBUTING.md](docs/CONTRIBUTING.md) for building, testing and pull reque
 
 ## License and credits
 
-[PolyForm Noncommercial 1.0.0](LICENSE.md). Third-party licenses and credits are in [NOTICE.md](NOTICE.md).
+[GPLv3 with a Game Bar SDK linking exception](LICENSE.md). Third-party licenses and credits are in [NOTICE.md](NOTICE.md).
 
 Logo adapted from the [Rust logo](https://github.com/rust-lang/rust-artwork/blob/main/logo/rust-logo-gear-only.svg),
 owned by the Rust Foundation, under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
