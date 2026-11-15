@@ -243,7 +243,7 @@ pub fn animation_fields(layer: &Layer, fonts: &[String]) -> Vec<Field> {
             "/animation/duration_ms",
             "Duration (ms)",
             a.duration_ms as f32,
-            1.0,
+            0.0,
             10_000.0,
         ),
         Field::section("Animated"),
@@ -1171,9 +1171,11 @@ mod tests {
         assert_eq!(layer.transform, base.transform);
         assert_eq!(layer.animation.as_ref().unwrap().target.x, Some(12.0));
         assert!(animation_changed(&layer, "@animated:/transform/x"));
+        apply_animation_field(&mut layer, "/animation/duration_ms", "0", &[]).unwrap();
+        assert_eq!(layer.animation.as_ref().unwrap().duration_ms, 0);
         let before = layer.clone();
         for (key, value) in [
-            ("/animation/duration_ms", "0"),
+            ("/animation/duration_ms", "10001"),
             ("/animation/delay_ms", "10001"),
             ("@animated:/transform/x", "NaN"),
             ("@animated:/transform/x", "1.5"),

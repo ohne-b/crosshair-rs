@@ -284,7 +284,7 @@ Direction and Delay live in the initially collapsed Timing section.
 | --- | --- |
 | Trigger | Fire (initial) or Aim. |
 | Activation | Hold (initial) or Press. |
-| Duration | 1-10,000 ms per leg; initially 150 ms. |
+| Duration | 0-10,000 ms per leg; initially 150 ms. Zero is instant. |
 | Easing | Linear or Smooth (initial), a fixed ease-in/out curve. |
 | On release | Hold only: Return (initial), Reset or Pause. |
 | Repeat | Off initially. |
@@ -303,6 +303,10 @@ Direction and Delay live in the initially collapsed Timing section.
 - Press with Repeat Off plays one configured movement then resets to Base. New
   physical presses restart it; keyboard autorepeat does not. Press with Repeat On
   toggles playback on/off; stopping restores Base.
+- At zero duration, each leg completes immediately after Delay. One-way Hold
+  jumps to Animated; Return and Reset release immediately to Base. A zero-time
+  Repeat settles at Animated for One way or Base for Back and forth, without a
+  frame timer. A nonrepeating Press completes at Base immediately.
 - Reload restores every animation on the effective crosshair, including paused
   effects. It changes neither selection nor visibility. Held triggers must release
   before restarting. It does not send input to a game or measure weapon state.

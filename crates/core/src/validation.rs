@@ -468,9 +468,9 @@ pub fn validate_state(state: &AppState) -> Result {
 
 pub fn validate_animation(layer: &Layer, animation: &Animation) -> Result {
     require(
-        (1..=10_000).contains(&animation.duration_ms),
+        animation.duration_ms <= 10_000,
         "animation.duration",
-        "must be from 1 to 10000 ms",
+        "must be from 0 to 10000 ms",
     )?;
     require(
         animation.delay_ms <= 10_000,

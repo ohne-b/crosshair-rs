@@ -317,7 +317,9 @@ impl Playback {
                         from,
                         delay,
                     }),
-                    (Activation::Hold, Some(track @ Track::Returning { .. })) => {
+                    (Activation::Hold, Some(track @ Track::Returning { .. }))
+                        if sample_track(track, a, now_ms).1.is_some() =>
+                    {
                         Some(Track::Playing {
                             start: now_ms,
                             offset: 0,
@@ -424,7 +426,7 @@ fn eased(easing: Easing, t: f32) -> f32 {
 }
 
 fn sample_track(track: Track, a: &Animation, now: u64) -> (f32, Option<u64>) {
-    let duration = u64::from(a.duration_ms.max(1));
+    let duration = u64::from(a.duration_ms);
     let next = || Some(now.saturating_add(17));
     if let Track::Returning { start, from } = track {
         let elapsed = now.saturating_sub(start);
@@ -462,6 +464,11 @@ fn sample_track(track: Track, a: &Animation, now: u64) -> (f32, Option<u64>) {
         );
     }
     let elapsed = elapsed - u64::from(delay);
+    if duration == 0 {
+        let at_target =
+            a.direction == Direction::OneWay && (a.activation == Activation::Hold || a.repeat);
+        return (if at_target { 1.0 } else { 0.0 }, None);
+    }
     let cycle = duration
         * if a.direction == Direction::BackAndForth {
             2
@@ -555,6 +562,67 @@ mod tests {
         assert_eq!(playback.sample(&p, 300).next_frame_ms, None);
         assert_eq!(p.layers[0].transform.x, 0.0);
         assert!(playback.sample(&p, 50).preset.layers[0].animation.is_none());
+    }
+
+    #[test]
+    fn instant_hold_honors_delay_release_and_repeated_presses_without_frames() {
+        for release in [Release::Return, Release::Reset, Release::Pause] {
+            let mut p = design();
+            let a = p.layers[0].animation.as_mut().unwrap();
+            a.duration_ms = 0;
+            a.delay_ms = 20;
+            a.release = release;
+            let mut playback = Playback::default();
+            playback.event(&p, fire(true), 0);
+            close(x(&playback, &p, 19), 0.0);
+            assert_eq!(playback.sample(&p, 19).next_frame_ms, Some(20));
+            close(x(&playback, &p, 20), 100.0);
+            assert_eq!(playback.sample(&p, 20).next_frame_ms, None);
+            playback.event(&p, fire(false), 20);
+            let paused = release == Release::Pause;
+            close(x(&playback, &p, 20), if paused { 100.0 } else { 0.0 });
+            assert_eq!(playback.sample(&p, 20).next_frame_ms, None);
+            playback.event(&p, fire(true), 21);
+            close(x(&playback, &p, 21), if paused { 100.0 } else { 0.0 });
+            close(x(&playback, &p, 41), 100.0);
+        }
+    }
+
+    #[test]
+    fn instant_press_and_repeat_settle_without_zero_length_loops() {
+        let mut p = design();
+        let a = p.layers[0].animation.as_mut().unwrap();
+        a.duration_ms = 0;
+        a.activation = Activation::Press;
+        let mut playback = Playback::default();
+        playback.event(&p, fire(true), 0);
+        close(x(&playback, &p, 0), 0.0);
+        assert_eq!(playback.sample(&p, 0).next_frame_ms, None);
+        p.layers[0].animation.as_mut().unwrap().repeat = true;
+        playback.reset();
+        playback.event(&p, fire(true), 1);
+        close(x(&playback, &p, 1), 100.0);
+        assert_eq!(playback.sample(&p, 1).next_frame_ms, None);
+        playback.event(&p, fire(false), 2);
+        playback.event(&p, fire(true), 3);
+        close(x(&playback, &p, 3), 0.0);
+        p.layers[0].animation.as_mut().unwrap().direction = Direction::BackAndForth;
+        playback.event(&p, fire(true), 4);
+        close(x(&playback, &p, 4), 0.0);
+        assert_eq!(playback.sample(&p, 4).next_frame_ms, None);
+    }
+
+    #[test]
+    fn a_completed_return_restarts_the_initial_delay() {
+        let mut p = design();
+        p.layers[0].animation.as_mut().unwrap().delay_ms = 20;
+        let mut playback = Playback::default();
+        playback.event(&p, fire(true), 0);
+        playback.event(&p, fire(false), 120);
+        playback.event(&p, fire(true), 220);
+        close(x(&playback, &p, 239), 0.0);
+        assert_eq!(playback.sample(&p, 239).next_frame_ms, Some(240));
+        close(x(&playback, &p, 290), 50.0);
     }
 
     #[test]

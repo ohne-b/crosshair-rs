@@ -10,9 +10,10 @@ component AimActionEditor inherits Rectangle {
     in property <length> viewport-height;
     property <bool> thumbnail-origin: false;
     property <bool> open-picker: false;
+    preferred-width: 320px + (Store.aim-target != "" ? aim-thumbnail.width + 8px : 0px);
     Timer { interval: 1ms; running: root.open-picker; triggered => { root.open-picker = false; aim-picker.show(); } }
         aim-dropdown := DropDown {
-            y: (root.height - self.height) / 2; width: root.width - (Store.aim-target != "" ? 48px : 0px);
+            x: 0px; y: (root.height - self.height) / 2; width: root.width - (Store.aim-target != "" ? aim-thumbnail.width + 8px : 0px);
             enabled: Store.connected && Store.interactive;
             model: ["No action", "Toggle crosshair (Press)", "Hide crosshair (Hold)", "Show crosshair (Hold)", "Toggle saved crosshair (Press)", "Show saved crosshair (Hold)"];
             current-index: Store.aim-action; accessible-label: "Aim action";
@@ -20,7 +21,7 @@ component AimActionEditor inherits Rectangle {
         }
         aim-thumbnail := ActionButton {
             x: root.width - self.width; y: (root.height - self.height) / 2;
-            visible: Store.aim-target != ""; width: 40px; height: aim-dropdown.height;
+            visible: Store.aim-target != ""; width: self.height; height: aim-dropdown.height;
             thumbnail: Store.preset-thumbnails[Store.aim-target-index]; label: "Choose saved crosshair: " + Store.aim-target-name;
             clicked => { root.thumbnail-origin = true; Store.action("aim-action", "" + Store.aim-action); aim-picker.show(); }
         }
@@ -66,7 +67,7 @@ component BindingItem inherits Rectangle {
     HorizontalLayout { spacing: 0px;
         if root.binding.global: Rectangle { horizontal-stretch: 1;
             Text { x: 12px; width: root.binding.id == "aim" ? 88px : parent.width - 80px; text: root.binding.action; color: Theme.text; font-size: 12px * Theme.text-scale; vertical-alignment: center; }
-            if root.binding.id == "aim": AimActionEditor { x: 112px; y: (parent.height - self.height) / 2; height: max(36px, 12px * Theme.text-scale + 16px); width: min(Store.aim-target == "" ? 320px : 364px, max(0px, parent.width - 124px)); viewport-width: root.viewport-width; viewport-height: root.viewport-height; }
+            if root.binding.id == "aim": AimActionEditor { x: parent.width - self.width - 12px; y: (parent.height - self.height) / 2; height: max(36px, 12px * Theme.text-scale + 16px); width: min(self.preferred-width, max(0px, parent.width - 124px)); viewport-width: root.viewport-width; viewport-height: root.viewport-height; }
         }
         if root.binding.shortcut: Rectangle { width: 88px;
             trigger := ActionButton { x: 24px; y: (parent.height - self.height) / 2; width: 40px; height: 40px; enabled: Store.connected && Store.interactive && !root.saving; thumbnail: Store.preset-thumbnails[root.binding.target-index]; label: "Choose crosshair for " + root.binding.name; clicked => { picker.show(); } }

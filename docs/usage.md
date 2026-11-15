@@ -77,6 +77,9 @@ Activation at **Hold**, then increase its Animated gap. The default 150 ms durat
 moves toward that gap while Fire is held and returns smoothly on release. The
 **Fire** preview button lets you try it locally; **Stop** ends preview.
 
+Set Duration to **0 ms** for an instant change after any Delay. With Hold and
+Return, it jumps to Animated on press and back to Base on release.
+
 **Press** plays once per press. In **Timing**, Back and forth returns to Base as
 part of the movement; Repeat loops while held, or toggles looping on successive
 presses. Hold's On release choices are Return, immediate Reset or Pause. A new

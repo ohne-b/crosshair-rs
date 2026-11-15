@@ -269,7 +269,7 @@ mod tests {
         assert!(serde_json::from_value::<AppState>(unknown).is_err());
         let a = state.presets[0].layers[0].animation.as_mut().unwrap();
         a.duration_ms = 0;
-        assert!(validate_state(&state).is_err());
+        validate_state(&state).unwrap();
         state.presets[0].layers[0]
             .animation
             .as_mut()

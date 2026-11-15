@@ -6,7 +6,8 @@
   with Fire and Reload bindings. Keep the Global toggle tied to the master switch.
 - Add simple per-layer animations in Designer's top-right Animate inspector,
   local preview and overlay playback with the dashboard closed. Preserve effects
-  in saved documents and backups; existing designs stay static.
+  in saved documents and backups; existing designs stay static. Set duration to
+  0 ms for instant changes.
 - Equip Browse crosshairs by clicking their cards without adding them to Saved.
   The bookmark button still saves an editable copy.
 

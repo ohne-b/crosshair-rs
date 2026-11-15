@@ -378,17 +378,17 @@ fn library_tabs_sort_picker_and_browse_actions_are_independent() -> Result<()> {
     ui.window().set_size(slint::LogicalSize::new(1280.0, 800.0));
     snapshot(&window, "warning-and-updates.png")?;
     events.borrow_mut().clear();
-    click(&ui, 1240.0, 89.0);
+    click(&ui, 1240.0, 71.0);
     assert_eq!(*events.borrow(), [("dismiss-error".into(), "".into())]);
     events.borrow_mut().clear();
     store.set_update_phase(1);
-    click(&ui, 980.0, 330.0);
+    click(&ui, 980.0, 294.0);
     assert!(
         events.borrow().is_empty(),
         "Changing update channel must wait for active work"
     );
     store.set_update_phase(0);
-    click(&ui, 980.0, 330.0);
+    click(&ui, 980.0, 294.0);
     assert_eq!(
         *events.borrow(),
         [("allow-prereleases".into(), "true".into())]
