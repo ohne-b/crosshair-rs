@@ -18,7 +18,7 @@ const screens = [
   {screens.map((screen) => (
     <figure class={screen.id}>
       <img
-        src={`/assets/screenshots/${screen.id}.webp`}
+        src={`${import.meta.env.BASE_URL}assets/screenshots/${screen.id}.webp`}
         width="2424"
         height="1544"
         alt={screen.alt}

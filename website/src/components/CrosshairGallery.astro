@@ -16,7 +16,7 @@ import { presets } from '../data/presets';
       aria-hidden="true"
     >
       <img
-        src={`/assets/presets/${preset.file}.svg`}
+        src={`${import.meta.env.BASE_URL}assets/presets/${preset.file}.svg`}
         width={preset.featured ? 146 : 68}
         height={preset.featured ? 146 : 68}
         alt=""

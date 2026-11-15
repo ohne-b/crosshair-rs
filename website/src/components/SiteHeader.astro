@@ -7,7 +7,7 @@ import ExternalArrow from './ExternalArrow.astro';
   <nav class="pill-nav" aria-label="Main navigation">
     <a class="brand" href="#main" aria-label="crosshair-rs home">
       <span class="brand-icon">
-        <img src="/assets/logo.svg" width="30" height="30" alt="" />
+        <img src={import.meta.env.BASE_URL + "assets/logo.svg"} width="30" height="30" alt="" />
       </span>
       <span>
         crosshair<span class="brand-suffix">-rs</span>
@@ -24,7 +24,7 @@ import ExternalArrow from './ExternalArrow.astro';
         rel="noopener noreferrer"
       >
         <img
-          src="/assets/icons/brand-github.svg"
+          src={import.meta.env.BASE_URL + "assets/icons/brand-github.svg"}
           width="19"
           height="19"
           alt=""
