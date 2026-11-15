@@ -246,3 +246,16 @@ installation or elevation. `/S /EXTRACT` writes the MSIX beside the installer
 only when that destination does not exist. Development setups bundle `.Preview`
 packages with updates disabled; they cannot be promoted to a release. Alpha 1
 requires a manual setup upgrade to consume the new updater metadata format.
+
+
+## Website
+
+The static Astro site lives in `website/`. Use Node 24, then run
+`npm --prefix website ci`, `npm --prefix website run check` and
+`npm --prefix website run build`. The local preview is available with
+`npm --prefix website run dev` at `/crosshair-rs/`.
+
+GitHub Pages uses GitHub Actions as its source. After merging website changes,
+run **Deploy website** manually from `main` to publish
+https://ohne-b.github.io/crosshair-rs/. Pull requests and ordinary pushes do not
+deploy the website. This workflow does not publish application releases.

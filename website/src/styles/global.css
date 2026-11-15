@@ -1,0 +1,79 @@
+@font-face {
+  font-family: Manrope;
+  src: url('/assets/fonts/Manrope.ttf') format('truetype');
+  font-weight: 200 800;
+  font-display: swap;
+}
+:root {
+  color-scheme: dark;
+  --p-bg: #101112;
+  --p-ink: #f1f1ef;
+  --p-muted: #a3a5a8;
+  --p-accent: #f97316;
+  --container: 1080px;
+  --gut: 48px;
+}
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+html {
+  scroll-padding-top: 96px;
+}
+body {
+  margin: 0;
+  background: var(--p-bg);
+  color: var(--p-ink);
+  font-family: Manrope, sans-serif;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+a {
+  color: inherit;
+  -webkit-tap-highlight-color: transparent;
+}
+img,
+svg {
+  display: block;
+  max-width: 100%;
+}
+.wrap {
+  width: min(calc(100% - var(--gut) * 2), var(--container));
+  margin-inline: auto;
+}
+:focus-visible {
+  outline: 2px solid var(--p-accent);
+  outline-offset: 5px;
+}
+.skip-link {
+  position: fixed;
+  left: 16px;
+  top: 16px;
+  z-index: 30;
+  transform: translateY(-200%);
+  padding: 12px 16px;
+  background: var(--p-accent);
+  color: var(--p-bg);
+}
+.skip-link:focus {
+  transform: none;
+}
+@media (max-width: 1023px) {
+  :root {
+    --gut: 32px;
+  }
+}
+@media (max-width: 639px) {
+  :root {
+    --gut: 24px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}

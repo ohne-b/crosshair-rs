@@ -1,8 +1,8 @@
 # Third-party notices
 
 crosshair-rs is copyright 2026 ohne-b (OhneB), licensed under
-[PolyForm Noncommercial 1.0.0](LICENSE.md) for noncommercial use.
-Keep the license and required notices with copies. Third-party components and
+[GNU GPL version 3 with a Game Bar SDK linking exception](LICENSE.md).
+Keep the license and copyright notices with copies. Third-party components and
 artwork retain their own licenses.
 
 ## Rust-derived application logo
@@ -30,12 +30,9 @@ applies. This project is not affiliated with or endorsed by the Rust Foundation.
 ## Slint and Rust dependencies
 
 The Windows editor uses Slint **1.18.1** under its
-[Slint Royalty-free Desktop, Mobile, and Web Applications License 2.0](https://github.com/slint-ui/slint/blob/372cf0ee5577c3dfec309a45e7b778ba4e81b734/LICENSES/LicenseRef-Slint-Royalty-free-2.0.md).
-This is the selected license for Slint's integration into this desktop
-application. Slint's other offered license texts remain intact in the bundled
-upstream notices. Its required public attribution badge is displayed in the
-repository README. Slint remains subject to its attribution, application-use
-and redistribution conditions; the project license does not relicense it.
+[GNU GPL version 3 license](https://github.com/slint-ui/slint/blob/372cf0ee5577c3dfec309a45e7b778ba4e81b734/LICENSES/GPL-3.0-only.txt).
+Slint's other offered license texts remain intact in the bundled upstream
+notices. The README retains its public attribution badge.
 
 The unmodified light and dark attribution badges come from
 [Slint's official artwork](https://github.com/slint-ui/slint/tree/372cf0ee5577c3dfec309a45e7b778ba4e81b734/logo),
@@ -56,7 +53,8 @@ The Game Bar host uses **Microsoft.Gaming.XboxGameBar 7.3.2607010**. The package
 includes Microsoft's unchanged SDK runtime files and its complete supplied
 `Microsoft.GameBar.LICENSE.txt`. These remain under the
 [Microsoft Game Bar SDK terms supplied with that NuGet version](https://www.nuget.org/packages/Microsoft.Gaming.XboxGameBar/7.3.2607010),
-not PolyForm. The SDK terms cover distributable code and its distribution
+not the project GPL license. The additional permission in LICENSE.md permits
+linking and distributing the Game Bar host with this SDK. The SDK terms cover distributable code and its distribution
 requirements, restrictions, Microsoft services and data collection. Xbox Game
 Bar and Windows themselves are separate Microsoft products.
 

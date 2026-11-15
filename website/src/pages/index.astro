@@ -1,0 +1,18 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import SiteHeader from '../components/SiteHeader.astro';
+import Hero from '../components/Hero.astro';
+import Screenshots from '../components/Screenshots.astro';
+import RamComparison from '../components/RamComparison.astro';
+import SiteFooter from '../components/SiteFooter.astro';
+---
+
+<BaseLayout>
+  <SiteHeader />
+  <main id="main" tabindex="-1">
+    <Hero />
+    <Screenshots />
+    <RamComparison />
+  </main>
+  <SiteFooter />
+</BaseLayout>

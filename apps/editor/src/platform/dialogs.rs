@@ -80,7 +80,7 @@ pub fn open_url(owner: HWND, url: &str) -> Result<()> {
     ensure!(
         url.starts_with("https://github.com/ohne-b/crosshair-rs")
             || url == "https://slint.dev"
-            || url == "https://polyformproject.org/licenses/noncommercial/1.0.0/",
+            || url == "https://www.gnu.org/licenses/gpl-3.0.en.html",
         "This link is not an application link"
     );
     let result = unsafe {

@@ -1,0 +1,165 @@
+---
+import { site } from '../data/site';
+import ExternalArrow from './ExternalArrow.astro';
+---
+
+<header class="site-header">
+  <nav class="pill-nav" aria-label="Main navigation">
+    <a class="brand" href="#main" aria-label="crosshair-rs home">
+      <span class="brand-icon">
+        <img src={import.meta.env.BASE_URL + "assets/logo.svg"} width="30" height="30" alt="" />
+      </span>
+      <span>
+        crosshair<span class="brand-suffix">-rs</span>
+      </span>
+    </a>
+    <div class="nav-links">
+      <a href={site.guide} target="_blank" rel="noopener noreferrer">
+        Guide <ExternalArrow />
+      </a>
+      <a
+        class="github-link"
+        href={site.repository}
+        target="_blank"
+        rel="noopener noreferrer"
+      >
+        <img
+          src={import.meta.env.BASE_URL + "assets/icons/brand-github.svg"}
+          width="19"
+          height="19"
+          alt=""
+        />
+        <span>GitHub</span>
+      </a>
+    </div>
+  </nav>
+</header>
+
+<style>
+  .site-header {
+    position: absolute;
+    top: 24px;
+    left: 0;
+    right: 0;
+    z-index: 10;
+  }
+  .pill-nav {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: min(540px, calc(100% - 40px));
+    height: 62px;
+    margin: auto;
+    padding: 8px 12px 8px 14px;
+    border: 1px solid #333537;
+    border-radius: 100px;
+    background: #1a1b1d;
+    box-shadow: 0 4px 24px #00000014;
+  }
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    text-decoration: none;
+    font-size: 16px;
+    font-weight: 500;
+    letter-spacing: -0.4px;
+    min-height: 44px;
+    color: var(--p-ink);
+  }
+  .brand-icon {
+    display: grid;
+    place-items: center;
+    width: 34px;
+    height: 34px;
+    flex: none;
+    background: transparent;
+  }
+  .brand-icon img {
+    display: block;
+    width: 34px;
+    height: 34px;
+  }
+  .brand-suffix {
+    color: #a3a5a8;
+  }
+  .nav-links {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .nav-links > a {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    min-height: 44px;
+    padding: 0 12px;
+    font-size: 14px;
+    font-weight: 500;
+    text-decoration: none;
+    color: #c6c7c8;
+    border-radius: 24px;
+    transition:
+      color 0.15s,
+      background 0.15s;
+  }
+  .nav-links > a:hover {
+    background: #27292b;
+    color: #fff;
+  }
+  .nav-links a span[aria-hidden] {
+    color: #999;
+    font-size: 16px;
+  }
+  .github-link img {
+    filter: brightness(1.2);
+  }
+  @media (max-width: 639px) {
+    .site-header {
+      top: 16px;
+    }
+    .pill-nav {
+      height: 58px;
+      width: calc(100% - 32px);
+      padding: 6px 8px 6px 12px;
+    }
+    .brand {
+      font-size: 14px;
+      gap: 8px;
+    }
+    .brand-icon,
+    .brand-icon img {
+      width: 30px;
+      height: 30px;
+    }
+    .nav-links {
+      gap: 0;
+    }
+    .nav-links > a {
+      padding: 0 10px;
+      font-size: 13px;
+      gap: 5px;
+    }
+    .github-link img {
+      display: none;
+    }
+  }
+  @media (max-width: 359px) {
+    .brand {
+      gap: 4px;
+      font-size: 12px;
+    }
+    .brand-icon,
+    .brand-icon img {
+      width: 25px;
+      height: 25px;
+    }
+    .nav-links > a {
+      padding: 0 7px;
+    }
+    .pill-nav {
+      padding-left: 10px;
+    }
+  }
+</style>
