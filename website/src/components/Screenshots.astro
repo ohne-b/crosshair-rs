@@ -1,0 +1,51 @@
+---
+const screens = [
+  { id: 'browse', label: 'Browse', alt: 'Browse the built-in crosshair collection' },
+  { id: 'designer', label: 'Designer', alt: 'Edit a layered crosshair in the designer' },
+  { id: 'shortcuts', label: 'Shortcuts', alt: 'Set keyboard and mouse shortcuts for crosshairs' },
+];
+---
+
+<section class="screenshots wrap" aria-label="Inside crosshair-rs">
+  <fieldset aria-label="Screenshot view">
+    {screens.map((screen, index) => (
+      <label>
+        <input type="radio" name="screenshot" value={screen.id} checked={index === 0} />
+        <span>{screen.label}</span>
+      </label>
+    ))}
+  </fieldset>
+  {screens.map((screen) => (
+    <figure class={screen.id}>
+      <img
+        src={`/assets/screenshots/${screen.id}.webp`}
+        width="2424"
+        height="1544"
+        alt={screen.alt}
+        loading="lazy"
+        decoding="async"
+      />
+    </figure>
+  ))}
+</section>
+
+<style>
+  .screenshots { padding-block: 16px 64px; }
+  fieldset { display: flex; justify-content: center; gap: 8px; border: 0; padding: 0; margin: 0 0 24px; }
+  label { position: relative; cursor: pointer; }
+  input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+  span { display: block; padding: 10px 20px; border-radius: 10px; font-size: 14px; color: var(--p-muted); }
+  label:hover span { background: #1b1c1e; color: var(--p-ink); }
+  input:checked + span { background: #262729; color: var(--p-ink); }
+  input:focus-visible + span { outline: 2px solid var(--p-accent); outline-offset: 3px; }
+  figure { display: none; margin: 0; }
+  .screenshots:has(input[value='browse']:checked) .browse,
+  .screenshots:has(input[value='designer']:checked) .designer,
+  .screenshots:has(input[value='shortcuts']:checked) .shortcuts { display: block; }
+  img { width: 100%; height: auto; }
+  @media (max-width: 639px) {
+    .screenshots { padding-block: 8px 32px; }
+    fieldset { gap: 4px; margin-bottom: 16px; }
+    span { padding: 10px 14px; font-size: 13px; }
+  }
+</style>

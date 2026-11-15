@@ -1,0 +1,152 @@
+---
+import { site } from '../data/site';
+import ExternalArrow from './ExternalArrow.astro';
+---
+
+<footer class="site-footer">
+  <div class="wrap">
+    <div class="footer-row">
+      <span class="footer-name">crosshair-rs</span>
+      <div class="footer-links">
+        <a href={site.issues} target="_blank" rel="noopener noreferrer">
+          Report a bug <ExternalArrow />
+        </a>
+        <a href={site.license} target="_blank" rel="noopener noreferrer">
+          License <ExternalArrow />
+        </a>
+        <details class="credits">
+          <summary>Credits</summary>
+          <p>
+            Logo adapted from the{' '}
+            <a
+              href="https://github.com/rust-lang/rust-artwork/blob/main/logo/rust-logo-gear-only.svg"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Rust Foundation artwork
+            </a>{' '}
+            under{' '}
+            <a
+              href="https://creativecommons.org/licenses/by/4.0/"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              CC BY 4.0
+            </a>
+            ; colours and symbol modified. Browse presets: © 2026 OhneB,{' '}
+            <a href="/assets/presets/LICENSE.md">project license</a>. Icons:
+            Tabler, MIT. Typeface: Manrope, SIL OFL.
+          </p>
+        </details>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<style>
+  .site-footer {
+    padding: 0 0 24px;
+    font-size: 13px;
+    color: #96999d;
+  }
+  .footer-row {
+    border-top: 1px solid #292b2e;
+    padding-top: 20px;
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 24px;
+  }
+  .footer-name {
+    line-height: 44px;
+  }
+  .footer-links {
+    display: flex;
+    gap: 24px;
+    align-items: flex-start;
+  }
+  .footer-links > a,
+  .credits > summary {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    min-height: 44px;
+    color: #aeb0b4;
+    font-size: 13px;
+    text-decoration: none;
+    cursor: pointer;
+  }
+  .footer-links > a:hover,
+  .credits > summary:hover {
+    color: #f1f1ef;
+  }
+  .credits {
+    position: relative;
+    flex-basis: auto;
+  }
+  .credits > summary::after,
+  .credits[open] > summary::after {
+    content: none;
+  }
+  .credits > summary {
+    list-style: none;
+  }
+  .credits > summary::-webkit-details-marker {
+    display: none;
+  }
+  .credits p {
+    max-width: 400px;
+    width: 300px;
+    position: absolute;
+    right: 0;
+    bottom: 52px;
+    background: #222427;
+    border: 1px solid #393b3e;
+    border-radius: 12px;
+    padding: 16px;
+    font-size: 13px;
+    line-height: 1.7;
+    color: #c6c7c8;
+    box-shadow: 0 8px 32px #0008;
+  }
+  .credits p a {
+    color: #f1f1ef;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+  @media (max-width: 639px) {
+    .site-footer {
+      padding-bottom: 20px;
+    }
+    .footer-row {
+      position: relative;
+      gap: 12px;
+      padding-top: 12px;
+    }
+    .footer-name {
+      font-size: 12px;
+    }
+    .footer-links {
+      gap: 14px;
+    }
+    .footer-links > a,
+    .credits > summary {
+      font-size: 12px;
+    }
+    .credits {
+      position: static;
+    }
+    .credits p {
+      width: min(300px, 100%);
+    }
+  }
+  @media (max-width: 359px) {
+    .footer-row {
+      flex-direction: column;
+      gap: 0;
+    }
+    .footer-links {
+      gap: 24px;
+    }
+  }
+</style>

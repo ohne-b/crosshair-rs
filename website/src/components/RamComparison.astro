@@ -1,0 +1,221 @@
+---
+import { ramComparison } from '../data/ram';
+import { createComparison, type ComparisonData } from '../lib/ram';
+interface Props {
+  data?: ComparisonData;
+}
+const { data = ramComparison } = Astro.props;
+const comparison = createComparison(data);
+---
+
+<section class="ram-comparison" aria-labelledby="ram-heading">
+  <div class="wrap">
+    <div class="ram-head">
+      <h2 id="ram-heading">{comparison.heading}</h2>
+    </div>
+    <div class="ram-charts">
+      {comparison.charts.map((chart) => (
+        <div class="ram-chart">
+          <h3>{chart.name}</h3>
+          <ul
+            class="ram-columns"
+            aria-label={`${chart.name}: ${comparison.estimated ? 'estimated RAM usage' : 'memory used by each app'}`}
+          >
+            {chart.bars.map((bar) => (
+              <li class:list={['ram-column', { ours: bar.ours }]}>
+                <div
+                  class="ram-bar-space"
+                  style={`--bar-height: ${bar.percent}%`}
+                >
+                  <span class="ram-amount">{bar.label}</span>
+                  <div class="ram-bar" aria-hidden="true"></div>
+                </div>
+                <a
+                  class="ram-label"
+                  href={bar.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  {bar.name}
+                </a>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ))}
+    </div>
+    {data.status === 'measured' && (
+      <div class="ram-method">
+        <p>
+          Overlay active in both tests. Same scale. Measured on {data.testedOn}.
+        </p>
+        <details>
+          <summary>Test setup</summary>
+          <p>{data.method}</p>
+          <p>{data.system}</p>
+          <p>
+            {data.apps.map((app) => `${app.id} ${app.version}`).join(' · ')}
+          </p>
+        </details>
+      </div>
+    )}
+  </div>
+</section>
+<style>
+  .ram-comparison {
+    height: auto;
+    min-height: 0;
+    padding: 8px 0 56px;
+    display: block;
+  }
+  .ram-comparison[hidden] {
+    display: none;
+  }
+  .ram-comparison > .wrap {
+    display: block;
+    height: auto;
+  }
+  .ram-head {
+    margin-bottom: 28px;
+  }
+  .ram-head h2 {
+    font-size: 28px;
+    font-weight: 500;
+    letter-spacing: -1px;
+    margin: 0;
+  }
+  .ram-charts {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 48px;
+  }
+  .ram-chart {
+    min-width: 0;
+    border-top: 1px solid #333538;
+    padding-top: 22px;
+  }
+  .ram-chart h3 {
+    font-size: 18px;
+    line-height: 1.4;
+    font-weight: 500;
+    letter-spacing: -0.3px;
+    margin: 0 0 16px;
+  }
+  .ram-columns {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 16px;
+    list-style: none;
+    padding: 30px 0 0;
+    margin: 0;
+  }
+  .ram-column {
+    display: grid;
+    justify-items: center;
+    grid-template-rows: 210px auto;
+    min-width: 0;
+    padding: 0;
+    margin: 0;
+  }
+  .ram-bar-space {
+    position: relative;
+    display: flex;
+    align-items: flex-end;
+    width: min(80px, 100%);
+    height: 100%;
+    background: none;
+  }
+  .ram-bar {
+    width: 100%;
+    height: var(--bar-height);
+    background: #81858a;
+    border-radius: 6px 6px 0 0;
+  }
+  .ram-amount {
+    position: absolute;
+    bottom: calc(var(--bar-height) + 10px);
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 16px;
+    line-height: 24px;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  .ram-label {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 44px;
+    margin-top: 6px;
+    text-align: center;
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--p-ink);
+    text-decoration: none;
+    white-space: nowrap;
+  }
+  .ram-label:hover {
+    text-decoration: underline;
+    text-underline-offset: 4px;
+  }
+  .ram-column.ours .ram-bar {
+    background: var(--p-accent);
+  }
+  .ram-column.ours .ram-amount,
+  .ram-column.ours .ram-label {
+    color: var(--p-accent);
+  }
+  .ram-method {
+    color: #aeb0b4;
+    font-size: 13px;
+    line-height: 1.65;
+    margin: 24px 0 0;
+    max-width: 800px;
+  }
+  .ram-method details {
+    margin-top: 8px;
+  }
+  .ram-method summary {
+    cursor: pointer;
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+    text-decoration: underline;
+    text-underline-offset: 4px;
+  }
+  .ram-method details p {
+    margin: 0 0 8px;
+  }
+  @media (max-width: 767px) {
+    .ram-charts {
+      grid-template-columns: 1fr;
+      gap: 30px;
+    }
+  }
+  @media (max-width: 639px) {
+    .ram-head {
+      margin-bottom: 24px;
+    }
+    .ram-head h2 {
+      font-size: 24px;
+    }
+    .ram-chart h3 {
+      font-size: 17px;
+    }
+    .ram-columns {
+      gap: 12px;
+    }
+    .ram-column {
+      grid-template-rows: 180px auto;
+    }
+    .ram-bar-space {
+      width: min(60px, 100%);
+    }
+    .ram-amount {
+      font-size: 14px;
+    }
+    .ram-label {
+      font-size: 12px;
+    }
+  }
+</style>

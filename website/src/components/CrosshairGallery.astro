@@ -1,0 +1,157 @@
+---
+import { presets } from '../data/presets';
+---
+
+<div
+  class="crosshair-stage"
+  role="img"
+  aria-label={`Browse presets from the app: ${presets.map((preset) => preset.name).join(', ')}`}
+>
+  <div class="stage-axis axis-horizontal" aria-hidden="true"></div>
+  <div class="stage-axis axis-vertical" aria-hidden="true"></div>
+  <div class="focus-grid" aria-hidden="true"></div>
+  {presets.map((preset) => (
+    <div
+      class:list={['reticle', { 'reticle-main': preset.featured }]}
+      aria-hidden="true"
+    >
+      <img
+        src={`/assets/presets/${preset.file}.svg`}
+        width={preset.featured ? 146 : 68}
+        height={preset.featured ? 146 : 68}
+        alt=""
+        title={preset.name}
+      />
+    </div>
+  ))}
+</div>
+
+<style>
+  .crosshair-stage {
+    position: relative;
+    isolation: isolate;
+    height: 260px;
+    width: 100%;
+    margin-top: 36px;
+    display: grid;
+    grid-template-columns: 1fr 1fr 1.5fr 1fr 1fr;
+    align-items: center;
+    gap: 20px;
+    overflow: hidden;
+  }
+  .focus-grid {
+    position: absolute;
+    z-index: -1;
+    inset: 0;
+    pointer-events: none;
+    background-image:
+      linear-gradient(#f1f1ef0a 1px, transparent 1px),
+      linear-gradient(90deg, #f1f1ef0a 1px, transparent 1px);
+    background-size: 24px 24px;
+    background-position: center;
+    mask-image: radial-gradient(
+      ellipse 230px 130px at center,
+      black,
+      transparent
+    );
+  }
+  .stage-axis {
+    position: absolute;
+    z-index: -1;
+    pointer-events: none;
+    background: #ffffff0b;
+  }
+  .axis-horizontal {
+    height: 1px;
+    left: 8%;
+    right: 8%;
+    top: 50%;
+    mask-image: linear-gradient(
+      90deg,
+      transparent,
+      black 30%,
+      black 70%,
+      transparent
+    );
+  }
+  .axis-vertical {
+    width: 1px;
+    top: 5%;
+    bottom: 5%;
+    left: 50%;
+    mask-image: linear-gradient(transparent, black 30%, black 70%, transparent);
+  }
+  .reticle {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #969a9e;
+  }
+  .reticle img {
+    display: block;
+    width: 68px;
+    height: 68px;
+  }
+  .reticle-main {
+    color: var(--p-accent);
+  }
+  .reticle-main img {
+    width: 146px;
+    height: 146px;
+  }
+  .crosshair-stage {
+    animation: gallery-enter 0.7s 0.1s ease-out both;
+  }
+  @keyframes gallery-enter {
+    from {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+  @media (min-width: 1600px) {
+    .crosshair-stage {
+      height: 285px;
+    }
+  }
+  @media (max-width: 1023px) {
+    .crosshair-stage {
+      height: 235px;
+    }
+  }
+  @media (max-width: 639px) {
+    .crosshair-stage {
+      height: 188px;
+      margin-top: 12px;
+      gap: 4px;
+      grid-template-columns: 0.65fr 1fr 1.65fr 1fr 0.65fr;
+    }
+    .reticle img {
+      width: 44px;
+      height: 44px;
+    }
+    .reticle-main img {
+      width: 108px;
+      height: 108px;
+    }
+    .focus-grid {
+      background-size: 20px 20px;
+      mask-image: radial-gradient(
+        ellipse 130px 90px at center,
+        black,
+        transparent
+      );
+    }
+  }
+  @media (max-width: 359px) {
+    .crosshair-stage {
+      gap: 0;
+    }
+    .reticle-main img {
+      width: 94px;
+    }
+  }
+</style>
