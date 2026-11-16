@@ -38,6 +38,9 @@ import CrosshairGallery from './CrosshairGallery.astro';
     </div>
 
     <CrosshairGallery />
+    <a class="scroll-link" href="#screenshots">
+      Explore the app <span aria-hidden="true">↓</span>
+    </a>
   </div>
 </section>
 
@@ -47,14 +50,10 @@ import CrosshairGallery from './CrosshairGallery.astro';
 
 <style>
   .hero {
-    display: block;
-    height: auto;
-    min-height: 0;
-    padding: 161px 0 0;
-    overflow: visible;
-  }
-  .hero > .wrap {
-    display: block;
+    display: grid;
+    align-content: center;
+    min-height: 100svh;
+    padding: clamp(128px, 15svh, 176px) 0 56px;
   }
   .hero-text {
     text-align: center;
@@ -139,6 +138,27 @@ import CrosshairGallery from './CrosshairGallery.astro';
   .source-link:hover {
     border-color: var(--p-ink);
   }
+  .scroll-link {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: fit-content;
+    min-height: 44px;
+    margin: 24px auto 0;
+    color: var(--p-muted);
+    font-size: 12px;
+    text-decoration: none;
+    transition: color 0.2s;
+  }
+  .scroll-link span {
+    transition: transform 0.2s;
+  }
+  .scroll-link:is(:hover, :focus-visible) {
+    color: var(--p-ink);
+  }
+  .scroll-link:is(:hover, :focus-visible) span {
+    transform: translateY(3px);
+  }
   .hero-text {
     animation: hero-enter 0.6s ease-out both;
   }
@@ -152,11 +172,6 @@ import CrosshairGallery from './CrosshairGallery.astro';
       transform: translateY(0);
     }
   }
-  @media (min-width: 1600px) {
-    .hero {
-      padding-top: 175px;
-    }
-  }
   @media (max-width: 1023px) {
     .hero h1 {
       font-size: 64px;
@@ -164,7 +179,7 @@ import CrosshairGallery from './CrosshairGallery.astro';
   }
   @media (max-width: 639px) {
     .hero {
-      padding-top: 129px;
+      padding: 112px 0 40px;
     }
     .hero h1 {
       font-size: clamp(34px, 8.6vw, 54px);
