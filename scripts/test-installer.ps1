@@ -27,6 +27,7 @@ try {
     } finally { $archive.Dispose() }
     $fixture = Join-Path $directory 'fixture.exe'
     & (Join-Path $PSScriptRoot 'build-setup.ps1') -Package $package -Framework $framework -Output $fixture -Version '0.1.0-alpha.1' -Offline | Out-Null
+    $compilerPath = $env:Path
     Run-Check $fixture '/S /VERIFYONLY'
     Run-Check $fixture '/S /VERIFYONLY /DESKTOP=1 /STARTMENU=1 /STARTUP=1'
     Run-Check $fixture '/S /VERIFYONLY /DESKTOP=invalid' $false
@@ -45,6 +46,7 @@ try {
     Run-Check $helper '--verify' $false
     $damagedSetup = Join-Path $directory 'damaged-framework.exe'
     & (Join-Path $PSScriptRoot 'build-setup.ps1') -Package $package -Framework $framework -Output $damagedSetup -Version '0.1.0-alpha.1' -Offline | Out-Null
+    if ($env:Path -cne $compilerPath) { throw 'Repeated setup builds changed the compiler PATH.' }
     Run-Check $damagedSetup '/S /VERIFYONLY' $false -2147467259 # E_FAIL from the native hash check.
     Copy-Item -LiteralPath (Join-Path $ArtifactDirectory 'Microsoft.VCLibs.x64.14.00.appx') -Destination $framework -Force
     Run-Check $helper '--verify'

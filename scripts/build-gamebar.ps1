@@ -5,6 +5,7 @@ param(
     [switch]$Offline
 )
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'windows-tools.ps1')
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $buildRoot = Join-Path $repoRoot 'target/gamebar'
 $dependencies = Join-Path $buildRoot 'deps'
@@ -27,17 +28,7 @@ function Restore-PinnedPackage([string]$Name, [string]$Version, [string]$Sha256)
 
 $gamebar = Restore-PinnedPackage 'microsoft.gaming.xboxgamebar' '7.3.2607010' '20230e0a1544ebb391764e13cdbaa1eda86239968444b599fcc9fa1e3d748ff1'
 $cppwinrt = Restore-PinnedPackage 'microsoft.windows.cppwinrt' '2.0.250303.1' '955e3051b35db1c00177ed14ab6b7b995c3b32a53fdb6c184ea53b1dba66e439'
-$vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio/Installer/vswhere.exe'
-if (!(Test-Path -LiteralPath $vswhere)) { throw 'Install Visual Studio 2022 C++ build tools and Windows SDK 10.0.26100.' }
-$vsPath = & $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
-if (!$vsPath) { throw 'Visual Studio C++ build tools are missing.' }
-$env:Path = (Split-Path -Parent $vswhere) + ';' + $env:Path
-$vcvars = Join-Path $vsPath 'VC/Auxiliary/Build/vcvars64.bat'
-$environmentLines = & $env:ComSpec /d /c ('call "' + $vcvars + '" >nul && set')
-if ($LASTEXITCODE -ne 0) { throw 'Could not load the x64 compiler environment.' }
-foreach ($line in $environmentLines) {
-    if ($line -match '^([^=]+)=(.*)$') { [Environment]::SetEnvironmentVariable($matches[1], $matches[2], 'Process') }
-}
+Initialize-X64Compiler
 $sdk = Join-Path ${env:ProgramFiles(x86)} 'Windows Kits/10'
 $sdkVersion = '10.0.26100.0'
 $metadata = Join-Path $sdk "UnionMetadata/$sdkVersion/Windows.winmd"
