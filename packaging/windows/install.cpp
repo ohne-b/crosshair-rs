@@ -163,7 +163,13 @@ DWORD activate(std::wstring const& app, std::wstring const& arguments) {
     return process;
 }
 
-void enable_startup(Windows::ApplicationModel::Package const& package, fs::path const& directory) {
+void enable_startup(Windows::ApplicationModel::Package const& package) {
+    PWSTR local{};
+    check_hresult(SHGetKnownFolderPath(FOLDERID_LocalAppData, 0, nullptr, &local));
+    auto directory = fs::path(local) / L"Packages" / std::wstring(package.Id().FamilyName()) / L"LocalState";
+    CoTaskMemFree(local);
+    // A new reply in setup's AppData temp folder can be redirected away from the unpackaged reader.
+    fs::create_directories(directory);
     GUID id{};
     check_hresult(CoCreateGuid(&id));
     wchar_t name[40]{};
@@ -268,7 +274,7 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int) {
             if (args[3] != L"keep") option(args[3]);
             auto startup = option(args[4]);
             // An unchecked option must not disable an existing sign-in preference on upgrade.
-            if (startup) enable_startup(package_info, directory);
+            if (startup) enable_startup(package_info);
             std::wstring name = package_info.Id().Name() == L"OhneB.crosshair-rs.Preview" ? L"crosshair-rs Preview" : L"crosshair-rs";
             if (args[2] != L"keep") shortcut(FOLDERID_Desktop, name, app, option(args[2]));
             if (args[3] != L"keep") shortcut(FOLDERID_Programs, name, app, option(args[3]));

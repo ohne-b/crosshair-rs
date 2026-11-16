@@ -38,7 +38,7 @@ function Run-Setup([string]$Arguments) {
     $process = Start-Process -FilePath $setup -ArgumentList $Arguments -WindowStyle Hidden -PassThru
     try {
         if (!$process.WaitForExit(180000)) { $process.Kill(); $process.WaitForExit(); throw 'Setup installation timed out.' }
-        if ($process.ExitCode) { throw "Setup failed for $Arguments (exit $($process.ExitCode))." }
+        if ($process.ExitCode) { throw ('Setup failed for {0} (Windows error 0x{1:X8}).' -f $Arguments, $process.ExitCode) }
     } finally { $process.Dispose() }
 }
 function Activate-Request([string]$Arguments) {
@@ -75,6 +75,7 @@ try {
     $engineApp = $installed.PackageFamilyName + '!Engine'
     $statePath = Join-Path $env:LOCALAPPDATA ('Packages/' + $installed.PackageFamilyName + '/LocalState/state.json')
     if (!(Get-Content -LiteralPath $statePath -Raw | ConvertFrom-Json).settings.launch_at_login) { throw 'The installer startup option was not saved.' }
+    if (Get-ChildItem -LiteralPath (Split-Path -Parent $statePath) -Filter 'startup-*.txt') { throw 'Setup left its startup reply behind.' }
     $shell = New-Object -ComObject Shell.Application
     foreach ($shortcut in $shortcuts) {
         if (!(Test-Path -LiteralPath $shortcut)) { throw 'An enabled installer shortcut is missing.' }

@@ -37,7 +37,9 @@ Var DesktopControl
 Var StartMenuControl
 Var StartupControl
 Var ApplyOptions
+Var FailureCode
 Function .onInit
+    StrCpy $FailureCode 1
     StrCpy $Mode "install"
     StrCpy $DesktopShortcut 1
     StrCpy $StartMenuShortcut 1
@@ -171,6 +173,10 @@ Section "Install"
     Pop $2
     ${If} $1 != 0
         DetailPrint "$2"
+        ${If} $1 != "error"
+        ${AndIf} $1 != "timeout"
+            StrCpy $FailureCode $1
+        ${EndIf}
         Goto failed
     ${EndIf}
     ${If} $Mode == "install"
@@ -183,13 +189,17 @@ Section "Install"
         Pop $2
         ${If} $1 != 0
             DetailPrint "$2"
+            ${If} $1 != "error"
+            ${AndIf} $1 != "timeout"
+                StrCpy $FailureCode $1
+            ${EndIf}
             Goto failed
         ${EndIf}
     ${EndIf}
     SetErrorLevel 0
     Goto done
 failed:
-    SetErrorLevel 1
+    SetErrorLevel $FailureCode
     Abort
 done:
 SectionEnd

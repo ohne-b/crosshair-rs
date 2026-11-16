@@ -9,11 +9,12 @@ $directory = Join-Path $root ("quoted ' `$ path-" + [Guid]::NewGuid().ToString('
 New-Item -ItemType Directory -Path $directory -Force | Out-Null
 $package = Join-Path $directory 'package.msix'
 $framework = Join-Path $directory 'Microsoft.VCLibs.x64.14.00.appx'
-function Run-Check([string]$Executable, [string]$Arguments, [bool]$Success = $true) {
+function Run-Check([string]$Executable, [string]$Arguments, [bool]$Success = $true, [Nullable[int]]$ExpectedExitCode = $null) {
     $process = Start-Process -FilePath $Executable -ArgumentList $Arguments -WindowStyle Hidden -PassThru
     try {
         if (!$process.WaitForExit(60000)) { $process.Kill(); $process.WaitForExit(); throw 'Installer check timed out.' }
         if (($process.ExitCode -eq 0) -ne $Success) { throw "Unexpected result for $Arguments (exit $($process.ExitCode))." }
+        if ($null -ne $ExpectedExitCode -and $process.ExitCode -ne $ExpectedExitCode) { throw 'Setup did not preserve the native helper error code.' }
     } finally { $process.Dispose() }
 }
 try {
@@ -42,6 +43,9 @@ try {
     [IO.File]::WriteAllBytes($package, $original)
     [IO.File]::AppendAllText($framework, 'tampered')
     Run-Check $helper '--verify' $false
+    $damagedSetup = Join-Path $directory 'damaged-framework.exe'
+    & (Join-Path $PSScriptRoot 'build-setup.ps1') -Package $package -Framework $framework -Output $damagedSetup -Version '0.1.0-alpha.1' -Offline | Out-Null
+    Run-Check $damagedSetup '/S /VERIFYONLY' $false -2147467259 # E_FAIL from the native hash check.
     Copy-Item -LiteralPath (Join-Path $ArtifactDirectory 'Microsoft.VCLibs.x64.14.00.appx') -Destination $framework -Force
     Run-Check $helper '--verify'
     $wrongVersionRejected = $false
