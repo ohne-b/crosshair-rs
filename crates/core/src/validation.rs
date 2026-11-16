@@ -522,6 +522,13 @@ pub fn validate_action_conflicts(
             "Aim and Fire require a key or mouse button with a release",
         )?;
     }
+    for chord in actions.movement.iter().flatten() {
+        require(
+            matches!(chord.trigger, InputKey::Keyboard { .. }),
+            "actions.movement",
+            "Movement requires keyboard keys",
+        )?;
+    }
     let mut chords: Vec<_> = bindings
         .iter()
         .filter(|b| b.enabled)

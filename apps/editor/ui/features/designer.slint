@@ -367,6 +367,7 @@ export component Designer inherits Rectangle {
                             HorizontalLayout { spacing: 6px;
                                 PreviewTrigger { text: "Aim"; trigger: "aim"; horizontal-stretch: 1; }
                                 PreviewTrigger { text: "Fire"; trigger: "fire"; horizontal-stretch: 1; }
+                                PreviewTrigger { text: "Move"; trigger: "movement"; label: "Preview movement"; horizontal-stretch: 1; }
                                 ActionButton { text: "Reset"; clicked => { Store.action("animation-preview", "reset"); } }
                             }
                             if Store.animation-playing: ActionButton { text: "Stop"; icon: @image-url("../../../../assets/icons/x.svg"); clicked => { Store.action("animation-stop", ""); } }

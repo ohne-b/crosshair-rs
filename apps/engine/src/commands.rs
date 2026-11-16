@@ -240,6 +240,7 @@ impl App {
                 expected_revision,
             } => {
                 self.expect_revision(expected_revision)?;
+                let profile = *profile;
                 let mut next = self.state.clone();
                 if let Some(stored) = next.profiles.iter_mut().find(|p| p.id == profile.id) {
                     *stored = profile;

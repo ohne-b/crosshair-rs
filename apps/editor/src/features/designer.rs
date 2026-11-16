@@ -222,12 +222,12 @@ pub fn animation_fields(layer: &Layer, fonts: &[String]) -> Vec<Field> {
         Field::choice(
             "/animation/trigger",
             "Trigger",
-            if a.trigger == AnimationTrigger::Fire {
-                "fire"
-            } else {
-                "aim"
+            match a.trigger {
+                AnimationTrigger::Fire => "fire",
+                AnimationTrigger::Aim => "aim",
+                AnimationTrigger::Movement => "movement",
             },
-            &[("fire", "Fire"), ("aim", "Aim")],
+            &[("fire", "Fire"), ("aim", "Aim"), ("movement", "Movement")],
         ),
         Field::choice(
             "/animation/activation",
@@ -1144,7 +1144,10 @@ pub fn parse_clipboard(text: &str, assets: &BTreeMap<Id, Asset>) -> Result<Vec<L
     let value: Value =
         serde_json::from_str(text).context("The clipboard does not contain crosshair layers")?;
     ensure!(
-        value["format"] == "crosshair-rs-layers-1" || value["format"] == "crosshair-rs-layers-2",
+        matches!(
+            value["format"].as_str(),
+            Some("crosshair-rs-layers-1" | "crosshair-rs-layers-2" | "crosshair-rs-layers-3")
+        ),
         "The clipboard does not contain crosshair layers"
     );
     let layers: Vec<Layer> = serde_json::from_value(value["layers"].clone())?;
@@ -1213,7 +1216,18 @@ mod tests {
             parse_clipboard(&v2.to_string(), &BTreeMap::new()).unwrap(),
             preset.layers
         );
-        let future = json!({"format": "crosshair-rs-layers-3", "layers": preset.layers});
+        apply_animation_field(&mut preset.layers[0], "/animation/trigger", "movement", &[])
+            .unwrap();
+        assert_eq!(
+            preset.layers[0].animation.as_ref().unwrap().trigger,
+            AnimationTrigger::Movement
+        );
+        let v3 = json!({"format": "crosshair-rs-layers-3", "layers": preset.layers});
+        assert_eq!(
+            parse_clipboard(&v3.to_string(), &BTreeMap::new()).unwrap(),
+            preset.layers
+        );
+        let future = json!({"format": "crosshair-rs-layers-4", "layers": preset.layers});
         assert!(parse_clipboard(&future.to_string(), &BTreeMap::new()).is_err());
         let mut layer = Layer::new(
             "Image",

@@ -87,6 +87,33 @@ fn app(ui: &AppWindow) -> App {
     }
 }
 
+#[test]
+fn startup_toggle_uses_windows_state_and_always_requests_reconciliation() -> Result<()> {
+    let ui = window();
+    let mut app = app(&ui);
+    let (client, commands) = Client::recording_for_test();
+    app.client = client;
+    app.state.settings.launch_at_login = true;
+    app.status.startup_enabled = Some(false);
+    app.refresh_status();
+    assert!(!ui.global::<Store>().get_startup());
+    assert!(ui.global::<Store>().get_startup_known());
+    app.action("startup", "true")?;
+    assert!(matches!(
+        &commands()[..],
+        [Command::SetStartup { enabled: true }]
+    ));
+    app.status.startup_enabled = Some(true);
+    app.refresh_status();
+    assert!(ui.global::<Store>().get_startup());
+    app.status.startup_enabled = None;
+    app.refresh_status();
+    assert!(!ui.global::<Store>().get_startup());
+    assert!(!ui.global::<Store>().get_startup_known());
+    ui.hide()?;
+    Ok(())
+}
+
 fn pointer(ui: &AppWindow, kind: i32, x: f32, y: f32) {
     let position = slint::LogicalPosition::new(x, y);
     let button = slint::platform::PointerEventButton::Left;
@@ -197,6 +224,7 @@ fn preview_frames_never_edit_the_document_and_stale_bitmaps_are_ignored() -> Res
     let mut app = app(&ui);
     let mut preset = app.state.presets[0].clone();
     preset.layers[0].animation = Some(Animation {
+        trigger: AnimationTrigger::Movement,
         target: AnimationTarget {
             x: Some(12.0),
             ..Default::default()
@@ -207,7 +235,7 @@ fn preview_frames_never_edit_the_document_and_stale_bitmaps_are_ignored() -> Res
     app.animate = true;
     let (client, commands) = Client::recording_for_test();
     app.client = client;
-    app.preview_input("fire-down")?;
+    app.preview_input("movement-down")?;
     assert!(app.playing);
     assert!(
         !app.playback_timer.running(),
@@ -240,12 +268,12 @@ fn preview_frames_never_edit_the_document_and_stale_bitmaps_are_ignored() -> Res
         result: Ok((bitmap(), 1.0)),
     }))?;
     assert_eq!(ui.global::<Store>().get_preview_x(), 42.0);
-    app.preview_input("fire-up")?;
+    app.preview_input("movement-up")?;
     assert!(
         !app.playing,
         "A late release cannot restart a stopped session"
     );
-    app.preview_input("fire-down")?;
+    app.preview_input("movement-down")?;
     app.action("navigate", "2")?;
     let hidden_generation = app.playback_generation;
     app.action("navigate", "1")?;
@@ -353,6 +381,60 @@ fn captures_pin_profiles_reject_pulses_and_replace_roles_atomically() -> Result<
 }
 
 #[test]
+fn movement_capture_rebinds_clears_and_replaces_conflicts() -> Result<()> {
+    use crate::features::keybinds::Target;
+    let ui = window();
+    let mut app = app(&ui);
+    let (client, commands) = Client::recording_for_test();
+    app.client = client;
+    app.begin_capture(Capture::Role(Target::Forward))?;
+    commands();
+    app.complete_capture(Some(InputChord::key(0x21)))?;
+    assert!(matches!(
+        &commands()[..], [Command::SetBindings { profiles, .. }]
+        if profiles[0].actions.movement[0] == Some(InputChord::key(0x21))
+            && profiles[0].actions.movement[1..] == app.state.profiles[0].actions.movement[1..]
+    ));
+    app.begin_capture(Capture::Role(Target::Left))?;
+    commands();
+    assert!(
+        app.complete_capture(Some(InputChord {
+            trigger: InputKey::Pause,
+            modifiers: vec![],
+        }))
+        .is_err()
+    );
+    assert!(commands().is_empty());
+    app.action("binding-remove", "right")?;
+    assert!(matches!(
+        &commands()[..], [Command::SetBindings { profiles, .. }]
+        if profiles[0].actions.movement[3].is_none()
+    ));
+    app.begin_capture(Capture::Role(Target::Fire))?;
+    commands();
+    app.complete_capture(Some(InputChord::key(0x11)))?;
+    assert!(matches!(app.modal, Modal::Conflict(..)));
+    assert!(commands().is_empty());
+    app.confirm_modal("", false)?;
+    assert!(matches!(
+        &commands()[..], [Command::SetBindings { profiles, .. }]
+        if profiles[0].actions.movement[0].is_none()
+            && profiles[0].actions.fire == Some(InputChord::key(0x11))
+    ));
+    app.state.settings.global_toggle = Some(InputChord::key(0x11));
+    app.state.profiles[0].actions.movement[0] = None;
+    app.modal = Modal::NewProfile;
+    app.confirm_modal("New profile", false)?;
+    assert!(matches!(
+        &commands()[..], [Command::UpsertProfile { profile, .. }]
+        if profile.actions.movement[0].is_none()
+            && profile.actions.movement[1..] == ActionBindings::default().movement[1..]
+    ));
+    ui.hide()?;
+    Ok(())
+}
+
+#[test]
 fn preview_buttons_pair_pointer_keyboard_and_focus_release_edges() -> Result<()> {
     let ui = window();
     let store = ui.global::<Store>();
@@ -429,6 +511,26 @@ fn preview_buttons_pair_pointer_keyboard_and_focus_release_edges() -> Result<()>
             ("animation-preview".into(), "fire-up".into())
         ],
         "Tab reaches each preview button once"
+    );
+    events.borrow_mut().clear();
+    ui.window().dispatch_event(WindowEvent::KeyPressed {
+        text: Key::Tab.into(),
+    });
+    ui.window().dispatch_event(WindowEvent::KeyReleased {
+        text: Key::Tab.into(),
+    });
+    ui.window().dispatch_event(WindowEvent::KeyPressed {
+        text: Key::Space.into(),
+    });
+    ui.window().dispatch_event(WindowEvent::KeyReleased {
+        text: Key::Space.into(),
+    });
+    assert_eq!(
+        &*events.borrow(),
+        &[
+            ("animation-preview".into(), "movement-down".into()),
+            ("animation-preview".into(), "movement-up".into())
+        ]
     );
     ui.hide()?;
     Ok(())

@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Show Windows' actual launch-at-sign-in setting and clarify when the installed
+  app is required. Add setup options for shortcuts, sign-in and launch after install.
+
+- Add a Movement animation trigger with configurable keyboard bindings and local
+  preview. Effects respond while any movement key is held.
+
+- Keep update downloads in a compact row with separate progress text, and fix the
+  engine launch argument that prevented the app reopening after installation.
+
 ## [v0.1.0-alpha.7](https://github.com/ohne-b/crosshair-rs/releases/tag/v0.1.0-alpha.7) 2026-11-16
 
 - Add profile-specific Aim actions for visibility and saved-crosshair switching,

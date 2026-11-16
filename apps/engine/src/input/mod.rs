@@ -71,7 +71,9 @@ pub fn needs_mouse(state: &AppState, presets: &[&Preset], capture: bool, held: b
                     .is_some_and(|c| mouse(c.trigger) && animated(AnimationTrigger::Fire))
                 || profile.actions.reload.as_ref().is_some_and(|c| {
                     mouse(c.trigger)
-                        && (animated(AnimationTrigger::Aim) || animated(AnimationTrigger::Fire))
+                        && (animated(AnimationTrigger::Aim)
+                            || animated(AnimationTrigger::Fire)
+                            || animated(AnimationTrigger::Movement))
                 })
         })
 }
@@ -217,8 +219,11 @@ mod tests {
         let mut playback = crosshair_core::Playback::default();
         playback.select(
             target,
-            input.held(AnimationTrigger::Aim),
-            input.held(AnimationTrigger::Fire),
+            [
+                input.held(AnimationTrigger::Aim),
+                input.held(AnimationTrigger::Fire),
+                input.held(AnimationTrigger::Movement),
+            ],
             0,
         );
         assert!(playback.sample(target, 75).preset.layers[0].opacity < 1.0);
@@ -250,6 +255,17 @@ mod tests {
                 ..Default::default()
             },
             ..Default::default()
+        });
+        assert!(needs_mouse(&state, &[&state.presets[0]], false, false));
+        state.presets[0].layers[0]
+            .animation
+            .as_mut()
+            .unwrap()
+            .trigger = AnimationTrigger::Movement;
+        assert!(!needs_mouse(&state, &[&state.presets[0]], false, false));
+        state.profiles[0].actions.reload = Some(crosshair_core::InputChord {
+            trigger: InputKey::Mouse { button: 4 },
+            modifiers: vec![],
         });
         assert!(needs_mouse(&state, &[&state.presets[0]], false, false));
         state.presets[0].layers[0]

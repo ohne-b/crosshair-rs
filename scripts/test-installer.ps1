@@ -27,6 +27,10 @@ try {
     $fixture = Join-Path $directory 'fixture.exe'
     & (Join-Path $PSScriptRoot 'build-setup.ps1') -Package $package -Framework $framework -Output $fixture -Version '0.1.0-alpha.1' -Offline | Out-Null
     Run-Check $fixture '/S /VERIFYONLY'
+    Run-Check $fixture '/S /VERIFYONLY /DESKTOP=1 /STARTMENU=1 /STARTUP=1'
+    Run-Check $fixture '/S /VERIFYONLY /DESKTOP=invalid' $false
+    Run-Check $fixture '/S /VERIFYONLY /STARTMENU=invalid' $false
+    Run-Check $fixture '/S /VERIFYONLY /STARTUP=invalid' $false
     $helpers = @(Get-ChildItem -LiteralPath $directory -Filter 'setup-*' -Directory | ForEach-Object { Join-Path $_.FullName 'install.exe' })
     if ($helpers.Count -ne 1) { throw 'Expected exactly one fixture helper.' }
     $helper = Join-Path $directory 'install.exe'

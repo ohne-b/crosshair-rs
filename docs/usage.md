@@ -72,6 +72,13 @@ untouched properties follow Base. Reset beside a changed property restores that
 inheritance. The Enabled switch keeps an effect configured without playing it;
 **Remove animation** removes it. Changes use normal Save and undo.
 
+For an effect while moving, choose Trigger **Movement** and Activation **Hold**,
+then increase the Animated gap. **Move forward/left/backward/right** in Keybinds
+use W/A/S/D by default and can be recorded separately. The effect stays active
+until every movement key is released; **Move** previews it in Designer. Opposing
+keys also keep it active. This responds to keys, not the game's actual movement
+speed or weapon accuracy.
+
 For a simple firing effect, choose a crosshair layer, leave Trigger at **Fire** and
 Activation at **Hold**, then increase its Animated gap. The default 150 ms duration
 moves toward that gap while Fire is held and returns smoothly on release. The
@@ -87,7 +94,7 @@ hold resumes Pause. Delay applies before a fresh start, not each repeat.
 
 Reload restores all effects on the current crosshair, including paused ones;
 release held triggers before starting again. It does not change the selected
-crosshair or visibility. Aim/Fire animations work with the dashboard closed.
+crosshair or visibility. Aim/Fire/Movement animations work with the dashboard closed.
 They respond to your inputs, not a game's actual spread, recoil or ammunition.
 
 PNG/SVG exports and thumbnails show Base. Saved crosshair documents, layer copies
@@ -111,4 +118,15 @@ Closing the editor leaves the crosshair running after resolving unsaved changes.
 Reopen it through the tray's **Open menu** action. **Quit** stops the whole app.
 
 **Settings > General > Launch at sign-in** starts the overlay without opening the
-editor. Adjust the monitor, position and output scale in **Settings > Display**.
+editor. This requires the installed app; open it from Start. The switch reflects
+Windows' startup setting. If Windows has disabled it, enable crosshair-rs in
+**Windows Settings > Apps > Startup**. **Unavailable** means Windows' setting
+could not be read. Adjust the monitor, position and output scale in
+**Settings > Display**.
+
+Setup offers desktop and additional Start menu shortcuts, launch at Windows
+sign-in, and launch after installation. Windows also creates its standard Start
+entry. Sign-in starts off on a new installation; leaving its setup checkbox
+unchecked preserves an existing preference. Unchecking a shortcut removes only
+the matching shortcut created by setup. Extra shortcuts can remain after
+uninstalling the package; delete them manually if needed.

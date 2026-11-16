@@ -99,7 +99,8 @@ impl App {
         } else {
             0
         });
-        store.set_startup(self.state.settings.launch_at_login);
+        store.set_startup(self.status.startup_enabled.unwrap_or(false));
+        store.set_startup_known(self.status.startup_enabled.is_some());
         store.set_show_on_launch(self.state.settings.show_on_launch);
         store.set_check_updates(self.state.settings.check_updates);
         store.set_allow_prereleases(self.state.settings.allow_prereleases);
@@ -250,6 +251,8 @@ impl App {
         };
         let store = ui.global::<Store>();
         store.set_visible(self.status.enabled);
+        store.set_startup(self.status.startup_enabled.unwrap_or(false));
+        store.set_startup_known(self.status.startup_enabled.is_some());
         store.set_visibility_reason(if self.status.enabled && !self.status.visible {
             match self
                 .state
@@ -622,6 +625,10 @@ impl App {
                 ("aim", "Aim", &profile.actions.aim),
                 ("fire", "Fire", &profile.actions.fire),
                 ("reload", "Reload", &profile.actions.reload),
+                ("forward", "Move forward", &profile.actions.movement[0]),
+                ("left", "Move left", &profile.actions.movement[1]),
+                ("backward", "Move backward", &profile.actions.movement[2]),
+                ("right", "Move right", &profile.actions.movement[3]),
             ] {
                 rows.push(BindingRow {
                     id: id.into(),

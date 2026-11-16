@@ -66,7 +66,7 @@ fn import_file(
 }
 
 #[test]
-fn portable_v1_is_order_independent_and_v2_preserves_animations_and_aim_targets() -> Result<()> {
+fn portable_reads_old_versions_and_preserves_movement_and_aim_targets() -> Result<()> {
     use crosshair_core::{AimAction, Animation, AnimationTarget};
     let directory = tempfile::tempdir()?;
     let exports = tempfile::tempdir()?;
@@ -76,7 +76,9 @@ fn portable_v1_is_order_independent_and_v2_preserves_animations_and_aim_targets(
     state.profiles[0].actions.aim_action = AimAction::ShowPresetWhileHeld {
         preset: state.presets[1].id,
     };
+    state.profiles[0].actions.movement[0] = Some(InputChord::key(0x10));
     state.presets[1].layers[0].animation = Some(Animation {
+        trigger: crosshair_core::AnimationTrigger::Movement,
         target: AnimationTarget {
             x: Some(10.0),
             ..Default::default()
@@ -93,7 +95,7 @@ fn portable_v1_is_order_independent_and_v2_preserves_animations_and_aim_targets(
         &mut renderer,
     )?;
     let value: serde_json::Value = serde_json::from_slice(&fs::read(&path)?)?;
-    assert_eq!(value["version"], 2);
+    assert_eq!(value["version"], crosshair_core::SCHEMA_VERSION);
     let imported = import_file(
         &mut store,
         &AppState::default(),
@@ -102,11 +104,50 @@ fn portable_v1_is_order_independent_and_v2_preserves_animations_and_aim_targets(
         false,
     )?;
     let profile = imported.profiles.last().unwrap();
+    assert_eq!(profile.actions.movement, state.profiles[0].actions.movement);
     let target = profile.actions.aim_action.target().unwrap();
     assert_ne!(target, state.presets[1].id);
     assert_eq!(
         imported.preset(target).unwrap().layers[0].animation,
         state.presets[1].layers[0].animation
+    );
+    let mut v2 = value;
+    v2["version"] = 2.into();
+    v2["state"]["schema_version"] = 2.into();
+    for profile in v2["state"]["profiles"].as_array_mut().unwrap() {
+        profile["actions"]
+            .as_object_mut()
+            .unwrap()
+            .remove("movement");
+    }
+    for preset in v2["state"]["presets"].as_array_mut().unwrap() {
+        for layer in preset["layers"].as_array_mut().unwrap() {
+            if let Some(animation) = layer["animation"].as_object_mut() {
+                animation.insert("trigger".into(), "aim".into());
+            }
+        }
+    }
+    fs::write(&path, serde_json::to_vec(&v2)?)?;
+    let migrated = import_file(
+        &mut store,
+        &AppState::default(),
+        &mut renderer,
+        &path,
+        false,
+    )?;
+    let profile = migrated.profiles.last().unwrap();
+    assert_eq!(
+        profile.actions.movement,
+        crosshair_core::ActionBindings::default().movement
+    );
+    let target = profile.actions.aim_action.target().unwrap();
+    assert_eq!(
+        migrated.preset(target).unwrap().layers[0]
+            .animation
+            .as_ref()
+            .unwrap()
+            .trigger,
+        crosshair_core::AnimationTrigger::Aim
     );
     let mut legacy = serde_json::to_value(AppState::default())?;
     legacy["schema_version"] = 1.into();
@@ -126,7 +167,7 @@ fn portable_v1_is_order_independent_and_v2_preserves_animations_and_aim_targets(
         ),
     )?;
     let restored = import_file(&mut store, &state, &mut renderer, &path, true)?;
-    assert_eq!(restored.schema_version, 2);
+    assert_eq!(restored.schema_version, crosshair_core::SCHEMA_VERSION);
     assert!(
         restored
             .presets

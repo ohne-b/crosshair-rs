@@ -24,7 +24,13 @@ if ($LASTEXITCODE) { throw 'Could not load the x64 compiler environment.' }
 foreach ($line in $environmentLines) {
     if ($line -match '^([^=]+)=(.*)$') { [Environment]::SetEnvironmentVariable($matches[1], $matches[2], 'Process') }
 }
-[IO.File]::WriteAllText((Join-Path $stage 'payload.h'), ('constexpr wchar_t payload_hash[] = L"' + $hash + '";'), [Text.UTF8Encoding]::new($false))
+$metadata = [ordered]@{ payload_hash=$hash; payload_name=$identity.Name; payload_publisher=$identity.Publisher; payload_version=$identity.Version }
+$header = foreach ($entry in $metadata.GetEnumerator()) {
+    $literal = ([string]$entry.Value).Replace('\', '\\').Replace('"', '\"')
+    if ($literal.Contains("`r") -or $literal.Contains("`n")) { throw 'Invalid installer metadata.' }
+    'constexpr wchar_t ' + $entry.Key + '[] = L"' + $literal + '";'
+}
+[IO.File]::WriteAllLines((Join-Path $stage 'payload.h'), $header, [Text.UTF8Encoding]::new($false))
 $installer = Join-Path $stage 'install.exe'
 Push-Location $stage
 try {

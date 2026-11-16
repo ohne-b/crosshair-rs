@@ -10,6 +10,7 @@ pub enum AnimationTrigger {
     Aim,
     #[default]
     Fire,
+    Movement,
 }
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -232,8 +233,8 @@ enum Track {
 #[derive(Default)]
 pub struct Playback {
     tracks: BTreeMap<Id, Track>,
-    held: [bool; 2],
-    blocked: [bool; 2],
+    held: [bool; 3],
+    blocked: [bool; 3],
 }
 
 pub struct AnimationSample {
@@ -246,15 +247,15 @@ pub struct AnimationSample {
 impl Playback {
     pub fn reset(&mut self) {
         self.tracks.clear();
-        self.held = [false; 2];
-        self.blocked = [false; 2];
+        self.held = [false; 3];
+        self.blocked = [false; 3];
     }
 
     /// New effective crosshair inherits held inputs, but never synthesizes Press activations.
-    pub fn select(&mut self, preset: &Preset, aim_held: bool, fire_held: bool, now_ms: u64) {
+    pub fn select(&mut self, preset: &Preset, held: [bool; 3], now_ms: u64) {
         self.tracks.clear();
-        self.held = [aim_held, fire_held];
-        for i in 0..2 {
+        self.held = held;
+        for i in 0..3 {
             self.blocked[i] &= self.held[i];
         }
         for layer in &preset.layers {
@@ -415,6 +416,7 @@ fn index(trigger: AnimationTrigger) -> usize {
     match trigger {
         AnimationTrigger::Aim => 0,
         AnimationTrigger::Fire => 1,
+        AnimationTrigger::Movement => 2,
     }
 }
 
@@ -500,6 +502,32 @@ mod tests {
     use super::*;
 
     #[test]
+    fn movement_hold_returns_and_reload_rearms_only_after_release() {
+        let mut p = design();
+        p.layers[0].animation.as_mut().unwrap().trigger = AnimationTrigger::Movement;
+        let movement = |down| AnimationEvent::Trigger {
+            trigger: AnimationTrigger::Movement,
+            down,
+        };
+        let mut playback = Playback::default();
+        playback.select(&p, [false, false, true], 0);
+        close(x(&playback, &p, 100), 100.0);
+        playback.event(&p, movement(false), 100);
+        close(x(&playback, &p, 150), 50.0);
+        close(x(&playback, &p, 200), 0.0);
+        playback.event(&p, movement(true), 201);
+        playback.event(&p, AnimationEvent::Reload, 250);
+        playback.select(&p, [false, false, true], 251);
+        close(x(&playback, &p, 400), 0.0);
+        playback.event(&p, movement(false), 401);
+        playback.event(&p, movement(true), 402);
+        close(x(&playback, &p, 502), 100.0);
+        p.layers[0].animation.as_mut().unwrap().activation = Activation::Press;
+        playback.select(&p, [false, false, true], 503);
+        close(x(&playback, &p, 550), 0.0);
+    }
+
+    #[test]
     fn targets_equal_to_base_do_not_schedule_repeating_frames() {
         let mut p = design();
         let Content::Crosshair(shape) = &p.layers[0].content else {
@@ -514,7 +542,7 @@ mod tests {
         playback.event(&p, fire(true), 0);
         assert_eq!(playback.sample(&p, 10).next_frame_ms, None);
         close(x(&playback, &p, 10), 100.0);
-        playback.select(&p, false, true, 20);
+        playback.select(&p, [false, true, false], 20);
         assert_eq!(playback.sample(&p, 20).next_frame_ms, None);
     }
 
@@ -638,7 +666,7 @@ mod tests {
         close(x(&playback, &p, 930), 70.0);
         playback.event(&p, AnimationEvent::Reload, 930);
         close(x(&playback, &p, 950), 0.0);
-        playback.select(&p, false, true, 950);
+        playback.select(&p, [false, true, false], 950);
         close(x(&playback, &p, 990), 0.0);
         playback.event(&p, fire(false), 1000);
         playback.event(&p, fire(true), 1001);
@@ -707,12 +735,12 @@ mod tests {
         aim.animation.as_mut().unwrap().trigger = AnimationTrigger::Aim;
         p.layers.push(aim);
         let mut playback = Playback::default();
-        playback.select(&p, true, false, 0);
+        playback.select(&p, [true, false, false], 0);
         let sample = playback.sample(&p, 50);
         close(sample.preset.layers[0].transform.x, 0.0);
         close(sample.preset.layers[1].transform.x, 50.0);
         p.layers[1].animation.as_mut().unwrap().activation = Activation::Press;
-        playback.select(&p, true, false, 100);
+        playback.select(&p, [true, false, false], 100);
         close(playback.sample(&p, 150).preset.layers[1].transform.x, 0.0);
         // The actual edge selecting this design may still trigger a Press animation.
         playback.event(

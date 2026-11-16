@@ -447,7 +447,7 @@ impl App {
                 dialogs::copy(
                     self.hwnd()?,
                     &serde_json::to_string(
-                        &serde_json::json!({"format":"crosshair-rs-layers-2","layers":self.document.clipboard}),
+                        &serde_json::json!({"format":"crosshair-rs-layers-3","layers":self.document.clipboard}),
                     )?,
                 )?;
                 if action == "cut-layers" {

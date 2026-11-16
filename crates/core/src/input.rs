@@ -52,6 +52,7 @@ enum Dispatch {
     Aim(AimAction),
     Fire,
     Reload,
+    Movement,
 }
 
 /// Passive input state: no OS calls, polling, key injection or event suppression.
@@ -62,6 +63,7 @@ pub struct InputState {
     capture: Option<Capture>,
     aim: Option<InputChord>,
     fire: Option<InputChord>,
+    movement: Vec<InputChord>,
     latched_preset: Option<Id>,
 }
 
@@ -92,6 +94,7 @@ impl InputState {
         match trigger {
             AnimationTrigger::Aim => self.aim.is_some(),
             AnimationTrigger::Fire => self.fire.is_some(),
+            AnimationTrigger::Movement => !self.movement.is_empty(),
         }
     }
 
@@ -156,6 +159,7 @@ impl InputState {
         self.blocked.extend(self.pressed.iter().copied());
         self.aim = None;
         self.fire = None;
+        self.movement.clear();
         self.latched_preset = None;
     }
 
@@ -224,6 +228,14 @@ impl InputState {
                         (&profile.actions.fire, Dispatch::Fire),
                         (&profile.actions.reload, Dispatch::Reload),
                     ]
+                    .into_iter()
+                    .chain(
+                        profile
+                            .actions
+                            .movement
+                            .iter()
+                            .map(|chord| (chord, Dispatch::Movement)),
+                    )
                 })
                 .filter_map(|(chord, role)| {
                     chord
@@ -279,6 +291,17 @@ impl InputState {
                         }
                         self.fire = Some(chord);
                     }
+                    Dispatch::Movement if state.base_visible => {
+                        if self.movement.is_empty() {
+                            result.animation_events.push(AnimationEvent::Trigger {
+                                trigger: AnimationTrigger::Movement,
+                                down: true,
+                            });
+                        }
+                        if !self.movement.contains(&chord) {
+                            self.movement.push(chord);
+                        }
+                    }
                     Dispatch::Reload if state.base_visible => {
                         // Keep visibility/selection overrides; only animation triggers are rearmed.
                         result.animation_events.push(AnimationEvent::Reload);
@@ -311,6 +334,20 @@ impl InputState {
                     down: false,
                 });
             }
+        }
+        let moving = !self.movement.is_empty();
+        self.movement.retain(|chord| {
+            modifiers_match(&chord.modifiers, bits)
+                && self
+                    .pressed
+                    .iter()
+                    .any(|pair| pair.1 == chord.trigger && !self.blocked.contains(pair))
+        });
+        if moving && self.movement.is_empty() {
+            events.push(AnimationEvent::Trigger {
+                trigger: AnimationTrigger::Movement,
+                down: false,
+            });
         }
         events
     }
@@ -482,6 +519,130 @@ mod tests {
     }
 
     #[test]
+    fn movement_aggregates_keys_devices_and_repeats_without_changing_state() {
+        let mut state = AppState::default();
+        let before = state.clone();
+        let mut input = InputState::default();
+        let movement = |down| AnimationEvent::Trigger {
+            trigger: AnimationTrigger::Movement,
+            down,
+        };
+        assert_eq!(
+            input
+                .handle(event(0x11, true), 0, &mut state)
+                .animation_events,
+            [movement(true)]
+        );
+        assert!(
+            input
+                .handle(event(0x11, true), 1, &mut state)
+                .animation_events
+                .is_empty()
+        );
+        assert!(
+            input
+                .handle(event(0x1e, true), 2, &mut state)
+                .animation_events
+                .is_empty()
+        );
+        assert!(
+            input
+                .handle(event(0x1f, true), 3, &mut state)
+                .animation_events
+                .is_empty()
+        );
+        assert!(
+            input
+                .handle(event(0x11, false), 4, &mut state)
+                .animation_events
+                .is_empty()
+        );
+        let second = InputEvent {
+            device: 2,
+            ..event(0x1e, true)
+        };
+        assert!(
+            input
+                .handle(second, 5, &mut state)
+                .animation_events
+                .is_empty()
+        );
+        assert!(
+            input
+                .handle(event(0x1e, false), 6, &mut state)
+                .animation_events
+                .is_empty()
+        );
+        assert!(
+            input
+                .handle(event(0x1f, false), 7, &mut state)
+                .animation_events
+                .is_empty()
+        );
+        assert!(input.held(AnimationTrigger::Movement));
+        assert_eq!(
+            input
+                .handle(
+                    InputEvent {
+                        down: false,
+                        ..second
+                    },
+                    8,
+                    &mut state
+                )
+                .animation_events,
+            [movement(false)]
+        );
+        assert!(!input.held(AnimationTrigger::Movement));
+        assert_eq!(state, before);
+    }
+
+    #[test]
+    fn movement_obeys_shortcut_specificity_modifiers_and_capture_reset() {
+        let mut state = AppState::default();
+        let target = state.presets[1].id;
+        state.profiles[0].bindings.push(Binding::new(
+            InputChord {
+                trigger: InputChord::key(0x11).trigger,
+                modifiers: vec![Modifier::Shift],
+            },
+            BindingAction::SelectPreset { preset: target },
+        ));
+        crate::validate_state(&state).unwrap();
+        let mut input = InputState::default();
+        input.handle(event(0x2a, true), 0, &mut state);
+        assert!(
+            input
+                .handle(event(0x11, true), 1, &mut state)
+                .preset_selected
+        );
+        assert!(!input.held(AnimationTrigger::Movement));
+        input.handle(event(0x11, false), 2, &mut state);
+        input.handle(event(0x2a, false), 3, &mut state);
+        input.handle(event(0x11, true), 4, &mut state);
+        assert!(input.held(AnimationTrigger::Movement));
+        input.begin_capture(5);
+        assert!(!input.held(AnimationTrigger::Movement));
+        input.cancel_capture();
+        input.handle(event(0x11, true), 6, &mut state);
+        assert!(!input.held(AnimationTrigger::Movement));
+        input.handle(event(0x11, false), 7, &mut state);
+        input.handle(event(0x11, true), 8, &mut state);
+        assert!(input.held(AnimationTrigger::Movement));
+        input.remove_device(event(0x11, true).device);
+        assert!(!input.held(AnimationTrigger::Movement));
+        state.profiles[0].actions.movement[0]
+            .as_mut()
+            .unwrap()
+            .modifiers = vec![Modifier::Control];
+        input.handle(event(0x1d, true), 9, &mut state);
+        input.handle(event(0x11, true), 10, &mut state);
+        assert!(input.held(AnimationTrigger::Movement));
+        input.handle(event(0x1d, false), 11, &mut state);
+        assert!(!input.held(AnimationTrigger::Movement));
+    }
+
+    #[test]
     fn held_alternate_restores_the_latest_saved_or_browse_base_without_writes() {
         let mut state = AppState::default();
         let target = state.presets[1].id;
@@ -512,7 +673,7 @@ mod tests {
         let base = state.profiles[0].selected_preset;
         state.profiles[0].actions.aim_action = AimAction::TogglePreset { preset: target };
         state.profiles[0].bindings.push(Binding::new(
-            InputChord::key(0x20),
+            InputChord::key(0x21),
             BindingAction::SelectPreset { preset: base },
         ));
         let mut input = InputState::default();
@@ -535,7 +696,7 @@ mod tests {
         assert_eq!(input.presentation(&state).unwrap().preset, base);
         input.handle(mouse(2, 1, false), 4, &mut state);
         input.handle(mouse(2, 1, true), 5, &mut state);
-        let selected = input.handle(event(0x20, true), 6, &mut state);
+        let selected = input.handle(event(0x21, true), 6, &mut state);
         assert!(selected.preset_selected);
         assert!(!selected.state_changed);
         assert_eq!(input.presentation(&state).unwrap().preset, base);

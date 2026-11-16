@@ -89,7 +89,7 @@ pub enum Command {
         favorite: bool,
     },
     UpsertProfile {
-        profile: Profile,
+        profile: Box<Profile>,
         expected_revision: u64,
     },
     SetBindings {
@@ -107,6 +107,9 @@ pub enum Command {
     SetSettings {
         settings: Settings,
         expected_revision: u64,
+    },
+    SetStartup {
+        enabled: bool,
     },
     BeginCapture {
         token: Id,
@@ -293,6 +296,7 @@ pub struct EngineStatus {
     #[serde(default)]
     pub enabled: bool,
     pub visible: bool,
+    pub startup_enabled: Option<bool>,
     pub monitors: Vec<DisplayInfo>,
     pub widget: WidgetStatus,
     pub unsaved: bool,

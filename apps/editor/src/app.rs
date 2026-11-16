@@ -486,7 +486,7 @@ impl App {
         self.send(
             "profile",
             Command::UpsertProfile {
-                profile,
+                profile: Box::new(profile),
                 expected_revision: self.state.revision,
             },
         )

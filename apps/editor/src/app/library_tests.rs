@@ -393,6 +393,187 @@ fn library_tabs_sort_picker_and_browse_actions_are_independent() -> Result<()> {
         *events.borrow(),
         [("allow-prereleases".into(), "true".into())]
     );
+    store.set_error("".into());
+    store.set_page(1);
+    store.set_document_open(true);
+    store.set_animate(true);
+    store.set_single_selection(true);
+    snapshot(&window, "movement-preview-default.png")?;
+    ui.window().set_size(slint::LogicalSize::new(960.0, 640.0));
+    ui.global::<crate::Theme>().set_text_scale(2.0);
+    snapshot(&window, "movement-preview-large-text.png")?;
+    ui.hide()?;
+    Ok(())
+}
+
+#[test]
+fn update_download_progress_and_actions_share_a_stable_row() -> Result<()> {
+    use crate::features::settings;
+    use crosshair_core::protocol::{UpdatePhase::*, UpdateStatus};
+
+    struct Headless(Rc<MinimalSoftwareWindow>);
+    impl Platform for Headless {
+        fn create_window_adapter(&self) -> Result<Rc<dyn WindowAdapter>, slint::PlatformError> {
+            Ok(self.0.clone())
+        }
+    }
+    let window = MinimalSoftwareWindow::new(RepaintBufferType::NewBuffer);
+    slint::platform::set_platform(Box::new(Headless(window.clone())))?;
+    let ui = AppWindow::new()?;
+    let store = ui.global::<Store>();
+    store.set_connected(true);
+    store.set_page(3);
+    store.set_settings_category(3);
+    store.set_version("0.1.0-alpha.7".into());
+    store.set_update_version("0.1.0-alpha.8".into());
+    let events = Rc::new(RefCell::new(Vec::new()));
+    let recorded = events.clone();
+    store.on_action(move |action, value| {
+        recorded
+            .borrow_mut()
+            .push((action.to_string(), value.to_string()));
+    });
+    ui.show()?;
+    for (layout, width, height, scale) in [
+        ("normal", 1280.0, 800.0, 1.0),
+        ("narrow", 960.0, 640.0, 1.0),
+        ("large-text", 960.0, 640.0, 2.0),
+    ] {
+        ui.window().set_size(slint::LogicalSize::new(width, height));
+        ui.global::<crate::Theme>().set_text_scale(scale);
+        let mut progress_frames = Vec::new();
+        for (name, phase, phase_index, downloaded, total, error) in [
+            ("available", Available, 3, 0, None, None),
+            ("zero", Downloading, 4, 0, Some(8_000_000), None),
+            ("half", Downloading, 4, 4_000_000, Some(8_000_000), None),
+            ("complete", Downloading, 4, 8_000_000, Some(8_000_000), None),
+            (
+                "over-total",
+                Downloading,
+                4,
+                9_000_000,
+                Some(8_000_000),
+                None,
+            ),
+            ("unknown", Downloading, 4, 4_000_000, None, None),
+            ("retry", Failed, 7, 0, None, Some("Download interrupted")),
+            ("ready", Ready, 5, 8_000_000, Some(8_000_000), None),
+            (
+                "installing",
+                Installing,
+                6,
+                8_000_000,
+                Some(8_000_000),
+                None,
+            ),
+        ] {
+            let status = UpdateStatus {
+                phase,
+                version: Some("0.1.0-alpha.8".into()),
+                downloaded,
+                total,
+                error: error.map(str::to_owned),
+                ..Default::default()
+            };
+            store.set_update_phase(phase_index);
+            store.set_update_progress(total.map_or(0.0, |total| downloaded as f32 / total as f32));
+            store.set_update_total(total.is_some());
+            store.set_update_status(settings::update_label(&status).into());
+            store.set_update_bytes(settings::download_progress(&status).into());
+            store.set_update_error(error.unwrap_or_default().into());
+            snapshot(&window, &format!("updates-{layout}-{name}.png"))?;
+            if phase_index == 4 {
+                ui.window().request_redraw();
+                let mut pixels = vec![slint::Rgb8Pixel::default(); (width * height) as usize];
+                window.draw_if_needed(|renderer| {
+                    renderer.render(&mut pixels, width as usize);
+                });
+                progress_frames.push(pixels);
+            }
+        }
+        let orange = |p: &slint::Rgb8Pixel| (p.r, p.g, p.b) == (249, 115, 22);
+        let longest_run = |pixels: &[slint::Rgb8Pixel]| {
+            let mut longest = (0, 0, 0);
+            for (y, row) in pixels.chunks_exact(width as usize).enumerate().skip(300) {
+                let mut start = 0;
+                for (x, pixel) in row.iter().enumerate() {
+                    if !orange(pixel) {
+                        start = x + 1;
+                    } else if x + 1 - start > longest.2 {
+                        longest = (start, y, x + 1 - start);
+                    }
+                }
+            }
+            longest
+        };
+        let full = longest_run(&progress_frames[2]);
+        let half = longest_run(&progress_frames[1]);
+        assert!(
+            full.2 > if scale == 1.0 { 300 } else { 80 },
+            "{layout}: progress must use the available row width"
+        );
+        assert_eq!(
+            half.0, full.0,
+            "{layout}: progress must start at the left edge"
+        );
+        let half_track = progress_frames[1]
+            [half.1 * width as usize + half.0..(half.1 + 1) * width as usize]
+            .iter()
+            .take_while(|p| p.r >= 48 && p.g >= 48 && p.b <= 48)
+            .count();
+        assert!((half.2 as f32 - half_track as f32 / 2.0).abs() <= 1.5);
+        let over_total = longest_run(&progress_frames[3]);
+        assert_eq!((over_total.0, over_total.1), (full.0, full.1));
+        assert!(
+            over_total.2.abs_diff(full.2) <= (2.0 * scale) as usize,
+            "Progress must stay bounded when the adjacent byte count changes"
+        );
+        for frame in [&progress_frames[0], &progress_frames[4]] {
+            assert!(
+                !frame[full.1 * width as usize + full.0..full.1 * width as usize + full.0 + full.2]
+                    .iter()
+                    .any(orange),
+                "{layout}: zero/unknown totals must not show filled progress"
+            );
+        }
+        store.set_update_status("Downloading update…".into());
+        store.set_update_phase(4);
+        store.set_update_error("".into());
+        store.set_update_total(true);
+        store.set_update_progress(0.5);
+        let button_y = full.1 as f32 + 1.0;
+        events.borrow_mut().clear();
+        click(&ui, 300.0, button_y);
+        assert_eq!(*events.borrow(), [("cancel-update".into(), "".into())]);
+        events.borrow_mut().clear();
+        let row_right = (236.0 + 800.0 * scale).min(width) - 40.0;
+        click(&ui, row_right - 6.0, button_y);
+        assert!(
+            events.borrow().is_empty(),
+            "Cancel must replace the left Download button"
+        );
+        for (phase, expected) in [
+            (3, "download-update"),
+            (7, "download-update"),
+            (5, "install-update"),
+        ] {
+            store.set_update_phase(phase);
+            events.borrow_mut().clear();
+            click(&ui, 300.0, button_y);
+            assert_eq!(
+                *events.borrow(),
+                [(expected.into(), "".into())],
+                "{layout}: phase {phase}"
+            );
+        }
+        store.set_update_phase(6);
+        events.borrow_mut().clear();
+        click(&ui, 300.0, button_y);
+        assert!(
+            events.borrow().is_empty(),
+            "Installation must not start twice"
+        );
+    }
     ui.hide()?;
     Ok(())
 }

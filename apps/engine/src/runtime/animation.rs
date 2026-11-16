@@ -21,7 +21,7 @@ impl AnimationOutput {
         key: Option<render::Key>,
         definition: Option<&Preset>,
         input_epoch: u64,
-        held: [bool; 2],
+        held: [bool; 3],
         now: u64,
     ) -> bool {
         let reset = self.input_epoch != input_epoch;
@@ -40,7 +40,7 @@ impl AnimationOutput {
         if (reset || changed)
             && let Some(preset) = &self.definition
         {
-            self.playback.select(preset, held[0], held[1], now);
+            self.playback.select(preset, held, now);
         }
         true
     }
@@ -169,6 +169,7 @@ impl Runtime {
             [
                 self.app.input.held(AnimationTrigger::Aim),
                 self.app.input.held(AnimationTrigger::Fire),
+                self.app.input.held(AnimationTrigger::Movement),
             ],
             self.app.elapsed_ms(),
         ) {
@@ -343,7 +344,7 @@ mod tests {
         animation.repeat = true;
         let mut output = AnimationOutput::default();
         let key = |p: &Preset| Some(render::Key::new(p, 1.0));
-        assert!(output.sync(key(&preset), Some(&preset), 0, [false; 2], 0));
+        assert!(output.sync(key(&preset), Some(&preset), 0, [false; 3], 0));
         output.event(
             AnimationEvent::Trigger {
                 trigger: AnimationTrigger::Fire,
@@ -365,11 +366,11 @@ mod tests {
             45.0
         );
         // Removing an identical or inactive preview resolves to this same definition.
-        assert!(!output.sync(key(&preset), Some(&preset), 0, [false; 2], 50));
+        assert!(!output.sync(key(&preset), Some(&preset), 0, [false; 3], 50));
         preset.favorite = true;
         preset.name = "Renamed".into();
         preset.revision += 1;
-        assert!(output.sync(key(&preset), Some(&preset), 0, [false; 2], 50));
+        assert!(output.sync(key(&preset), Some(&preset), 0, [false; 3], 50));
         assert_eq!(
             output.playback.sample(&preset, 75).preset.layers[0]
                 .transform
@@ -377,7 +378,7 @@ mod tests {
             67.5
         );
         preset.layers[0].animation.as_mut().unwrap().duration_ms = 200;
-        assert!(output.sync(key(&preset), Some(&preset), 0, [false; 2], 75));
+        assert!(output.sync(key(&preset), Some(&preset), 0, [false; 3], 75));
         assert_eq!(
             output.playback.sample(&preset, 100).preset.layers[0]
                 .transform
@@ -582,7 +583,7 @@ mod tests {
         target.opacity = Some(0.0);
         target.x = Some(8.0);
         let mut playback = Playback::default();
-        playback.select(&preset, false, true, 0);
+        playback.select(&preset, [false, true, false], 0);
         let sample = playback.sample(&preset, 50).preset;
         let mut expected = preset;
         expected.layers[0].animation = None;
@@ -615,7 +616,7 @@ mod tests {
             raster: Some(raster.clone()),
             ..Default::default()
         };
-        output.playback.select(&preset, false, true, 0);
+        output.playback.select(&preset, [false, true, false], 0);
         let pose = output.playback.sample(&preset, 50).preset;
         assert!(renderer.render(&pose, 1.0, &no_assets).is_err());
         output.failed = true;
@@ -631,7 +632,7 @@ mod tests {
         preset.layers[0].effects.blur = 8.0;
         preset.layers[0].animation.as_mut().unwrap().repeat = true;
         let mut playback = Playback::default();
-        playback.select(&preset, false, true, 0);
+        playback.select(&preset, [false, true, false], 0);
         let mut renderer = crosshair_renderer::Renderer::new()?;
         let mut timings = Vec::new();
         for now in (0..5100).step_by(17) {

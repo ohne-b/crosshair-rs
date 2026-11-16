@@ -580,16 +580,14 @@ fn deploy(path: &Path, hash: &str, user: &str) -> Result<()> {
     }
 }
 
+const RESUME_ARGUMENT: PCWSTR = windows::core::w!("--resume-update");
+
 fn activate(family: &str) -> Result<()> {
     unsafe {
         let manager: IApplicationActivationManager =
             CoCreateInstance(&ApplicationActivationManager, None, CLSCTX_LOCAL_SERVER)?;
         let app = wide(&format!("{family}!Engine"));
-        manager.ActivateApplication(
-            PCWSTR(app.as_ptr()),
-            windows::core::w!("--resume-update"),
-            AO_NONE,
-        )?;
+        manager.ActivateApplication(PCWSTR(app.as_ptr()), RESUME_ARGUMENT, AO_NONE)?;
         Ok(())
     }
 }
@@ -889,6 +887,16 @@ impl Drop for Attributes {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn helper_activation_arguments_are_accepted_by_the_engine() {
+        let argument = unsafe { RESUME_ARGUMENT.to_string() }.unwrap();
+        let options = crate::lifecycle::Options::parse(&[argument]).unwrap();
+        assert_eq!(options.scope, "app");
+        assert!(!options.startup && !options.restore_visibility && !options.no_input);
+        assert!(options.command.is_none() && options.test_data.is_none());
+        assert!(crate::lifecycle::Options::parse(&["--unknown".into()]).is_err());
+    }
 
     #[test]
     fn recovered_failure_requires_a_new_check_before_download() {
