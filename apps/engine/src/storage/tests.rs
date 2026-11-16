@@ -77,14 +77,14 @@ fn portable_reads_old_versions_and_preserves_movement_and_aim_targets() -> Resul
         preset: state.presets[1].id,
     };
     state.profiles[0].actions.movement[0] = Some(InputChord::key(0x10));
-    state.presets[1].layers[0].animation = Some(Animation {
+    state.presets[1].layers[0].animations = vec![Animation {
         trigger: crosshair_core::AnimationTrigger::Movement,
         target: AnimationTarget {
             x: Some(10.0),
             ..Default::default()
         },
         ..Default::default()
-    });
+    }];
     let path = exports.path().join("profile.json");
     store.export(
         &state,
@@ -108,8 +108,8 @@ fn portable_reads_old_versions_and_preserves_movement_and_aim_targets() -> Resul
     let target = profile.actions.aim_action.target().unwrap();
     assert_ne!(target, state.presets[1].id);
     assert_eq!(
-        imported.preset(target).unwrap().layers[0].animation,
-        state.presets[1].layers[0].animation
+        imported.preset(target).unwrap().layers[0].animations,
+        state.presets[1].layers[0].animations
     );
     let mut v2 = value;
     v2["version"] = 2.into();
@@ -122,8 +122,10 @@ fn portable_reads_old_versions_and_preserves_movement_and_aim_targets() -> Resul
     }
     for preset in v2["state"]["presets"].as_array_mut().unwrap() {
         for layer in preset["layers"].as_array_mut().unwrap() {
-            if let Some(animation) = layer["animation"].as_object_mut() {
-                animation.insert("trigger".into(), "aim".into());
+            if let Some(animations) = layer.as_object_mut().unwrap().remove("animations") {
+                let mut animation = animations[0].clone();
+                animation["trigger"] = "aim".into();
+                layer["animation"] = animation;
             }
         }
     }
@@ -143,8 +145,8 @@ fn portable_reads_old_versions_and_preserves_movement_and_aim_targets() -> Resul
     let target = profile.actions.aim_action.target().unwrap();
     assert_eq!(
         migrated.preset(target).unwrap().layers[0]
-            .animation
-            .as_ref()
+            .animations
+            .first()
             .unwrap()
             .trigger,
         crosshair_core::AnimationTrigger::Aim
@@ -173,7 +175,7 @@ fn portable_reads_old_versions_and_preserves_movement_and_aim_targets() -> Resul
             .presets
             .iter()
             .flat_map(|p| &p.layers)
-            .all(|l| l.animation.is_none())
+            .all(|l| l.animations.is_empty())
     );
     assert_eq!(
         restored.profiles[0].actions,
@@ -207,17 +209,17 @@ fn png_and_svg_export_the_base_pose_with_animation_definitions_present() -> Resu
         let path = exports
             .path()
             .join(if svg { "base.svg" } else { "base.png" });
-        state.presets[0].layers[0].animation = None;
+        state.presets[0].layers[0].animations.clear();
         store.export(&state, kind.clone(), &path, &mut renderer)?;
         let original = fs::read(&path)?;
-        state.presets[0].layers[0].animation = Some(Animation {
+        state.presets[0].layers[0].animations = vec![Animation {
             target: AnimationTarget {
                 x: Some(30.0),
                 opacity: Some(0.0),
                 ..Default::default()
             },
             ..Default::default()
-        });
+        }];
         store.export(&state, kind, &path, &mut renderer)?;
         assert_eq!(fs::read(&path)?, original);
     }

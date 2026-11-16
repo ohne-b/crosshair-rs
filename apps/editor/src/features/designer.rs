@@ -203,11 +203,19 @@ fn animation_property(key: &str) -> Option<&'static str> {
     })
 }
 
-pub fn animated_document(base: &Preset, selected: &BTreeSet<Id>) -> Preset {
+pub fn animated_document(
+    base: &Preset,
+    selected: &BTreeSet<Id>,
+    trigger: AnimationTrigger,
+) -> Preset {
     let mut animated = base.clone();
     for layer in &mut animated.layers {
         if selected.contains(&layer.id)
-            && let Some(animation) = layer.animation.clone()
+            && let Some(animation) = layer
+                .animations
+                .iter()
+                .find(|a| a.trigger == trigger)
+                .cloned()
         {
             animation.target.apply(layer, 1.0);
         }
@@ -215,20 +223,19 @@ pub fn animated_document(base: &Preset, selected: &BTreeSet<Id>) -> Preset {
     animated
 }
 
-pub fn animation_fields(layer: &Layer, fonts: &[String]) -> Vec<Field> {
-    let a = layer.animation.clone().unwrap_or_default();
+pub fn animation_fields(layer: &Layer, fonts: &[String], trigger: AnimationTrigger) -> Vec<Field> {
+    let a = layer
+        .animations
+        .iter()
+        .find(|a| a.trigger == trigger)
+        .cloned()
+        .unwrap_or(Animation {
+            enabled: false,
+            trigger,
+            ..Animation::default()
+        });
     let mut rows = vec![
         Field::toggle("/animation/enabled", "Enabled", a.enabled),
-        Field::choice(
-            "/animation/trigger",
-            "Trigger",
-            match a.trigger {
-                AnimationTrigger::Fire => "fire",
-                AnimationTrigger::Aim => "aim",
-                AnimationTrigger::Movement => "movement",
-            },
-            &[("fire", "Fire"), ("aim", "Aim"), ("movement", "Movement")],
-        ),
         Field::choice(
             "/animation/activation",
             "Activation",
@@ -324,13 +331,14 @@ pub fn animation_fields(layer: &Layer, fonts: &[String]) -> Vec<Field> {
     rows
 }
 
-pub fn animation_changed(layer: &Layer, key: &str) -> bool {
+pub fn animation_changed(layer: &Layer, key: &str, trigger: AnimationTrigger) -> bool {
     key.strip_prefix("@animated:")
         .and_then(animation_property)
         .is_some_and(|property| {
             layer
-                .animation
-                .as_ref()
+                .animations
+                .iter()
+                .find(|a| a.trigger == trigger)
                 .is_some_and(|a| !serde_json::to_value(&a.target).unwrap()[property].is_null())
         })
 }
@@ -340,38 +348,44 @@ pub fn apply_animation_field(
     key: &str,
     input: &str,
     fonts: &[String],
+    trigger: AnimationTrigger,
 ) -> Result<()> {
     ensure!(!layer.locked, "Unlock this layer to edit it");
     if key == "@animation-remove" {
-        layer.animation = None;
+        layer.animations.retain(|a| a.trigger != trigger);
         return Ok(());
     }
     let mut changed = layer.clone();
+    let mut animation = changed
+        .animations
+        .iter()
+        .find(|a| a.trigger == trigger)
+        .cloned()
+        .unwrap_or(Animation {
+            enabled: false,
+            trigger,
+            ..Animation::default()
+        });
     if let Some(key) = key.strip_prefix("@inherit:") {
         let property = animation_property(key.trim_start_matches("@animated:"))
             .context("This property cannot be animated")?;
-        if let Some(animation) = &mut changed.animation {
-            let mut target = serde_json::to_value(&animation.target)?;
-            target[property] = Value::Null;
-            animation.target = serde_json::from_value(target)?;
-        }
+        let mut target = serde_json::to_value(&animation.target)?;
+        target[property] = Value::Null;
+        animation.target = serde_json::from_value(target)?;
     } else if let Some(key) = key.strip_prefix("@animated:") {
         let property = animation_property(key).context("This property cannot be animated")?;
         let mut animated = changed.clone();
-        if let Some(a) = &changed.animation {
-            a.target.apply(&mut animated, 1.0);
-        }
+        animation.target.apply(&mut animated, 1.0);
         apply_field(&mut animated, key, input, fonts)?;
         let value = serde_json::to_value(&animated)?
             .pointer(key)
             .context("This property is unavailable")?
             .clone();
-        let animation = changed.animation.get_or_insert_with(Animation::default);
         let mut target = serde_json::to_value(&animation.target)?;
         target[property] = value;
         animation.target = serde_json::from_value(target)?;
     } else {
-        let field = animation_fields(layer, fonts)
+        let field = animation_fields(layer, fonts, trigger)
             .into_iter()
             .find(|field| field.key == key)
             .context("This animation field is unavailable")?;
@@ -394,12 +408,16 @@ pub fn apply_animation_field(
             }
             _ => bail!("This animation field is not editable"),
         };
-        changed.animation.get_or_insert_with(Animation::default);
-        let mut encoded = serde_json::to_value(&changed)?;
+        let mut encoded = serde_json::to_value(&animation)?;
         *encoded
-            .pointer_mut(key)
+            .pointer_mut(key.trim_start_matches("/animation"))
             .context("The animation field is unavailable")? = value;
-        changed = serde_json::from_value(encoded)?;
+        animation = serde_json::from_value(encoded)?;
+    }
+    if let Some(existing) = changed.animations.iter_mut().find(|a| a.trigger == trigger) {
+        *existing = animation;
+    } else {
+        changed.animations.push(animation);
     }
     validation::validate_layer_geometry(&changed)?;
     *layer = changed;
@@ -1146,7 +1164,12 @@ pub fn parse_clipboard(text: &str, assets: &BTreeMap<Id, Asset>) -> Result<Vec<L
     ensure!(
         matches!(
             value["format"].as_str(),
-            Some("crosshair-rs-layers-1" | "crosshair-rs-layers-2" | "crosshair-rs-layers-3")
+            Some(
+                "crosshair-rs-layers-1"
+                    | "crosshair-rs-layers-2"
+                    | "crosshair-rs-layers-3"
+                    | "crosshair-rs-layers-4"
+            )
         ),
         "The clipboard does not contain crosshair layers"
     );
@@ -1166,16 +1189,89 @@ mod tests {
     use super::*;
 
     #[test]
+    fn trigger_settings_enable_reset_and_remove_independently() {
+        let mut layer = Preset::new("Independent").layers.remove(0);
+        for (trigger, x) in [
+            (AnimationTrigger::Aim, "5"),
+            (AnimationTrigger::Fire, "10"),
+            (AnimationTrigger::Movement, "20"),
+        ] {
+            apply_animation_field(&mut layer, "@animated:/transform/x", x, &[], trigger).unwrap();
+        }
+        assert!(layer.animations.iter().all(|a| !a.enabled));
+        apply_animation_field(
+            &mut layer,
+            "/animation/enabled",
+            "true",
+            &[],
+            AnimationTrigger::Aim,
+        )
+        .unwrap();
+        assert!(layer.animations[0].enabled);
+        assert!(!layer.animations[1].enabled);
+        apply_animation_field(
+            &mut layer,
+            "@inherit:@animated:/transform/x",
+            "",
+            &[],
+            AnimationTrigger::Fire,
+        )
+        .unwrap();
+        assert_eq!(layer.animations[1].target.x, None);
+        assert_eq!(layer.animations[2].target.x, Some(20.0));
+        apply_animation_field(
+            &mut layer,
+            "@animation-remove",
+            "",
+            &[],
+            AnimationTrigger::Aim,
+        )
+        .unwrap();
+        assert_eq!(layer.animations.len(), 2);
+        assert!(
+            layer
+                .animations
+                .iter()
+                .all(|a| a.trigger != AnimationTrigger::Aim)
+        );
+    }
+
+    #[test]
     fn animated_values_inherit_base_until_changed_and_validate_without_mutating_base() {
         let mut layer = Preset::new("Animated").layers.remove(0);
         let base = layer.clone();
-        apply_animation_field(&mut layer, "@animated:/transform/x", "12", &[]).unwrap();
-        apply_animation_field(&mut layer, "/animation/duration_ms", "250", &[]).unwrap();
+        apply_animation_field(
+            &mut layer,
+            "@animated:/transform/x",
+            "12",
+            &[],
+            AnimationTrigger::Fire,
+        )
+        .unwrap();
+        apply_animation_field(
+            &mut layer,
+            "/animation/duration_ms",
+            "250",
+            &[],
+            AnimationTrigger::Fire,
+        )
+        .unwrap();
         assert_eq!(layer.transform, base.transform);
-        assert_eq!(layer.animation.as_ref().unwrap().target.x, Some(12.0));
-        assert!(animation_changed(&layer, "@animated:/transform/x"));
-        apply_animation_field(&mut layer, "/animation/duration_ms", "0", &[]).unwrap();
-        assert_eq!(layer.animation.as_ref().unwrap().duration_ms, 0);
+        assert_eq!(layer.animations.first().unwrap().target.x, Some(12.0));
+        assert!(animation_changed(
+            &layer,
+            "@animated:/transform/x",
+            AnimationTrigger::Fire
+        ));
+        apply_animation_field(
+            &mut layer,
+            "/animation/duration_ms",
+            "0",
+            &[],
+            AnimationTrigger::Fire,
+        )
+        .unwrap();
+        assert_eq!(layer.animations.first().unwrap().duration_ms, 0);
         let before = layer.clone();
         for (key, value) in [
             ("/animation/duration_ms", "10001"),
@@ -1184,22 +1280,42 @@ mod tests {
             ("@animated:/transform/x", "1.5"),
             ("@animated:/effects/blur", "10"),
         ] {
-            assert!(apply_animation_field(&mut layer, key, value, &[]).is_err());
+            assert!(
+                apply_animation_field(&mut layer, key, value, &[], AnimationTrigger::Fire).is_err()
+            );
             assert_eq!(layer, before);
         }
-        apply_animation_field(&mut layer, "@inherit:@animated:/transform/x", "", &[]).unwrap();
+        apply_animation_field(
+            &mut layer,
+            "@inherit:@animated:/transform/x",
+            "",
+            &[],
+            AnimationTrigger::Fire,
+        )
+        .unwrap();
         layer.transform.x = 7.0;
-        assert!(!animation_changed(&layer, "@animated:/transform/x"));
+        assert!(!animation_changed(
+            &layer,
+            "@animated:/transform/x",
+            AnimationTrigger::Fire
+        ));
         assert_eq!(
-            animation_fields(&layer, &[])
+            animation_fields(&layer, &[], AnimationTrigger::Fire)
                 .iter()
                 .find(|field| field.key == "@animated:/transform/x")
                 .unwrap()
                 .value,
             "7"
         );
-        apply_animation_field(&mut layer, "@animation-remove", "", &[]).unwrap();
-        assert!(layer.animation.is_none());
+        apply_animation_field(
+            &mut layer,
+            "@animation-remove",
+            "",
+            &[],
+            AnimationTrigger::Fire,
+        )
+        .unwrap();
+        assert!(layer.animations.is_empty());
     }
 
     #[test]
@@ -1210,16 +1326,29 @@ mod tests {
             parse_clipboard(&old.to_string(), &BTreeMap::new()).unwrap(),
             preset.layers
         );
-        apply_animation_field(&mut preset.layers[0], "@animated:/opacity", "0.25", &[]).unwrap();
+        apply_animation_field(
+            &mut preset.layers[0],
+            "@animated:/opacity",
+            "0.25",
+            &[],
+            AnimationTrigger::Fire,
+        )
+        .unwrap();
         let v2 = json!({"format": "crosshair-rs-layers-2", "layers": preset.layers});
         assert_eq!(
             parse_clipboard(&v2.to_string(), &BTreeMap::new()).unwrap(),
             preset.layers
         );
-        apply_animation_field(&mut preset.layers[0], "/animation/trigger", "movement", &[])
-            .unwrap();
+        apply_animation_field(
+            &mut preset.layers[0],
+            "/animation/enabled",
+            "true",
+            &[],
+            AnimationTrigger::Movement,
+        )
+        .unwrap();
         assert_eq!(
-            preset.layers[0].animation.as_ref().unwrap().trigger,
+            preset.layers[0].animations.last().unwrap().trigger,
             AnimationTrigger::Movement
         );
         let v3 = json!({"format": "crosshair-rs-layers-3", "layers": preset.layers});
@@ -1227,17 +1356,24 @@ mod tests {
             parse_clipboard(&v3.to_string(), &BTreeMap::new()).unwrap(),
             preset.layers
         );
-        let future = json!({"format": "crosshair-rs-layers-4", "layers": preset.layers});
+        let future = json!({"format": "crosshair-rs-layers-5", "layers": preset.layers});
         assert!(parse_clipboard(&future.to_string(), &BTreeMap::new()).is_err());
         let mut layer = Layer::new(
             "Image",
             Content::Image(Image::new(Id::new_v4(), 20.0, 10.0)),
         );
         let id = layer.content.asset_id();
-        apply_animation_field(&mut layer, "@animated:/transform/scale", "2", &[]).unwrap();
+        apply_animation_field(
+            &mut layer,
+            "@animated:/transform/scale",
+            "2",
+            &[],
+            AnimationTrigger::Fire,
+        )
+        .unwrap();
         assert_eq!(layer.content.asset_id(), id);
         assert!(
-            !animation_fields(&layer, &[])
+            !animation_fields(&layer, &[], AnimationTrigger::Fire)
                 .iter()
                 .any(|field| field.key.contains("/color"))
         );

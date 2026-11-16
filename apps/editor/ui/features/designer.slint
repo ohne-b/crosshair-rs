@@ -357,6 +357,14 @@ export component Designer inherits Rectangle {
                             ActionButton { text: "Finish drawing"; clicked => { Store.action("draw-finish", ""); } }
                             Divider {}
                         }
+                        if Store.animate && Store.single-selection: Rectangle {
+                            height: 32px; border-radius: 8px; background: Theme.field; border-width: 1px; border-color: Theme.border;
+                            HorizontalLayout { padding: 2px; spacing: 2px;
+                                ActionButton { text: "Aim"; height: 28px; min-width: 0px; preferred-width: 0px; selected: Store.animation-trigger == 0; quiet: true; horizontal-stretch: 1; clicked => { Store.action("animation-trigger", "aim"); } }
+                                ActionButton { text: "Fire"; height: 28px; min-width: 0px; preferred-width: 0px; selected: Store.animation-trigger == 1; quiet: true; horizontal-stretch: 1; clicked => { Store.action("animation-trigger", "fire"); } }
+                                ActionButton { text: "Move"; label: "Movement animation"; height: 28px; min-width: 0px; preferred-width: 0px; selected: Store.animation-trigger == 2; quiet: true; horizontal-stretch: 1; clicked => { Store.action("animation-trigger", "movement"); } }
+                            }
+                        }
                         for group in Store.fields: HorizontalLayout {
                             spacing: 10px; vertical-stretch: 0;
                             PropertyRow { viewport-width: root.width + root.absolute-position.x; viewport-height: root.height + root.absolute-position.y; field: group.first; horizontal-stretch: 1; }
@@ -364,6 +372,7 @@ export component Designer inherits Rectangle {
                         }
                         if Store.animate && Store.single-selection: VerticalLayout {
                             spacing: 8px;
+                            Text { text: "Preview inputs"; color: Theme.muted; font-size: 12px * Theme.text-scale; }
                             HorizontalLayout { spacing: 6px;
                                 PreviewTrigger { text: "Aim"; trigger: "aim"; horizontal-stretch: 1; }
                                 PreviewTrigger { text: "Fire"; trigger: "fire"; horizontal-stretch: 1; }

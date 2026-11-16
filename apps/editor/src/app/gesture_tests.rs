@@ -35,6 +35,7 @@ fn app(ui: &AppWindow) -> App {
         fonts: Vec::new(),
         fields: Vec::new(),
         animate: false,
+        animation_trigger: AnimationTrigger::Fire,
         playback: Playback::default(),
         playback_started: std::time::Instant::now(),
         playback_timer: slint::Timer::default(),
@@ -201,8 +202,8 @@ fn animation_mode_rejects_queued_base_edits_and_undo_restores_inheritance() -> R
     complete_preview(&mut app, None)?;
     assert_eq!(
         app.document.draft.as_ref().unwrap().layers[0]
-            .animation
-            .as_ref()
+            .animations
+            .first()
             .unwrap()
             .target
             .x,
@@ -219,18 +220,118 @@ fn animation_mode_rejects_queued_base_edits_and_undo_restores_inheritance() -> R
 }
 
 #[test]
+fn middle_mouse_pan_works_during_animation_without_editing() -> Result<()> {
+    let ui = window();
+    let mut app = app(&ui);
+    let base = app.state.presets[0].clone();
+    app.document.open(base.clone())?;
+    for (animate, playing) in [(false, false), (true, false), (true, true)] {
+        app.animate = animate;
+        app.playing = playing;
+        ui.global::<Store>().set_pan_x(0.0);
+        ui.global::<Store>().set_pan_y(0.0);
+        app.canvas_event(0, Point { x: 10.0, y: 20.0 }, 3, false)?;
+        app.canvas_event(1, Point { x: 40.0, y: 10.0 }, 3, false)?;
+        assert_eq!(ui.global::<Store>().get_pan_x(), 30.0);
+        assert_eq!(ui.global::<Store>().get_pan_y(), -10.0);
+        app.canvas_event(
+            0,
+            Point {
+                x: -500.0,
+                y: -500.0,
+            },
+            1,
+            false,
+        )?;
+        app.canvas_event(
+            1,
+            Point {
+                x: -1000.0,
+                y: -1000.0,
+            },
+            1,
+            false,
+        )?;
+        app.canvas_event(
+            2,
+            Point {
+                x: -1000.0,
+                y: -1000.0,
+            },
+            1,
+            false,
+        )?;
+        assert_eq!(ui.global::<Store>().get_pan_x(), 30.0);
+        app.canvas_event(1, Point { x: 50.0, y: 10.0 }, 3, false)?;
+        assert_eq!(ui.global::<Store>().get_pan_x(), 40.0);
+        app.canvas_event(2, Point { x: 40.0, y: 10.0 }, 3, false)?;
+        assert!(app.drag.is_none());
+        app.canvas_event(0, Point { x: 0.0, y: 0.0 }, 3, false)?;
+        app.canvas_event(3, Point { x: 0.0, y: 0.0 }, 1, false)?;
+        assert!(app.drag.is_none());
+        assert_eq!(app.document.draft.as_ref(), Some(&base));
+        assert!(!app.document.dirty);
+        assert!(!app.document.can_undo());
+    }
+    app.drag = Some(Drag::Move {
+        origin: Point { x: 0.0, y: 0.0 },
+        before: base.clone(),
+    });
+    app.group_open = true;
+    app.canvas_event(0, Point { x: 10.0, y: 10.0 }, 3, false)?;
+    app.canvas_event(2, Point { x: 20.0, y: 20.0 }, 3, false)?;
+    assert!(matches!(app.drag, Some(Drag::Move { .. })));
+    assert!(app.group_open);
+    ui.hide()?;
+    Ok(())
+}
+
+#[test]
+fn animation_tabs_do_not_edit_and_reject_stale_field_events() -> Result<()> {
+    let ui = window();
+    let mut app = app(&ui);
+    let base = app.state.presets[0].clone();
+    app.document.open(base.clone())?;
+    app.action("designer-mode", "animate")?;
+    let fire_token = app.selection_token();
+    app.action("animation-trigger", "movement")?;
+    assert_eq!(app.document.draft.as_ref(), Some(&base));
+    assert!(!app.document.dirty);
+    assert!(!app.document.can_undo());
+    assert_eq!(ui.global::<Store>().get_animation_trigger(), 2);
+    app.event(Event::Ui(UiEvent::Property(
+        fire_token,
+        "@animated:/transform/x".into(),
+        "100".into(),
+        2,
+    )))?;
+    assert_eq!(app.document.draft.as_ref(), Some(&base));
+    app.property_edit("@animated:/transform/x", "20", 2)?;
+    complete_preview(&mut app, None)?;
+    assert_eq!(
+        app.document.draft.as_ref().unwrap().layers[0].animations[0].trigger,
+        AnimationTrigger::Movement
+    );
+    app.action("animation-trigger", "aim")?;
+    app.action("undo", "")?;
+    assert_eq!(app.document.draft.as_ref(), Some(&base));
+    ui.hide()?;
+    Ok(())
+}
+
+#[test]
 fn preview_frames_never_edit_the_document_and_stale_bitmaps_are_ignored() -> Result<()> {
     let ui = window();
     let mut app = app(&ui);
     let mut preset = app.state.presets[0].clone();
-    preset.layers[0].animation = Some(Animation {
+    preset.layers[0].animations = vec![Animation {
         trigger: AnimationTrigger::Movement,
         target: AnimationTarget {
             x: Some(12.0),
             ..Default::default()
         },
         ..Default::default()
-    });
+    }];
     app.document.open(preset.clone())?;
     app.animate = true;
     let (client, commands) = Client::recording_for_test();
@@ -447,8 +548,8 @@ fn preview_buttons_pair_pointer_keyboard_and_focus_release_edges() -> Result<()>
             .borrow_mut()
             .push((action.to_string(), value.to_string()))
     });
-    pointer(&ui, 0, 1110.0, 158.0);
-    pointer(&ui, 2, 1110.0, 158.0);
+    pointer(&ui, 0, 1110.0, 223.0);
+    pointer(&ui, 2, 1110.0, 223.0);
     slint::platform::update_timers_and_animations();
     assert_eq!(
         &*events.borrow(),
@@ -487,8 +588,8 @@ fn preview_buttons_pair_pointer_keyboard_and_focus_release_edges() -> Result<()>
         "Moving focus must release held preview input: {:?}",
         events.borrow()
     );
-    pointer(&ui, 0, 1030.0, 158.0);
-    pointer(&ui, 2, 1030.0, 158.0);
+    pointer(&ui, 0, 1030.0, 223.0);
+    pointer(&ui, 2, 1030.0, 223.0);
     slint::platform::update_timers_and_animations();
     ui.window().dispatch_event(WindowEvent::KeyPressed {
         text: Key::Tab.into(),

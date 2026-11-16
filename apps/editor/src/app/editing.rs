@@ -300,7 +300,13 @@ impl App {
                 .filter(|layer| self.document.selected.contains(&layer.id) && !layer.locked)
             {
                 if self.animate {
-                    designer::apply_animation_field(layer, key, &value, &self.fonts)?;
+                    designer::apply_animation_field(
+                        layer,
+                        key,
+                        &value,
+                        &self.fonts,
+                        self.animation_trigger,
+                    )?;
                 } else {
                     designer::apply_field(layer, key, &value, &self.fonts)?;
                 }
@@ -447,7 +453,7 @@ impl App {
                 dialogs::copy(
                     self.hwnd()?,
                     &serde_json::to_string(
-                        &serde_json::json!({"format":"crosshair-rs-layers-3","layers":self.document.clipboard}),
+                        &serde_json::json!({"format":"crosshair-rs-layers-4","layers":self.document.clipboard}),
                     )?,
                 )?;
                 if action == "cut-layers" {
@@ -594,21 +600,40 @@ impl App {
     ) -> Result<()> {
         let ui = self.window()?;
         let store = ui.global::<Store>();
+        // Panning moves the viewport, so it remains available during read-only playback.
+        if button == 3 || matches!(self.drag, Some(Drag::Pan { .. })) {
+            match kind {
+                0 if button == 3 && self.drag.is_none() => {
+                    self.cancel_capture()?;
+                    self.drag = Some(Drag::Pan {
+                        origin: point,
+                        pan: Point {
+                            x: store.get_pan_x(),
+                            y: store.get_pan_y(),
+                        },
+                    });
+                }
+                1 if button == 3 => {
+                    if let Some(Drag::Pan { origin, pan }) = self.drag {
+                        store.set_pan_x(pan.x + point.x - origin.x);
+                        store.set_pan_y(pan.y + point.y - origin.y);
+                    }
+                }
+                2 | 3
+                    if (button == 3 || kind == 3)
+                        && matches!(self.drag, Some(Drag::Pan { .. })) =>
+                {
+                    self.drag = None
+                }
+                _ => {}
+            }
+            return Ok(());
+        }
         if store.get_read_only() || self.playing || self.animate {
             return Ok(());
         }
         if kind == 0 {
             self.cancel_capture()?;
-            if button == 3 {
-                self.drag = Some(Drag::Pan {
-                    origin: point,
-                    pan: Point {
-                        x: store.get_pan_x(),
-                        y: store.get_pan_y(),
-                    },
-                });
-                return Ok(());
-            }
             let before = self
                 .document
                 .draft
@@ -714,11 +739,6 @@ impl App {
             let Some(drag) = self.drag.clone() else {
                 return Ok(());
             };
-            if let Drag::Pan { origin, pan } = drag {
-                store.set_pan_x(pan.x + point.x - origin.x);
-                store.set_pan_y(pan.y + point.y - origin.y);
-                return Ok(());
-            }
             let mut changed = match &drag {
                 Drag::Move { before, .. }
                 | Drag::Resize { before, .. }

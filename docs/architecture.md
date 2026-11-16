@@ -261,8 +261,8 @@ enters durable state or engine edit history.
 
 ### Animation editing and behavior
 
-Each layer has at most one optional animation: Base is its ordinary design and
-Animated contains only explicitly changed values. Unchanged properties inherit
+Each layer has independent optional Aim, Fire and Movement animations. Base is
+its ordinary design and each Animated target contains only explicitly changed values. Unchanged properties inherit
 Base, including later Base edits. Per-property Reset restores inheritance;
 Remove animation and definition edits use normal draft undo. Mode changes and
 playback never dirty the document. Empty, disabled or unchanged targets do no
@@ -277,12 +277,14 @@ Targets use the existing field limits; intermediate geometry may be fractional.
 Rotation follows the entered numeric delta, so 0 to 360 makes a full turn.
 Color interpolation uses premultiplied alpha; layer opacity is a separate multiplier.
 
-Trigger, Activation and Duration remain visible. Easing, On release, Repeat,
+Aim/Fire/Movement tabs, Enabled, Activation and Duration remain visible.
+Tabs use the Design/Animate segmented style; switching tabs does not edit the
+document. New definitions start disabled and each tab preserves its own settings. Easing, On release, Repeat,
 Direction and Delay live in the initially collapsed Timing section.
 
 | Control | Values and initial value |
 | --- | --- |
-| Trigger | Fire (initial), Aim or Movement. |
+| Trigger tab | Aim, Fire (initial) or Movement. |
 | Activation | Hold (initial) or Press. |
 | Duration | 0-10,000 ms per leg; initially 150 ms. Zero is instant. |
 | Easing | Linear or Smooth (initial), a fixed ease-in/out curve. |
@@ -314,11 +316,18 @@ Direction and Delay live in the initially collapsed Timing section.
   selected while Aim/Fire/Movement is held inherits matching Hold effects, never a new
   Press event. Lifecycle resets require release and a fresh press instead.
 
+Simultaneous animations add numeric deltas relative to Base, then clamp the final
+values to existing property limits. Releasing one trigger leaves the others active.
+Colors blend in fixed Movement, Aim, Fire order, giving Fire the highest priority;
+activation order and serialized definition order do not change the result.
+Each layer/trigger has its own playback track. Legacy single definitions migrate
+to their matching trigger without changing their enabled state or settings.
+
 Aim, Fire, Move and Reset preview controls sit below the animation fields. Pointer/key
 down and release drive Hold; click or Space/Enter supplies Press. Local preview
 uses the same core evaluator in a separate session, without synthetic OS input.
 Animate shows target values for editing and disables canvas transformations
-during playback. Stop, leaving Animate, changing documents and closing clear
+during playback; middle-mouse viewport panning remains available. Stop, leaving Animate, changing documents and closing clear
 local playback. Global shortcuts remain global even while previewing.
 
 Preview uses the existing asynchronous bitmap worker and a timer only while
@@ -513,7 +522,7 @@ editable labels, never identity or filesystem paths.
 | App state | Schema version, settings, profiles/active ID, preset library, asset index, base selection/visibility, revisions. |
 | Profile | ID/name, selected preset, bindings, Aim/Fire/Reload and movement chords, Aim action, scale/offset, saved positions. |
 | Preset | ID/name, ordered layers, favorite, manual order, document revision and engine-owned global edit order for recency. |
-| Layer | ID/name, visible/locked, transform, opacity, typed content/effects and one optional animation definition. |
+| Layer | ID/name, visible/locked, transform, opacity, typed content/effects and up to three animation definitions, one per trigger. |
 | Content | Crosshair, rectangle, ellipse, triangle, text, image or freehand strokes. |
 | Binding | ID, optional display name, chord, preset-selection or visibility action, target if needed, enabled. |
 | Runtime only | Pressed devices/keys, Aim overrides, animation progress/paused poses, capture, transient draft previews, connections, caches, edit history and update state. |
@@ -750,7 +759,7 @@ newest results to its event loop.
 Desktop pipe: current-user logon-session ACL, remote rejection, authenticated
 peer identity. Names include user/session but are not the security boundary.
 Prevent first-instance squatting; verify expected packaged executable identity.
-Handshake verifies build/protocol before accepting commands. Control protocol v6
+Handshake verifies build/protocol before accepting commands. Control protocol v7
 includes profile action configuration in atomic SetBindings commands, capture
 tokens and independently ordered engine status. Connection epochs are
 checked when queued events reach the editor, so a retired connection cannot change
@@ -800,8 +809,8 @@ preserve the last durable snapshot/backup and report recovery on next launch.
 Atomic rename alone is not a proven
 power-loss guarantee: exercise interruption boundaries.
 
-State schema 3, portable format 3 and layer clipboard format 3 retain action and
-animation definitions. Loaders accept versions 1/2 explicitly and writers emit 3;
+State schema 4, portable format 4 and layer clipboard format 4 retain action and
+per-trigger animation definitions. Loaders accept versions 1/2/3 explicitly and writers emit 4;
 unknown newer versions fail rather than discard data. The v1 migration adds
 default action chords only when they do not conflict, leaving conflicting roles
 Unbound and Aim at No action. Version 2 upgrades retain existing actions and add

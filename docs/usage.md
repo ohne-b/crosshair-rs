@@ -72,15 +72,21 @@ untouched properties follow Base. Reset beside a changed property restores that
 inheritance. The Enabled switch keeps an effect configured without playing it;
 **Remove animation** removes it. Changes use normal Save and undo.
 
-For an effect while moving, choose Trigger **Movement** and Activation **Hold**,
+The **Aim / Fire / Movement** tabs each have their own animation and Enabled switch.
+Switching tabs preserves the settings. Numeric changes combine relative to Base:
+a gap of 4 with Movement targeting 7 and Fire targeting 6 becomes 9 together.
+Releasing either trigger leaves the other effect active. Colors blend with Fire
+above Aim above Movement. New animations start disabled.
+
+For an effect while moving, open the **Movement** tab, enable it and choose Activation **Hold**,
 then increase the Animated gap. **Move forward/left/backward/right** in Keybinds
 use W/A/S/D by default and can be recorded separately. The effect stays active
 until every movement key is released; **Move** previews it in Designer. Opposing
 keys also keep it active. This responds to keys, not the game's actual movement
 speed or weapon accuracy.
 
-For a simple firing effect, choose a crosshair layer, leave Trigger at **Fire** and
-Activation at **Hold**, then increase its Animated gap. The default 150 ms duration
+For a simple firing effect, choose a crosshair layer, open the **Fire** tab, enable it and
+choose Activation **Hold**, then increase its Animated gap. The default 150 ms duration
 moves toward that gap while Fire is held and returns smoothly on release. The
 **Fire** preview button lets you try it locally; **Stop** ends preview.
 

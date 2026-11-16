@@ -19,8 +19,11 @@ impl App {
             && self.window()?.global::<Store>().get_page() == 1
             && let Some(base) = &self.document.draft
         {
-            let animated =
-                crate::features::designer::animated_document(base, &self.document.selected);
+            let animated = crate::features::designer::animated_document(
+                base,
+                &self.document.selected,
+                self.animation_trigger,
+            );
             self.request_bitmap(animated)?;
         }
         Ok(())

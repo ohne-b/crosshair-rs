@@ -763,6 +763,22 @@ impl App {
                 self.show_animated_target()?;
             }
             "animation-tick" => self.playback_tick()?,
+            "animation-trigger" => {
+                let trigger = match value {
+                    "aim" => AnimationTrigger::Aim,
+                    "fire" => AnimationTrigger::Fire,
+                    "movement" => AnimationTrigger::Movement,
+                    _ => bail!("Choose a valid animation trigger"),
+                };
+                if self.document.gesture.is_some() {
+                    self.finish_group = true;
+                    self.finish_edit()?;
+                }
+                self.stop_playback();
+                self.animation_trigger = trigger;
+                self.refresh_document();
+                self.show_animated_target()?;
+            }
             "designer-mode" => {
                 self.stop_playback();
                 if self.document.gesture.is_some() {
@@ -964,6 +980,7 @@ fn requires_finished_edit(action: &str) -> bool {
             | "discord-style"
             | "position-use"
             | "position-delete"
+            | "animation-trigger"
             | "designer-mode"
             | "animation-preview"
             | "aim-action"

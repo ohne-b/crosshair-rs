@@ -403,12 +403,18 @@ impl App {
         let store = ui.global::<Store>();
         store.set_inspector_selection(self.selection_token().into());
         store.set_animate(self.animate);
+        store.set_animation_trigger(match self.animation_trigger {
+            AnimationTrigger::Aim => 0,
+            AnimationTrigger::Fire => 1,
+            AnimationTrigger::Movement => 2,
+        });
         store.set_single_selection(self.document.selected.len() == 1);
-        store.set_has_animation(
-            self.document
-                .selected_layer()
-                .is_some_and(|layer| layer.animation.is_some()),
-        );
+        store.set_has_animation(self.document.selected_layer().is_some_and(|layer| {
+            layer
+                .animations
+                .iter()
+                .any(|a| a.trigger == self.animation_trigger)
+        }));
         store.set_document_open(self.document.draft.is_some());
         store.set_dirty(self.document.dirty || self.inflight.is_some());
         store.set_save_paused(self.document.save_paused || self.document.conflict);
@@ -445,7 +451,7 @@ impl App {
                 .map(|layer| {
                     if self.animate {
                         if self.document.selected.len() == 1 {
-                            designer::animation_fields(layer, &self.fonts)
+                            designer::animation_fields(layer, &self.fonts, self.animation_trigger)
                         } else {
                             Vec::new()
                         }
@@ -472,7 +478,11 @@ impl App {
                         value: field.value.clone().into(),
                         reset: self.animate
                             && self.document.selected_layer().is_some_and(|layer| {
-                                designer::animation_changed(layer, &field.key)
+                                designer::animation_changed(
+                                    layer,
+                                    &field.key,
+                                    self.animation_trigger,
+                                )
                             }),
                         ..Default::default()
                     };
@@ -544,7 +554,7 @@ impl App {
             .chain(self.document.selected.iter().copied())
             .map(|id| id.to_string())
             .chain(std::iter::once(if self.animate {
-                "animate".to_owned()
+                format!("animate:{:?}", self.animation_trigger)
             } else {
                 "design".to_owned()
             }))

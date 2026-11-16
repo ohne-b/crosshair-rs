@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{Color, Content, Id, Layer, Preset};
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum AnimationTrigger {
     Aim,
@@ -91,6 +91,54 @@ impl AnimationTarget {
         }
     }
 
+    /// Each effect contributes its delta from Base, independent of activation order.
+    pub fn add_to(&self, layer: &mut Layer, base: &Layer, fraction: f32) {
+        let t = fraction.clamp(0.0, 1.0);
+        let add = |value: &mut f32, base: f32, target: Option<f32>| {
+            if let Some(target) = target {
+                *value += (target - base) * t;
+            }
+        };
+        add(&mut layer.transform.x, base.transform.x, self.x);
+        add(&mut layer.transform.y, base.transform.y, self.y);
+        add(&mut layer.transform.scale, base.transform.scale, self.scale);
+        add(
+            &mut layer.transform.rotation,
+            base.transform.rotation,
+            self.rotation,
+        );
+        add(&mut layer.opacity, base.opacity, self.opacity);
+        match (&mut layer.content, &base.content) {
+            (Content::Crosshair(shape), Content::Crosshair(base)) => {
+                add(&mut shape.length, base.length, self.length);
+                add(&mut shape.thickness, base.thickness, self.thickness);
+                add(&mut shape.gap, base.gap, self.gap);
+                add(
+                    &mut shape.dot.diameter,
+                    base.dot.diameter,
+                    self.dot_diameter,
+                );
+                if let Some(color) = self.color {
+                    shape.color = mix_color(shape.color, color, t);
+                }
+                if let Some(color) = self.dot_color {
+                    shape.dot.color = mix_color(shape.dot.color, color, t);
+                }
+            }
+            (Content::Rectangle(shape), _) => {
+                if let Some(color) = self.color {
+                    shape.color = mix_color(shape.color, color, t);
+                }
+            }
+            (Content::Ellipse(shape) | Content::Triangle(shape), _) => {
+                if let Some(color) = self.color {
+                    shape.color = mix_color(shape.color, color, t);
+                }
+            }
+            _ => {}
+        }
+    }
+
     /// Apply a fraction of the target to a fresh base layer; never sample a sampled layer.
     pub fn apply(&self, layer: &mut Layer, fraction: f32) {
         let t = fraction.clamp(0.0, 1.0);
@@ -129,6 +177,20 @@ impl AnimationTarget {
             }
             _ => {}
         }
+    }
+}
+
+pub fn clamp_animated_layer(layer: &mut Layer) {
+    layer.transform.x = layer.transform.x.clamp(-4096.0, 4096.0);
+    layer.transform.y = layer.transform.y.clamp(-4096.0, 4096.0);
+    layer.transform.scale = layer.transform.scale.clamp(0.01, 100.0);
+    layer.transform.rotation = layer.transform.rotation.clamp(-360.0, 360.0);
+    layer.opacity = layer.opacity.clamp(0.0, 1.0);
+    if let Content::Crosshair(shape) = &mut layer.content {
+        shape.length = shape.length.clamp(0.0, 512.0);
+        shape.thickness = shape.thickness.clamp(0.0, 512.0);
+        shape.gap = shape.gap.clamp(0.0, 512.0);
+        shape.dot.diameter = shape.dot.diameter.clamp(0.0, 1024.0);
     }
 }
 
@@ -232,7 +294,7 @@ enum Track {
 /// Runtime only. Call reset when the effective document/definition or output session changes.
 #[derive(Default)]
 pub struct Playback {
-    tracks: BTreeMap<Id, Track>,
+    tracks: BTreeMap<(Id, AnimationTrigger), Track>,
     held: [bool; 3],
     blocked: [bool; 3],
 }
@@ -259,14 +321,14 @@ impl Playback {
             self.blocked[i] &= self.held[i];
         }
         for layer in &preset.layers {
-            if let Some(a) = &layer.animation
-                && a.effective_for(layer)
-                && a.activation == Activation::Hold
-                && self.held[index(a.trigger)]
-                && !self.blocked[index(a.trigger)]
-            {
+            for a in layer.animations.iter().filter(|a| {
+                a.effective_for(layer)
+                    && a.activation == Activation::Hold
+                    && self.held[index(a.trigger)]
+                    && !self.blocked[index(a.trigger)]
+            }) {
                 self.tracks.insert(
-                    layer.id,
+                    (layer.id, a.trigger),
                     Track::Playing {
                         start: now_ms,
                         offset: 0,
@@ -295,13 +357,13 @@ impl Playback {
         }
         for layer in &preset.layers {
             let Some(a) = layer
-                .animation
-                .as_ref()
-                .filter(|a| a.effective_for(layer) && a.trigger == trigger)
+                .animations
+                .iter()
+                .find(|a| a.effective_for(layer) && a.trigger == trigger)
             else {
                 continue;
             };
-            let previous = self.tracks.get(&layer.id).copied();
+            let previous = self.tracks.get(&(layer.id, a.trigger)).copied();
             if down {
                 let next = match (a.activation, previous) {
                     (Activation::Press, Some(_)) if a.repeat => None,
@@ -336,9 +398,9 @@ impl Playback {
                     }),
                 };
                 if let Some(next) = next {
-                    self.tracks.insert(layer.id, next);
+                    self.tracks.insert((layer.id, a.trigger), next);
                 } else {
-                    self.tracks.remove(&layer.id);
+                    self.tracks.remove(&(layer.id, a.trigger));
                 }
             } else if a.activation == Activation::Hold
                 && let Some(previous) = previous
@@ -357,10 +419,10 @@ impl Playback {
                         let elapsed = now_ms.saturating_sub(start).saturating_add(offset);
                         // Releasing during the initial delay must not produce a delayed flash.
                         if elapsed < u64::from(delay) {
-                            self.tracks.remove(&layer.id);
+                            self.tracks.remove(&(layer.id, a.trigger));
                         } else {
                             self.tracks.insert(
-                                layer.id,
+                                (layer.id, a.trigger),
                                 Track::Paused {
                                     elapsed,
                                     from,
@@ -371,7 +433,7 @@ impl Playback {
                     }
                     (Release::Return, _) if fraction > 0.0 => {
                         self.tracks.insert(
-                            layer.id,
+                            (layer.id, a.trigger),
                             Track::Returning {
                                 start: now_ms,
                                 from: fraction,
@@ -379,7 +441,7 @@ impl Playback {
                         );
                     }
                     _ => {
-                        self.tracks.remove(&layer.id);
+                        self.tracks.remove(&(layer.id, a.trigger));
                     }
                 }
             }
@@ -389,21 +451,27 @@ impl Playback {
     pub fn sample(&self, base: &Preset, now_ms: u64) -> AnimationSample {
         let mut preset = base.clone();
         let mut next_frame_ms: Option<u64> = None;
-        for layer in &mut preset.layers {
-            let animation = layer.animation.take();
-            if !layer.visible {
+        for (layer, base_layer) in preset.layers.iter_mut().zip(&base.layers) {
+            let mut animations = std::mem::take(&mut layer.animations);
+            animations.sort_by_key(|a| match a.trigger {
+                AnimationTrigger::Movement => 0,
+                AnimationTrigger::Aim => 1,
+                AnimationTrigger::Fire => 2,
+            });
+            if !layer.visible || animations.is_empty() {
                 continue;
             }
-            if let Some(a) = animation.filter(|a| a.effective_for(layer))
-                && let Some(track) = self.tracks.get(&layer.id)
-            {
-                let (fraction, next) = sample_track(*track, &a, now_ms);
-                a.target.apply(layer, fraction);
-                next_frame_ms = match (next_frame_ms, next) {
-                    (Some(left), Some(right)) => Some(left.min(right)),
-                    (left, right) => left.or(right),
-                };
+            for a in animations.iter().filter(|a| a.effective_for(base_layer)) {
+                if let Some(track) = self.tracks.get(&(layer.id, a.trigger)) {
+                    let (fraction, next) = sample_track(*track, a, now_ms);
+                    a.target.add_to(layer, base_layer, fraction);
+                    next_frame_ms = match (next_frame_ms, next) {
+                        (Some(left), Some(right)) => Some(left.min(right)),
+                        (left, right) => left.or(right),
+                    };
+                }
             }
+            clamp_animated_layer(layer);
         }
         AnimationSample {
             preset,
@@ -497,14 +565,150 @@ fn sample_track(track: Track, a: &Animation, now: u64) -> (f32, Option<u64>) {
     (fraction, (!paused).then(next).flatten())
 }
 
+pub(crate) fn read_animations<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Vec<Animation>, D::Error> {
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum Definitions {
+        Many(Vec<Animation>),
+        Legacy(Option<Animation>),
+    }
+    Ok(match Definitions::deserialize(deserializer)? {
+        Definitions::Many(value) => value,
+        Definitions::Legacy(value) => value.into_iter().collect(),
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
+    fn simultaneous_triggers_add_from_base_and_release_independently() {
+        let mut p = design();
+        p.layers[0].transform.x = 10.0;
+        p.layers[0].animations = [
+            (AnimationTrigger::Movement, 30.0),
+            (AnimationTrigger::Aim, 5.0),
+            (AnimationTrigger::Fire, 20.0),
+        ]
+        .into_iter()
+        .map(|(trigger, x)| Animation {
+            trigger,
+            duration_ms: 100,
+            easing: Easing::Linear,
+            target: AnimationTarget {
+                x: Some(x),
+                ..Default::default()
+            },
+            ..Default::default()
+        })
+        .collect();
+        let mut playback = Playback::default();
+        for trigger in [
+            AnimationTrigger::Movement,
+            AnimationTrigger::Aim,
+            AnimationTrigger::Fire,
+        ] {
+            playback.event(
+                &p,
+                AnimationEvent::Trigger {
+                    trigger,
+                    down: true,
+                },
+                0,
+            );
+        }
+        close(x(&playback, &p, 50), 22.5);
+        close(x(&playback, &p, 100), 35.0);
+        playback.event(&p, fire(false), 100);
+        close(x(&playback, &p, 150), 30.0);
+        close(x(&playback, &p, 200), 25.0);
+        assert!(playback.sample(&p, 200).next_frame_ms.is_none());
+        playback.event(&p, AnimationEvent::Reload, 200);
+        close(x(&playback, &p, 200), 10.0);
+        playback.event(&p, fire(true), 200);
+        close(x(&playback, &p, 300), 20.0);
+        playback.event(
+            &p,
+            AnimationEvent::Trigger {
+                trigger: AnimationTrigger::Aim,
+                down: true,
+            },
+            200,
+        );
+        close(x(&playback, &p, 300), 20.0); // Aim was held during Reload and must rearm.
+        p.layers[0].animations[2].enabled = false;
+        playback.select(&p, [true, true, true], 300);
+        close(x(&playback, &p, 400), 10.0);
+    }
+
+    #[test]
+    fn combined_targets_clamp_once_and_color_priority_is_definition_order_independent() {
+        let mut p = design();
+        p.layers[0].opacity = 0.5;
+        p.layers[0].animations = [
+            AnimationTrigger::Movement,
+            AnimationTrigger::Aim,
+            AnimationTrigger::Fire,
+        ]
+        .into_iter()
+        .map(|trigger| Animation {
+            trigger,
+            duration_ms: 0,
+            target: AnimationTarget {
+                opacity: Some(if trigger == AnimationTrigger::Aim {
+                    0.0
+                } else {
+                    1.0
+                }),
+                color: Some(if trigger == AnimationTrigger::Fire {
+                    Color::rgba(255, 0, 0, 255)
+                } else {
+                    Color::rgba(0, 255, 0, 255)
+                }),
+                ..Default::default()
+            },
+            ..Default::default()
+        })
+        .collect();
+        let mut playback = Playback::default();
+        playback.select(&p, [true; 3], 0);
+        let sample = playback.sample(&p, 0);
+        assert_eq!(sample.preset.layers[0].opacity, 1.0);
+        let Content::Crosshair(shape) = &sample.preset.layers[0].content else {
+            panic!()
+        };
+        assert_eq!(shape.color, Color::rgba(255, 0, 0, 255));
+        p.layers[0].animations.reverse();
+        assert_eq!(playback.sample(&p, 0).preset, sample.preset);
+        assert!(sample.next_frame_ms.is_none());
+    }
+
+    #[test]
+    fn legacy_definition_migrates_and_duplicate_triggers_are_rejected() {
+        let p = design();
+        let mut encoded = serde_json::to_value(&p.layers[0]).unwrap();
+        let definitions = encoded
+            .as_object_mut()
+            .unwrap()
+            .remove("animations")
+            .unwrap();
+        encoded["animation"] = definitions[0].clone();
+        let migrated: Layer = serde_json::from_value(encoded.clone()).unwrap();
+        assert_eq!(migrated, p.layers[0]);
+        encoded["animation"]["target"]["unknown"] = true.into();
+        assert!(serde_json::from_value::<Layer>(encoded).is_err());
+        let mut invalid = migrated.clone();
+        invalid.animations.push(migrated.animations[0].clone());
+        assert!(crate::validation::validate_layer_geometry(&invalid).is_err());
+    }
+
+    #[test]
     fn movement_hold_returns_and_reload_rearms_only_after_release() {
         let mut p = design();
-        p.layers[0].animation.as_mut().unwrap().trigger = AnimationTrigger::Movement;
+        p.layers[0].animations.first_mut().unwrap().trigger = AnimationTrigger::Movement;
         let movement = |down| AnimationEvent::Trigger {
             trigger: AnimationTrigger::Movement,
             down,
@@ -522,7 +726,7 @@ mod tests {
         playback.event(&p, movement(false), 401);
         playback.event(&p, movement(true), 402);
         close(x(&playback, &p, 502), 100.0);
-        p.layers[0].animation.as_mut().unwrap().activation = Activation::Press;
+        p.layers[0].animations.first_mut().unwrap().activation = Activation::Press;
         playback.select(&p, [false, false, true], 503);
         close(x(&playback, &p, 550), 0.0);
     }
@@ -535,7 +739,7 @@ mod tests {
         };
         let color = shape.color;
         p.layers[0].transform.x = 100.0;
-        let a = p.layers[0].animation.as_mut().unwrap();
+        let a = p.layers[0].animations.first_mut().unwrap();
         a.repeat = true;
         a.target.color = Some(color);
         let mut playback = Playback::default();
@@ -548,7 +752,7 @@ mod tests {
 
     fn design() -> Preset {
         let mut p = Preset::new("Test");
-        p.layers[0].animation = Some(Animation {
+        p.layers[0].animations = vec![Animation {
             duration_ms: 100,
             easing: Easing::Linear,
             target: AnimationTarget {
@@ -556,7 +760,7 @@ mod tests {
                 ..Default::default()
             },
             ..Default::default()
-        });
+        }];
         p
     }
     fn fire(down: bool) -> AnimationEvent {
@@ -589,14 +793,18 @@ mod tests {
         close(x(&playback, &p, 300), 0.0);
         assert_eq!(playback.sample(&p, 300).next_frame_ms, None);
         assert_eq!(p.layers[0].transform.x, 0.0);
-        assert!(playback.sample(&p, 50).preset.layers[0].animation.is_none());
+        assert!(
+            playback.sample(&p, 50).preset.layers[0]
+                .animations
+                .is_empty()
+        );
     }
 
     #[test]
     fn instant_hold_honors_delay_release_and_repeated_presses_without_frames() {
         for release in [Release::Return, Release::Reset, Release::Pause] {
             let mut p = design();
-            let a = p.layers[0].animation.as_mut().unwrap();
+            let a = p.layers[0].animations.first_mut().unwrap();
             a.duration_ms = 0;
             a.delay_ms = 20;
             a.release = release;
@@ -619,14 +827,14 @@ mod tests {
     #[test]
     fn instant_press_and_repeat_settle_without_zero_length_loops() {
         let mut p = design();
-        let a = p.layers[0].animation.as_mut().unwrap();
+        let a = p.layers[0].animations.first_mut().unwrap();
         a.duration_ms = 0;
         a.activation = Activation::Press;
         let mut playback = Playback::default();
         playback.event(&p, fire(true), 0);
         close(x(&playback, &p, 0), 0.0);
         assert_eq!(playback.sample(&p, 0).next_frame_ms, None);
-        p.layers[0].animation.as_mut().unwrap().repeat = true;
+        p.layers[0].animations.first_mut().unwrap().repeat = true;
         playback.reset();
         playback.event(&p, fire(true), 1);
         close(x(&playback, &p, 1), 100.0);
@@ -634,7 +842,7 @@ mod tests {
         playback.event(&p, fire(false), 2);
         playback.event(&p, fire(true), 3);
         close(x(&playback, &p, 3), 0.0);
-        p.layers[0].animation.as_mut().unwrap().direction = Direction::BackAndForth;
+        p.layers[0].animations.first_mut().unwrap().direction = Direction::BackAndForth;
         playback.event(&p, fire(true), 4);
         close(x(&playback, &p, 4), 0.0);
         assert_eq!(playback.sample(&p, 4).next_frame_ms, None);
@@ -643,7 +851,7 @@ mod tests {
     #[test]
     fn a_completed_return_restarts_the_initial_delay() {
         let mut p = design();
-        p.layers[0].animation.as_mut().unwrap().delay_ms = 20;
+        p.layers[0].animations.first_mut().unwrap().delay_ms = 20;
         let mut playback = Playback::default();
         playback.event(&p, fire(true), 0);
         playback.event(&p, fire(false), 120);
@@ -656,7 +864,7 @@ mod tests {
     #[test]
     fn pause_resume_reload_and_lifecycle_reset_rearm_cleanly() {
         let mut p = design();
-        p.layers[0].animation.as_mut().unwrap().release = Release::Pause;
+        p.layers[0].animations.first_mut().unwrap().release = Release::Pause;
         let mut playback = Playback::default();
         playback.event(&p, fire(true), 0);
         playback.event(&p, fire(false), 40);
@@ -679,7 +887,7 @@ mod tests {
     #[test]
     fn delay_releases_do_not_flash_and_resume_does_not_repeat_delay() {
         let mut p = design();
-        let a = p.layers[0].animation.as_mut().unwrap();
+        let a = p.layers[0].animations.first_mut().unwrap();
         a.delay_ms = 200;
         a.release = Release::Pause;
         let mut playback = Playback::default();
@@ -697,14 +905,14 @@ mod tests {
     #[test]
     fn press_pulse_finishes_and_repeated_press_loop_toggles() {
         let mut p = design();
-        p.layers[0].animation.as_mut().unwrap().activation = Activation::Press;
+        p.layers[0].animations.first_mut().unwrap().activation = Activation::Press;
         let mut playback = Playback::default();
         playback.event(&p, fire(true), 0);
         playback.event(&p, fire(false), 1);
         close(x(&playback, &p, 50), 50.0);
         close(x(&playback, &p, 100), 0.0);
         assert_eq!(playback.sample(&p, 100).next_frame_ms, None);
-        p.layers[0].animation.as_mut().unwrap().repeat = true;
+        p.layers[0].animations.first_mut().unwrap().repeat = true;
         playback.reset();
         playback.event(&p, fire(true), 0);
         playback.event(&p, fire(false), 1);
@@ -716,14 +924,14 @@ mod tests {
     #[test]
     fn alternating_hold_finishes_at_base_and_repeat_uses_elapsed_time() {
         let mut p = design();
-        p.layers[0].animation.as_mut().unwrap().direction = Direction::BackAndForth;
+        p.layers[0].animations.first_mut().unwrap().direction = Direction::BackAndForth;
         let mut playback = Playback::default();
         playback.event(&p, fire(true), 0);
         close(x(&playback, &p, 100), 100.0);
         close(x(&playback, &p, 150), 50.0);
         close(x(&playback, &p, 200), 0.0);
         assert_eq!(playback.sample(&p, 200).next_frame_ms, None);
-        p.layers[0].animation.as_mut().unwrap().repeat = true;
+        p.layers[0].animations.first_mut().unwrap().repeat = true;
         close(x(&playback, &p, 10_150), 50.0);
         assert!(playback.sample(&p, 10_150).next_frame_ms.is_some());
     }
@@ -732,14 +940,14 @@ mod tests {
     fn selection_inherits_holds_but_not_presses_and_triggers_are_independent() {
         let mut p = design();
         let mut aim = p.layers[0].duplicate();
-        aim.animation.as_mut().unwrap().trigger = AnimationTrigger::Aim;
+        aim.animations.first_mut().unwrap().trigger = AnimationTrigger::Aim;
         p.layers.push(aim);
         let mut playback = Playback::default();
         playback.select(&p, [true, false, false], 0);
         let sample = playback.sample(&p, 50);
         close(sample.preset.layers[0].transform.x, 0.0);
         close(sample.preset.layers[1].transform.x, 50.0);
-        p.layers[1].animation.as_mut().unwrap().activation = Activation::Press;
+        p.layers[1].animations.first_mut().unwrap().activation = Activation::Press;
         playback.select(&p, [true, false, false], 100);
         close(playback.sample(&p, 150).preset.layers[1].transform.x, 0.0);
         // The actual edge selecting this design may still trigger a Press animation.
@@ -758,11 +966,11 @@ mod tests {
     fn empty_disabled_and_hidden_layers_never_request_frames() {
         let mut p = design();
         let mut playback = Playback::default();
-        p.layers[0].animation.as_mut().unwrap().target = AnimationTarget::default();
+        p.layers[0].animations.first_mut().unwrap().target = AnimationTarget::default();
         playback.event(&p, fire(true), 0);
         assert_eq!(playback.sample(&p, 20).next_frame_ms, None);
         p = design();
-        p.layers[0].animation.as_mut().unwrap().enabled = false;
+        p.layers[0].animations.first_mut().unwrap().enabled = false;
         playback.event(&p, fire(true), 0);
         assert_eq!(playback.sample(&p, 20).next_frame_ms, None);
         p = design();

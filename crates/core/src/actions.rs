@@ -162,6 +162,7 @@ pub fn migrate_state(mut state: AppState) -> Result<AppState, ValidationError> {
             }
             state.schema_version = crate::SCHEMA_VERSION;
         }
+        3 => state.schema_version = crate::SCHEMA_VERSION,
         crate::SCHEMA_VERSION => {}
         _ => {
             return Err(ValidationError::new(
@@ -313,14 +314,14 @@ mod tests {
     #[test]
     fn animation_definitions_round_trip_and_reject_invalid_targets() {
         let mut state = AppState::default();
-        state.presets[0].layers[0].animation = Some(Animation {
+        state.presets[0].layers[0].animations = vec![Animation {
             target: AnimationTarget {
                 thickness: Some(3.0),
                 x: Some(20.0),
                 ..Default::default()
             },
             ..Default::default()
-        });
+        }];
         validate_state(&state).unwrap();
         let encoded = serde_json::to_value(&state).unwrap();
         assert_eq!(
@@ -328,32 +329,32 @@ mod tests {
             state
         );
         let mut unknown = encoded.clone();
-        unknown["presets"][0]["layers"][0]["animation"]["target"]["script"] = "bad".into();
+        unknown["presets"][0]["layers"][0]["animations"][0]["target"]["script"] = "bad".into();
         assert!(serde_json::from_value::<AppState>(unknown).is_err());
-        let a = state.presets[0].layers[0].animation.as_mut().unwrap();
+        let a = state.presets[0].layers[0].animations.first_mut().unwrap();
         a.duration_ms = 0;
         validate_state(&state).unwrap();
         state.presets[0].layers[0]
-            .animation
-            .as_mut()
+            .animations
+            .first_mut()
             .unwrap()
             .duration_ms = 10001;
         assert!(validate_state(&state).is_err());
         state.presets[0].layers[0]
-            .animation
-            .as_mut()
+            .animations
+            .first_mut()
             .unwrap()
             .duration_ms = 150;
         state.presets[0].layers[0]
-            .animation
-            .as_mut()
+            .animations
+            .first_mut()
             .unwrap()
             .target
             .x = Some(f32::NAN);
         assert!(validate_state(&state).is_err());
         state.presets[0].layers[0]
-            .animation
-            .as_mut()
+            .animations
+            .first_mut()
             .unwrap()
             .target
             .x = Some(0.0);

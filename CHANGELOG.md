@@ -5,6 +5,9 @@
 - Show Windows' actual launch-at-sign-in setting and clarify when the installed
   app is required. Add setup options for shortcuts, sign-in and launch after install.
 
+- Keep middle-mouse canvas panning available in Animate and during local playback.
+- Give each layer independent Aim, Fire and Movement animation tabs, with separate
+  enable switches and combined playback. Existing animations retain their settings.
 - Add a Movement animation trigger with configurable keyboard bindings and local
   preview. Effects respond while any movement key is held.
 
