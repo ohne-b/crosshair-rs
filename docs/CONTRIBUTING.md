@@ -100,7 +100,12 @@ cargo test --locked --workspace
 ```
 
 The [Validation workflow](../.github/workflows/validation.yml) runs this baseline on
-Windows for PRs, main pushes and manual runs. Packaging builds the real engine,
+Windows for PRs, main pushes and manual runs. Website-only and Markdown-only
+changes skip automatic application validation. The separate
+[Website validation workflow](../.github/workflows/website-validation.yml) checks
+and builds website changes; Markdown-only changes skip it too. Mixed application
+and website changes run both workflows. Manual validation remains available.
+Packaging builds the real engine,
 Slint editor and Game Bar host, validates the MSIX manifest and bundles it with
 the Microsoft-signed x64 VCLibs dependency in one NSIS setup EXE. Packaging itself
 never installs the result. `test-deployment.ps1` installs and removes it only on

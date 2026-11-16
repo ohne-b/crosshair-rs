@@ -11,7 +11,7 @@ for (const name of readdirSync(directory).filter(value => /\.ya?ml$/.test(value)
   if (document.errors.length) throw new Error(`${name}: ${document.errors.map(value => value.message).join('; ')}`);
   const workflow = document.toJS();
   if (!workflow.on || !workflow.jobs || !workflow.permissions) throw new Error(`${name}: missing triggers, jobs or explicit permissions`);
-  if (name !== 'validation.yml' && Object.keys(workflow.on).some(value => value !== 'workflow_dispatch')) throw new Error(`${name}: releases must be manually dispatched`);
+  if (!['validation.yml', 'website-validation.yml'].includes(name) && Object.keys(workflow.on).some(value => value !== 'workflow_dispatch')) throw new Error(`${name}: releases must be manually dispatched`);
   for (const [jobName, job] of Object.entries(workflow.jobs)) {
     for (const [index, step] of (job.steps ?? []).entries()) {
       if (step.uses && !/^[\w-]+\/[\w-]+@[a-f0-9]{40}$/.test(step.uses)) throw new Error(`${name}: pin action revisions`);

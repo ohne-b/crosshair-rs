@@ -6,7 +6,7 @@ const screens = [
 ];
 ---
 
-<section class="screenshots wrap" aria-label="Inside crosshair-rs">
+<section id="screenshots" class="screenshots wrap" aria-label="Inside crosshair-rs">
   <fieldset aria-label="Screenshot view">
     {screens.map((screen, index) => (
       <label>
@@ -30,11 +30,11 @@ const screens = [
 </section>
 
 <style>
-  .screenshots { padding-block: 16px 64px; }
-  fieldset { display: flex; justify-content: center; gap: 8px; border: 0; padding: 0; margin: 0 0 24px; }
+  .screenshots { padding-block: 48px 104px; }
+  fieldset { display: flex; justify-content: center; gap: 8px; border: 0; padding: 0; margin: 0 0 32px; }
   label { position: relative; cursor: pointer; }
   input { position: absolute; opacity: 0; width: 1px; height: 1px; }
-  span { display: block; padding: 10px 20px; border-radius: 10px; font-size: 14px; color: var(--p-muted); }
+  span { display: block; padding: 10px 20px; border-radius: 10px; font-size: 14px; color: var(--p-muted); transition: background 0.2s, color 0.2s; }
   label:hover span { background: #1b1c1e; color: var(--p-ink); }
   input:checked + span { background: #262729; color: var(--p-ink); }
   input:focus-visible + span { outline: 2px solid var(--p-accent); outline-offset: 3px; }
@@ -43,9 +43,30 @@ const screens = [
   .screenshots:has(input[value='designer']:checked) .designer,
   .screenshots:has(input[value='shortcuts']:checked) .shortcuts { display: block; }
   img { width: 100%; height: auto; }
+  @media (prefers-reduced-motion: no-preference) {
+    figure { animation: screenshot-switch 0.3s ease-out; }
+    @supports ((animation-timeline: view()) and (animation-range: entry)) {
+      .screenshots {
+        /* Longhands prevent the build from folding the timeline into unsupported shorthand. */
+        animation-name: screenshots-enter;
+        animation-timing-function: linear;
+        animation-fill-mode: both;
+        animation-timeline: view();
+        animation-range: entry 0% entry 70%;
+      }
+    }
+  }
+  @keyframes screenshot-switch {
+    from { opacity: 0.6; }
+    to { opacity: 1; }
+  }
+  @keyframes screenshots-enter {
+    from { opacity: 0.4; transform: translateY(24px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
   @media (max-width: 639px) {
-    .screenshots { padding-block: 8px 32px; }
-    fieldset { gap: 4px; margin-bottom: 16px; }
+    .screenshots { padding-block: 32px 64px; }
+    fieldset { gap: 4px; margin-bottom: 20px; }
     span { padding: 10px 14px; font-size: 13px; }
   }
 </style>
