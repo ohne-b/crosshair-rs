@@ -211,7 +211,12 @@ void shortcut(REFKNOWNFOLDERID folder, std::wstring const& name, std::wstring co
         PIDLIST_ABSOLUTE previous{};
         check_hresult(existing->GetIDList(&previous));
         Pidl previous_target{previous};
-        if (!previous || !ILIsEqual(previous, target)) {
+        com_ptr<IShellFolder> desktop;
+        check_hresult(SHGetDesktopFolder(desktop.put()));
+        // Saved shell links can encode the same app with different item-data bytes.
+        auto comparison = previous ? desktop->CompareIDs(SHCIDS_CANONICALONLY, previous, target) : S_FALSE;
+        check_hresult(comparison);
+        if (HRESULT_CODE(comparison) != 0) {
             if (enabled) throw hresult_error(E_FAIL, L"A different shortcut already uses the crosshair-rs name.");
             return;
         }

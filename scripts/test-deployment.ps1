@@ -131,6 +131,19 @@ try {
     } finally { $engine.Dispose() }
     Run-Setup '/S /DESKTOP=0 /STARTMENU=0'
     foreach ($shortcut in $shortcuts) { if (Test-Path -LiteralPath $shortcut) { throw 'Explicitly clearing a shortcut option did not remove its owned shortcut.' } }
+    $unrelatedTarget = Join-Path $fixtureRoot 'unrelated.txt'
+    Set-Content -LiteralPath $unrelatedTarget -Value 'Unrelated shortcut target'
+    $links = New-Object -ComObject WScript.Shell
+    foreach ($shortcut in $shortcuts) {
+        $link = $links.CreateShortcut($shortcut)
+        $link.TargetPath = $unrelatedTarget
+        $link.Save()
+    }
+    $unrelatedHashes = @($shortcuts | ForEach-Object { (Get-FileHash -LiteralPath $_).Hash })
+    Run-Setup '/S /DESKTOP=0 /STARTMENU=0'
+    for ($index = 0; $index -lt $shortcuts.Count; $index++) {
+        if ((Get-FileHash -LiteralPath $shortcuts[$index]).Hash -cne $unrelatedHashes[$index]) { throw 'Setup changed an unrelated shortcut with the same name.' }
+    }
     Write-Output 'Setup registration, stable shortcuts, silent-option preservation, packaged startup enable/disable and resident-engine reconciliation passed. Windows sign-in itself was not exercised.'
 } finally {
     if ($engineStarted) {
