@@ -59,6 +59,11 @@ pub fn needs_mouse(state: &AppState, presets: &[&Preset], capture: bool, held: b
                 .bindings
                 .iter()
                 .any(|b| b.enabled && mouse(b.chord.trigger))
+                || profile
+                    .actions
+                    .hold_to_hide
+                    .as_ref()
+                    .is_some_and(|c| mouse(c.trigger))
                 || profile.actions.aim.as_ref().is_some_and(|c| {
                     mouse(c.trigger)
                         && (profile.actions.aim_action != AimAction::None
@@ -249,6 +254,12 @@ mod tests {
         state.profiles[0].actions.aim_action = AimAction::HideWhileHeld;
         assert!(needs_mouse(&state, &[], false, false));
         state.profiles[0].actions.aim_action = AimAction::None;
+        state.profiles[0].actions.hold_to_hide = Some(crosshair_core::InputChord {
+            trigger: InputKey::Mouse { button: 5 },
+            modifiers: vec![],
+        });
+        assert!(needs_mouse(&state, &[], false, false));
+        state.profiles[0].actions.hold_to_hide = None;
         state.presets[0].layers[0].animations = vec![crosshair_core::Animation {
             target: crosshair_core::AnimationTarget {
                 x: Some(10.0),

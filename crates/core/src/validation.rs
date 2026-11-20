@@ -527,11 +527,14 @@ pub fn validate_action_conflicts(
     for chord in actions.chords() {
         validate_chord(chord)?;
     }
-    for chord in [&actions.aim, &actions.fire].into_iter().flatten() {
+    for chord in [&actions.aim, &actions.fire, &actions.hold_to_hide]
+        .into_iter()
+        .flatten()
+    {
         require(
             !chord.trigger.is_pulse(),
             "actions.chord",
-            "Aim and Fire require a key or mouse button with a release",
+            "Aim, Fire and Hold to hide require a key or mouse button with a release",
         )?;
     }
     for chord in actions.movement.iter().flatten() {

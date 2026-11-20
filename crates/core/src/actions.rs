@@ -43,6 +43,8 @@ pub struct ActionBindings {
     pub fire: Option<InputChord>,
     pub reload: Option<InputChord>,
     pub aim_action: AimAction,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hold_to_hide: Option<InputChord>,
     /// Forward, left, backward and right keyboard chords.
     #[serde(default)]
     pub movement: [Option<InputChord>; 4],
@@ -55,12 +57,13 @@ impl ActionBindings {
             fire: None,
             reload: None,
             aim_action: AimAction::None,
+            hold_to_hide: None,
             movement: Default::default(),
         }
     }
 
     pub fn chords(&self) -> impl Iterator<Item = &InputChord> {
-        [&self.aim, &self.fire, &self.reload]
+        [&self.aim, &self.fire, &self.reload, &self.hold_to_hide]
             .into_iter()
             .chain(self.movement.iter())
             .filter_map(Option::as_ref)
@@ -80,6 +83,7 @@ impl Default for ActionBindings {
             fire: mouse(1),
             reload: Some(InputChord::key(0x13)),
             aim_action: AimAction::None,
+            hold_to_hide: None,
             movement: [0x11, 0x1e, 0x1f, 0x20].map(|key| Some(InputChord::key(key))),
         }
     }
@@ -181,6 +185,30 @@ mod tests {
     use crate::{
         Animation, AnimationTarget, Binding, BindingAction, Content, Modifier, validate_state,
     };
+
+    #[test]
+    fn hold_to_hide_is_optional_and_uses_action_chord_validation() {
+        let mut state = AppState::default();
+        let previous = serde_json::to_value(&state).unwrap();
+        assert!(
+            previous["profiles"][0]["actions"]
+                .get("hold_to_hide")
+                .is_none()
+        );
+        assert_eq!(serde_json::from_value::<AppState>(previous).unwrap(), state);
+
+        state.profiles[0].actions.hold_to_hide = Some(InputChord::key(0x11));
+        assert!(validate_state(&state).is_err());
+        for trigger in [InputKey::Pause, InputKey::Wheel { up: true }] {
+            state.profiles[0].actions.hold_to_hide = Some(InputChord {
+                trigger,
+                modifiers: vec![],
+            });
+            assert!(validate_state(&state).is_err());
+        }
+        state.profiles[0].actions.hold_to_hide = Some(InputChord::key(0x22));
+        validate_state(&state).unwrap();
+    }
 
     #[test]
     fn v2_migration_adds_movement_without_stealing_shortcuts_or_roles() {

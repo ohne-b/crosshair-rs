@@ -546,6 +546,57 @@ fn captures_pin_profiles_reject_pulses_and_replace_roles_atomically() -> Result<
 }
 
 #[test]
+fn hold_to_hide_capture_binds_clears_and_replaces_conflicts() -> Result<()> {
+    let ui = window();
+    let mut app = app(&ui);
+    let (client, commands) = Client::recording_for_test();
+    app.client = client;
+    app.refresh_bindings();
+    let store = ui.global::<Store>();
+    let row = store
+        .get_bindings()
+        .iter()
+        .filter(|row| row.global)
+        .last()
+        .unwrap();
+    assert_eq!(row.action, "Hold to hide");
+    assert_eq!(row.chord, "Unbound");
+    assert_eq!(store.get_movement_bindings().row_count(), 4);
+
+    app.action("capture", "hide")?;
+    assert_eq!(store.get_capture_id(), "hide");
+    assert!(matches!(&commands()[..], [Command::BeginCapture { .. }]));
+    let g = InputChord::key(0x22);
+    app.complete_capture(Some(g.clone()))?;
+    assert!(
+        matches!(&commands()[..], [Command::SetBindings { profiles, .. }]
+        if profiles[0].actions.hold_to_hide.as_ref() == Some(&g))
+    );
+    app.state.profiles[0].actions.hold_to_hide = Some(g);
+
+    app.action("capture", "hide")?;
+    commands();
+    let forward = InputChord::key(0x11);
+    app.complete_capture(Some(forward.clone()))?;
+    assert!(matches!(app.modal, Modal::Conflict(..)));
+    assert!(commands().is_empty());
+    app.confirm_modal("", false)?;
+    assert!(
+        matches!(&commands()[..], [Command::SetBindings { profiles, .. }]
+        if profiles[0].actions.hold_to_hide.as_ref() == Some(&forward)
+            && profiles[0].actions.movement[0].is_none())
+    );
+
+    app.action("binding-remove", "hide")?;
+    assert!(
+        matches!(&commands()[..], [Command::SetBindings { profiles, .. }]
+        if profiles[0].actions.hold_to_hide.is_none())
+    );
+    ui.hide()?;
+    Ok(())
+}
+
+#[test]
 fn movement_capture_rebinds_clears_and_replaces_conflicts() -> Result<()> {
     use crate::features::keybinds::Target;
     let ui = window();

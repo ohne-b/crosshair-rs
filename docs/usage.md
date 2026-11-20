@@ -45,6 +45,12 @@ in the **Global toggle** row in **Keybinds**.
 The **Global toggle** shortcut, header button and tray toggle all control the
 same master switch. Clearing its shortcut does not turn the overlay off.
 
+In **Keybinds**, click **Unbound** in the **Hold to hide** row above **Movement**
+and press the key you use to open your map, such as **G** in Rust. The crosshair
+hides while you hold that shortcut. Releasing it restores visibility according
+to the master switch and Aim settings. The shortcut belongs to the active profile
+and accepts keyboard chords and mouse buttons.
+
 **Aim**, **Fire** and **Reload** belong to the active profile. Their initial inputs
 are Right mouse, Left mouse and R; an existing conflicting shortcut is kept and
 the new action is left unbound. Aim and Fire accept keys or mouse buttons; Reload

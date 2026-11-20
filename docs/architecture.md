@@ -22,7 +22,7 @@ its interactions are illustrative, not an implementation of the application.
 | Storage | Engine-owned versioned JSON and managed local image assets. |
 | Installation | One unsigned MSIX containing editor, engine and widget. Administrator approval for installation/updates; no Windows service. |
 | Updates | TDM's Settings interaction and signed latest.json contract, adapted to MSIX. |
-| Input | Global keyboard and mouse shortcuts, Aim actions, Fire, Movement and Reload animation triggers. No controllers. |
+| Input | Global keyboard and mouse shortcuts, Aim actions, Hold to hide, and Fire, Movement and Reload animation triggers. No controllers. |
 | Appearance | Orange placeholder logo, Tabler outline icons, Manrope interface font. |
 | License | GPL-3.0-only with a Game Bar SDK linking exception; third-party components retain their licenses. |
 
@@ -345,12 +345,14 @@ image/video export, custom easing, game detection or recoil/ammunition tracking.
 
 ### Keybinds
 
-The Action keybinds table contains Global toggle, Aim, Fire, Reload and one Movement row with four individually editable and clearable direction keys. Global
-toggle records the shortcut for the title/tray master switch. Aim has an
-action dropdown and a target thumbnail when relevant. Fire triggers animation;
-Reload resets it. Initial chords are Shift+Alt+Z, Right mouse, Left mouse and R,
-respectively. Global toggle is application-wide; the other roles and preset
-shortcuts belong to the active profile. There is no controller column.
+The Action keybinds table contains Global toggle, Aim, Fire, Reload, Hold to hide
+and a Movement row with four editable direction keys. Global toggle records the
+shortcut for the title/tray master switch. Aim has an action dropdown and a target
+thumbnail when relevant. Fire triggers animation and Reload resets it. Initial
+chords are Shift+Alt+Z, Right mouse, Left mouse and R, respectively. Global toggle
+is application-wide. The other roles and preset shortcuts belong to the active
+profile. Hold to hide starts unbound, including in older profiles. There is no
+controller column.
 
 | Aim action | Behavior |
 | --- | --- |
@@ -396,10 +398,9 @@ Click a chip to listen: `Press a key`, highlighted background. Escape cancels, B
 clears, outside click cancels. Each capture has a unique token; delayed results
 from a cancelled capture cannot finish a newer one. Wait for already-held keys/buttons to release so
 the click opening capture is not assigned as Mouse 1. Support keyboard chords,
-mouse buttons 1-5 and wheel up/down (wheel is press-only). Aim/Fire require
-release-capable keyboard/mouse inputs; Wheel and Pause are allowed for Reload
-and ordinary press shortcuts. Roles participate in conflict checks even when
-the current design has no animation.
+mouse buttons 1-5 and wheel up/down. Aim, Fire and Hold to hide require inputs with
+a release. Reload and ordinary press shortcuts also accept Wheel and Pause.
+Roles participate in conflict checks even when the current design has no animation.
 
 The engine captures; shortcut dispatch is suspended during capture, but input
 continues reaching all other apps normally. Restore dispatch on commit/cancel,
@@ -523,12 +524,12 @@ editable labels, never identity or filesystem paths.
 | Entity | Contents |
 | --- | --- |
 | App state | Schema version, settings, profiles/active ID, preset library, asset index, base selection/visibility, revisions. |
-| Profile | ID/name, selected preset, bindings, Aim/Fire/Reload and movement chords, Aim action, scale/offset, saved positions. |
+| Profile | ID/name, selected preset, bindings, Aim/Fire/Reload/Hold to hide and movement chords, Aim action, scale/offset, saved positions. |
 | Preset | ID/name, ordered layers, favorite, manual order, document revision and engine-owned global edit order for recency. |
 | Layer | ID/name, visible/locked, transform, opacity, typed content/effects and up to three animation definitions, one per trigger. |
 | Content | Crosshair, rectangle, ellipse, triangle, text, image or freehand strokes. |
 | Binding | ID, optional display name, chord, preset-selection or visibility action, target if needed, enabled. |
-| Runtime only | Pressed devices/keys, Aim overrides, animation progress/paused poses, capture, transient draft previews, connections, caches, edit history and update state. |
+| Runtime only | Pressed devices/keys, Aim and Hold to hide overrides, animation progress/paused poses, capture, transient draft previews, connections, caches, edit history and update state. |
 
 Geometry uses physical design pixels. UI logical pixels/display scale never
 silently change thickness. Profile scale is an explicit transform; offsets are
@@ -732,6 +733,8 @@ keyboards. Track pressed state by device so one device cannot release another.
   overrides/playback. Re-enabling while held waits for release and a fresh press.
   Only Global toggle or Aim Toggle crosshair can turn the master on; Fire, Reload,
   selection and animation cannot. Animation opacity never changes the switch.
+- Hold to hide masks the output regardless of the Aim visibility action.
+  Releasing it restores the current output according to master and Aim state.
 - Aim action and Aim animation share one resolved event. Other roles, saved
   shortcuts, movement keys and Global toggle cannot also win that input. Required-modifier
   release ends a hold; another device holding the trigger prevents early release.
@@ -762,7 +765,7 @@ newest results to its event loop.
 Desktop pipe: current-user logon-session ACL, remote rejection, authenticated
 peer identity. Names include user/session but are not the security boundary.
 Prevent first-instance squatting; verify expected packaged executable identity.
-Handshake verifies build/protocol before accepting commands. Control protocol v7
+Handshake verifies build/protocol before accepting commands. Control protocol v8
 includes profile action configuration in atomic SetBindings commands, capture
 tokens and independently ordered engine status. Connection epochs are
 checked when queued events reach the editor, so a retired connection cannot change
