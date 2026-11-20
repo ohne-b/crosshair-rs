@@ -257,6 +257,7 @@ impl App {
             match self
                 .state
                 .active_profile()
+                .filter(|profile| profile.actions.hold_to_hide.is_none())
                 .map(|profile| profile.actions.aim_action)
             {
                 Some(AimAction::ShowWhileHeld) => "Hidden until Aim is held",
@@ -659,6 +660,7 @@ impl App {
                 ("aim", "Aim", "", &profile.actions.aim),
                 ("fire", "Fire", "", &profile.actions.fire),
                 ("reload", "Reload", "", &profile.actions.reload),
+                ("hide", "Hold to hide", "", &profile.actions.hold_to_hide),
                 ("forward", "Move forward", "↑", &profile.actions.movement[0]),
                 ("left", "Move left", "←", &profile.actions.movement[1]),
                 (

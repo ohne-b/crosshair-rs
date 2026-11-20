@@ -52,6 +52,7 @@ enum Dispatch {
     Aim(AimAction),
     Fire,
     Reload,
+    HoldToHide,
     Movement,
 }
 
@@ -63,6 +64,7 @@ pub struct InputState {
     capture: Option<Capture>,
     aim: Option<InputChord>,
     fire: Option<InputChord>,
+    hold_to_hide: Option<InputChord>,
     movement: Vec<InputChord>,
     latched_preset: Option<Id>,
 }
@@ -82,6 +84,7 @@ impl InputState {
             self.latched_preset.unwrap_or(base)
         };
         let visible = state.base_visible
+            && self.hold_to_hide.is_none()
             && match action {
                 AimAction::HideWhileHeld => !held,
                 AimAction::ShowWhileHeld => held,
@@ -159,6 +162,7 @@ impl InputState {
         self.blocked.extend(self.pressed.iter().copied());
         self.aim = None;
         self.fire = None;
+        self.hold_to_hide = None;
         self.movement.clear();
         self.latched_preset = None;
     }
@@ -227,6 +231,7 @@ impl InputState {
                         ),
                         (&profile.actions.fire, Dispatch::Fire),
                         (&profile.actions.reload, Dispatch::Reload),
+                        (&profile.actions.hold_to_hide, Dispatch::HoldToHide),
                     ]
                     .into_iter()
                     .chain(
@@ -291,6 +296,9 @@ impl InputState {
                         }
                         self.fire = Some(chord);
                     }
+                    Dispatch::HoldToHide if state.base_visible => {
+                        self.hold_to_hide = Some(chord);
+                    }
                     Dispatch::Movement if state.base_visible => {
                         if self.movement.is_empty() {
                             result.animation_events.push(AnimationEvent::Trigger {
@@ -317,17 +325,25 @@ impl InputState {
     fn reconcile_holds(&mut self) -> Vec<AnimationEvent> {
         let mut events = Vec::new();
         let bits = self.modifier_bits();
+        let still_held = |chord: &InputChord| {
+            modifiers_match(&chord.modifiers, bits)
+                && self
+                    .pressed
+                    .iter()
+                    .any(|pair| pair.1 == chord.trigger && !self.blocked.contains(pair))
+        };
+        if self
+            .hold_to_hide
+            .as_ref()
+            .is_some_and(|chord| !still_held(chord))
+        {
+            self.hold_to_hide = None;
+        }
         for (held, trigger) in [
             (&mut self.aim, AnimationTrigger::Aim),
             (&mut self.fire, AnimationTrigger::Fire),
         ] {
-            if held.as_ref().is_some_and(|chord| {
-                !modifiers_match(&chord.modifiers, bits)
-                    || !self
-                        .pressed
-                        .iter()
-                        .any(|pair| pair.1 == chord.trigger && !self.blocked.contains(pair))
-            }) {
+            if held.as_ref().is_some_and(|chord| !still_held(chord)) {
                 *held = None;
                 events.push(AnimationEvent::Trigger {
                     trigger,
@@ -336,13 +352,7 @@ impl InputState {
             }
         }
         let moving = !self.movement.is_empty();
-        self.movement.retain(|chord| {
-            modifiers_match(&chord.modifiers, bits)
-                && self
-                    .pressed
-                    .iter()
-                    .any(|pair| pair.1 == chord.trigger && !self.blocked.contains(pair))
-        });
+        self.movement.retain(still_held);
         if moving && self.movement.is_empty() {
             events.push(AnimationEvent::Trigger {
                 trigger: AnimationTrigger::Movement,
@@ -729,6 +739,74 @@ mod tests {
         input.handle(mouse(2, 1, false), 6, &mut state);
         input.handle(mouse(2, 1, true), 7, &mut state);
         assert!(state.base_visible);
+    }
+
+    #[test]
+    fn hold_to_hide_takes_precedence_over_aim_and_rearms_after_release() {
+        let mut state = AppState::default();
+        let actions = &mut state.profiles[0].actions;
+        actions.aim_action = AimAction::ShowWhileHeld;
+        let mut chord = InputChord::key(0x22);
+        chord.modifiers = vec![Modifier::Shift];
+        actions.hold_to_hide = Some(chord);
+        let before = state.clone();
+        let mut input = InputState::default();
+        let aim = mouse(2, 1, true);
+        let shift = event(0x2a, true);
+        let hide = event(0x22, true);
+        let second = InputEvent { device: 2, ..hide };
+        input.handle(aim, 0, &mut state);
+        assert!(input.presentation(&state).unwrap().visible);
+        input.handle(shift, 1, &mut state);
+        let pressed = input.handle(hide, 2, &mut state);
+        assert!(pressed.presentation_changed);
+        assert!(pressed.animation_events.is_empty());
+        assert!(!input.presentation(&state).unwrap().visible);
+        assert!(!input.handle(hide, 3, &mut state).presentation_changed);
+        input.handle(second, 4, &mut state);
+        assert!(
+            !input
+                .handle(
+                    InputEvent {
+                        down: false,
+                        ..hide
+                    },
+                    5,
+                    &mut state
+                )
+                .presentation_changed
+        );
+        assert!(
+            input
+                .handle(
+                    InputEvent {
+                        down: false,
+                        ..shift
+                    },
+                    6,
+                    &mut state
+                )
+                .presentation_changed
+        );
+        assert!(input.presentation(&state).unwrap().visible);
+        input.handle(shift, 7, &mut state);
+        assert!(input.presentation(&state).unwrap().visible);
+        input.handle(
+            InputEvent {
+                down: false,
+                ..second
+            },
+            8,
+            &mut state,
+        );
+        input.handle(hide, 9, &mut state);
+        assert!(!input.presentation(&state).unwrap().visible);
+        input.reset();
+        input.handle(InputEvent { down: false, ..aim }, 10, &mut state);
+        input.handle(aim, 11, &mut state);
+        assert!(!input.handle(hide, 12, &mut state).presentation_changed);
+        assert!(input.presentation(&state).unwrap().visible);
+        assert_eq!(state, before);
     }
 
     #[test]

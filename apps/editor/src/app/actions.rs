@@ -886,7 +886,7 @@ impl App {
                     self.set_global_toggle(None)?;
                 } else if matches!(
                     value,
-                    "aim" | "fire" | "reload" | "forward" | "left" | "backward" | "right"
+                    "aim" | "fire" | "reload" | "hide" | "forward" | "left" | "backward" | "right"
                 ) {
                     self.apply_capture(Capture::Role(keybinds::Target::parse(value)?), None, None)?;
                 } else {

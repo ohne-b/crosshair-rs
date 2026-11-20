@@ -93,9 +93,11 @@ impl App {
             anyhow::ensure!(
                 !matches!(
                     target,
-                    Capture::Role(keybinds::Target::Aim | keybinds::Target::Fire)
-                ) || !matches!(chord.trigger, InputKey::Wheel { .. } | InputKey::Pause),
-                "Aim and Fire require a keyboard key or mouse button with a release"
+                    Capture::Role(
+                        keybinds::Target::Aim | keybinds::Target::Fire | keybinds::Target::Hide
+                    )
+                ) || !chord.trigger.is_pulse(),
+                "Aim, Fire and Hold to hide require a keyboard key or mouse button with a release"
             );
             anyhow::ensure!(
                 !matches!(

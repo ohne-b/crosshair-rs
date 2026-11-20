@@ -52,6 +52,58 @@ fn aim_hold_restores_latest_browse_or_saved_base_without_persisting_override() -
 }
 
 #[test]
+fn hold_to_hide_keeps_the_master_on_and_reveals_the_current_browse_selection() -> Result<()> {
+    let (_directory, store, mut app) = application()?;
+    let chord = InputChord::key(0x22);
+    let mut profile = app.state.profiles[0].clone();
+    profile.actions.hold_to_hide = Some(chord.clone());
+    app.command(
+        Id::nil(),
+        Command::SetBindings {
+            profiles: vec![protocol::BindingSet {
+                profile: profile.id,
+                bindings: profile.bindings,
+                actions: profile.actions,
+            }],
+            global_toggle: app.state.settings.global_toggle.clone(),
+            expected_revision: app.state.revision,
+        },
+    )?;
+    store.save(&app.state)?;
+    let before = app.state.clone();
+    let hide = InputEvent {
+        device: 1,
+        key: chord.trigger,
+        down: true,
+    };
+    assert!(app.input(hide));
+    assert!(app.status().enabled);
+    assert!(!app.status().visible);
+    assert!(App::open(&store, true)?.status().visible);
+    assert_eq!(store.load()?, before);
+    let browse = browse::presets()[0].id;
+    app.command(Id::nil(), Command::SelectBrowse { preset: browse })?;
+    assert!(!app.status().visible);
+    assert!(app.input(InputEvent {
+        down: false,
+        ..hide
+    }));
+    assert!(app.status().visible);
+    assert_eq!(app.status().selected_preset, Some(browse));
+    assert_eq!(app.state, before);
+
+    app.command(Id::nil(), Command::ToggleVisibility)?;
+    assert!(!app.input(hide));
+    assert!(!app.input(InputEvent {
+        down: false,
+        ..hide
+    }));
+    assert!(!app.status().enabled);
+    assert!(!app.status().visible);
+    Ok(())
+}
+
+#[test]
 fn aim_target_matching_saved_base_publishes_browse_selection_changes() -> Result<()> {
     for held in [true, false] {
         let (_directory, _store, mut app) = application()?;

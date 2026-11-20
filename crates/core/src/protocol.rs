@@ -292,7 +292,7 @@ pub struct EngineStatus {
     pub revision: u64,
     pub active_profile: Option<Id>,
     pub selected_preset: Option<Id>,
-    /// Master switch; temporary Aim visibility does not change this state.
+    /// Master switch, independent of temporary visibility overrides.
     #[serde(default)]
     pub enabled: bool,
     pub visible: bool,

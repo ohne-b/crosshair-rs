@@ -10,6 +10,8 @@
   enable switches and combined playback. Disabling an animation shows its base shape in Designer. Existing animations retain their settings.
 - Add a Movement animation trigger with configurable keyboard bindings and local
   preview. All four movement keys share one row in Keybinds. Effects respond while any movement key is held.
+- Add a Hold to hide shortcut above Movement in Keybinds. Bind your map key to
+  hide the crosshair while held and restore it on release.
 
 - Keep update downloads in a compact row with separate progress text, and fix the
   engine launch argument that prevented the app reopening after installation.
