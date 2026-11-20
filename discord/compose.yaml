@@ -1,0 +1,30 @@
+services:
+  bot:
+    build: .
+    image: crosshair-community-bot:local
+    environment:
+      DISCORD_TOKEN: ${DISCORD_TOKEN:?Set DISCORD_TOKEN}
+      DISCORD_GUILD_ID: ${DISCORD_GUILD_ID:?Set DISCORD_GUILD_ID}
+      WELCOME_CHANNEL_ID: ${WELCOME_CHANNEL_ID:?Set WELCOME_CHANNEL_ID}
+      SHOWCASE_CHANNEL_ID: ${SHOWCASE_CHANNEL_ID:?Set SHOWCASE_CHANNEL_ID}
+    volumes:
+      - renderer-socket:/run/crosshair:ro
+    depends_on:
+      - showcase
+    read_only: true
+    restart: unless-stopped
+
+  showcase:
+    image: crosshair-community-bot:local
+    pull_policy: never
+    command: ["showcase-worker"]
+    network_mode: none
+    volumes:
+      - renderer-socket:/run/crosshair
+    read_only: true
+    mem_limit: 512m
+    cpus: 1
+    restart: unless-stopped
+
+volumes:
+  renderer-socket:

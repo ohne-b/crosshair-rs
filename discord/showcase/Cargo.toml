@@ -1,0 +1,35 @@
+[package]
+name = "crosshair-rs-showcase-renderer"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.97"
+license = "GPL-3.0-only"
+description = "Offline validation and PNG showcase cards for crosshair-rs preset exports"
+publish = false
+
+[lib]
+name = "crosshair_showcase"
+
+[[bin]]
+name = "showcase-worker"
+path = "src/worker.rs"
+
+[dependencies]
+# The renderer and validator must use the same model revision.
+crosshair-core = { git = "https://github.com/ohne-b/crosshair-rs", rev = "f69d53cac63a920031aa33cc73a1126161b15479" }
+crosshair-renderer = { git = "https://github.com/ohne-b/crosshair-rs", rev = "f69d53cac63a920031aa33cc73a1126161b15479" }
+anyhow = "=1.0.104"
+base64 = "=0.22.1"
+image = { version = "=0.25.10", default-features = false, features = ["png", "jpeg", "gif"] }
+roxmltree = "=0.21.1"
+rustybuzz = "=0.20.1"
+serde = { version = "=1.0.229", features = ["derive"] }
+serde_json = "=1.0.150"
+sha2 = "=0.10.9"
+thiserror = "=2.0.21"
+tiny-skia = { version = "=0.12.0", default-features = false, features = ["std", "simd", "png-format"] }
+unicode-normalization = "=0.1.24"
+unicode-segmentation = "=1.13.3"
+
+[lints.rust]
+unsafe_code = "forbid"
