@@ -214,7 +214,7 @@ pub fn animated_document(
             && let Some(animation) = layer
                 .animations
                 .iter()
-                .find(|a| a.trigger == trigger)
+                .find(|a| a.trigger == trigger && a.enabled)
                 .cloned()
         {
             animation.target.apply(layer, 1.0);
@@ -1187,6 +1187,35 @@ pub fn parse_clipboard(text: &str, assets: &BTreeMap<Id, Asset>) -> Result<Vec<L
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn animated_canvas_shows_base_for_a_disabled_trigger() {
+        let mut preset = Preset::new("Toggle preview");
+        let selected = BTreeSet::from([preset.layers[0].id]);
+        let trigger = AnimationTrigger::Fire;
+        let base_x = preset.layers[0].transform.x;
+        apply_animation_field(
+            &mut preset.layers[0],
+            "@animated:/transform/x",
+            "10",
+            &[],
+            trigger,
+        )
+        .unwrap();
+
+        for (enabled, expected_x) in [("true", 10.0), ("false", base_x), ("true", 10.0)] {
+            apply_animation_field(
+                &mut preset.layers[0],
+                "/animation/enabled",
+                enabled,
+                &[],
+                trigger,
+            )
+            .unwrap();
+            let preview = animated_document(&preset, &selected, trigger);
+            assert_eq!(preview.layers[0].transform.x, expected_x);
+        }
+    }
 
     #[test]
     fn trigger_settings_enable_reset_and_remove_independently() {

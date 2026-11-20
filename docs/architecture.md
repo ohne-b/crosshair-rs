@@ -326,9 +326,12 @@ to their matching trigger without changing their enabled state or settings.
 Aim, Fire, Move and Reset preview controls sit below the animation fields. Pointer/key
 down and release drive Hold; click or Space/Enter supplies Press. Local preview
 uses the same core evaluator in a separate session, without synthetic OS input.
-Animate shows target values for editing and disables canvas transformations
-during playback; middle-mouse viewport panning remains available. Stop, leaving Animate, changing documents and closing clear
-local playback. Global shortcuts remain global even while previewing.
+Animate keeps target values editable and displays the Base pose for a disabled
+trigger. A preview input is available when any visible layer has a matching
+enabled animation that changes its Base pose. During playback, Animate disables
+canvas transformations while allowing middle-mouse viewport panning. Stop,
+leaving Animate, changing documents and closing clear local playback. Global
+shortcuts remain global even while previewing.
 
 Preview uses the existing asynchronous bitmap worker and a timer only while
 values change; it does not rebuild inspector models, thumbnails or hit-test
@@ -342,7 +345,7 @@ image/video export, custom easing, game detection or recoil/ammunition tracking.
 
 ### Keybinds
 
-The Action keybinds table contains Global toggle, Aim, Fire, Reload and four movement keys. Global
+The Action keybinds table contains Global toggle, Aim, Fire, Reload and one Movement row with four individually editable and clearable direction keys. Global
 toggle records the shortcut for the title/tray master switch. Aim has an
 action dropdown and a target thumbnail when relevant. Fire triggers animation;
 Reload resets it. Initial chords are Shift+Alt+Z, Right mouse, Left mouse and R,

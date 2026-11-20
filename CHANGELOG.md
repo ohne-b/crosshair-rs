@@ -7,9 +7,9 @@
 
 - Keep middle-mouse canvas panning available in Animate and during local playback.
 - Give each layer independent Aim, Fire and Movement animation tabs, with separate
-  enable switches and combined playback. Existing animations retain their settings.
+  enable switches and combined playback. Disabling an animation shows its base shape in Designer. Existing animations retain their settings.
 - Add a Movement animation trigger with configurable keyboard bindings and local
-  preview. Effects respond while any movement key is held.
+  preview. All four movement keys share one row in Keybinds. Effects respond while any movement key is held.
 
 - Keep update downloads in a compact row with separate progress text, and fix the
   engine launch argument that prevented the app reopening after installation.

@@ -415,6 +415,23 @@ impl App {
                 .iter()
                 .any(|a| a.trigger == self.animation_trigger)
         }));
+        let can_preview = |trigger| {
+            self.document.draft.as_ref().is_some_and(|preset| {
+                preset
+                    .layers
+                    .iter()
+                    .filter(|layer| layer.visible)
+                    .any(|layer| {
+                        layer
+                            .animations
+                            .iter()
+                            .any(|a| a.trigger == trigger && a.effective_for(layer))
+                    })
+            })
+        };
+        store.set_can_preview_aim(can_preview(AnimationTrigger::Aim));
+        store.set_can_preview_fire(can_preview(AnimationTrigger::Fire));
+        store.set_can_preview_movement(can_preview(AnimationTrigger::Movement));
         store.set_document_open(self.document.draft.is_some());
         store.set_dirty(self.document.dirty || self.inflight.is_some());
         store.set_save_paused(self.document.save_paused || self.document.conflict);
@@ -588,8 +605,10 @@ impl App {
         let Some(ui) = self.ui.upgrade() else {
             return;
         };
+        let mut movement = Vec::new();
         let mut rows = vec![BindingRow {
             id: "global".into(),
+            direction: Default::default(),
             name: SharedString::default(),
             action: "Global toggle".into(),
             target: SharedString::default(),
@@ -631,18 +650,29 @@ impl App {
                     .and_then(|id| self.state.presets.iter().position(|p| p.id == id))
                     .map_or(-1, |i| i as i32),
             );
-            for (id, label, chord) in [
-                ("aim", "Aim", &profile.actions.aim),
-                ("fire", "Fire", &profile.actions.fire),
-                ("reload", "Reload", &profile.actions.reload),
-                ("forward", "Move forward", &profile.actions.movement[0]),
-                ("left", "Move left", &profile.actions.movement[1]),
-                ("backward", "Move backward", &profile.actions.movement[2]),
-                ("right", "Move right", &profile.actions.movement[3]),
+            for (id, label, direction, chord) in [
+                ("aim", "Aim", "", &profile.actions.aim),
+                ("fire", "Fire", "", &profile.actions.fire),
+                ("reload", "Reload", "", &profile.actions.reload),
+                ("forward", "Move forward", "↑", &profile.actions.movement[0]),
+                ("left", "Move left", "←", &profile.actions.movement[1]),
+                (
+                    "backward",
+                    "Move backward",
+                    "↓",
+                    &profile.actions.movement[2],
+                ),
+                ("right", "Move right", "→", &profile.actions.movement[3]),
             ] {
-                rows.push(BindingRow {
+                let group = if direction.is_empty() {
+                    &mut rows
+                } else {
+                    &mut movement
+                };
+                group.push(BindingRow {
                     id: id.into(),
                     action: label.into(),
+                    direction: direction.into(),
                     chord: chord
                         .as_ref()
                         .map(keybinds::chord_label)
@@ -682,6 +712,7 @@ impl App {
                         .and_then(|id| self.state.presets.iter().position(|preset| preset.id == id))
                         .map(|index| index as i32)
                         .unwrap_or(-1),
+                    direction: Default::default(),
                     shortcut: matches!(binding.action, BindingAction::SelectPreset { .. }),
                     global: false,
                 }
@@ -691,6 +722,11 @@ impl App {
         let pending_saved = rows
             .iter()
             .any(|row| row.id == store.get_pending_shortcut());
+        if !update_rows(&store.get_movement_bindings(), &movement, |a, b| {
+            a.id == b.id
+        }) {
+            store.set_movement_bindings(model(movement));
+        }
         if !update_rows(&store.get_bindings(), &rows, |a, b| a.id == b.id) {
             store.set_bindings(model(rows));
         }

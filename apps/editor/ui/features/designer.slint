@@ -374,9 +374,9 @@ export component Designer inherits Rectangle {
                             spacing: 8px;
                             Text { text: "Preview inputs"; color: Theme.muted; font-size: 12px * Theme.text-scale; }
                             HorizontalLayout { spacing: 6px;
-                                PreviewTrigger { text: "Aim"; trigger: "aim"; horizontal-stretch: 1; }
-                                PreviewTrigger { text: "Fire"; trigger: "fire"; horizontal-stretch: 1; }
-                                PreviewTrigger { text: "Move"; trigger: "movement"; label: "Preview movement"; horizontal-stretch: 1; }
+                                PreviewTrigger { text: "Aim"; trigger: "aim"; enabled: Store.interactive && Store.can-preview-aim; horizontal-stretch: 1; }
+                                PreviewTrigger { text: "Fire"; trigger: "fire"; enabled: Store.interactive && Store.can-preview-fire; horizontal-stretch: 1; }
+                                PreviewTrigger { text: "Move"; trigger: "movement"; enabled: Store.interactive && Store.can-preview-movement; label: "Preview movement"; horizontal-stretch: 1; }
                                 ActionButton { text: "Reset"; clicked => { Store.action("animation-preview", "reset"); } }
                             }
                             if Store.animation-playing: ActionButton { text: "Stop"; icon: @image-url("../../../../assets/icons/x.svg"); clicked => { Store.action("animation-stop", ""); } }

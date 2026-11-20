@@ -312,6 +312,15 @@ fn animation_tabs_do_not_edit_and_reject_stale_field_events() -> Result<()> {
         app.document.draft.as_ref().unwrap().layers[0].animations[0].trigger,
         AnimationTrigger::Movement
     );
+    let store = ui.global::<Store>();
+    assert!(!store.get_can_preview_movement());
+    app.property_edit("/animation/enabled", "true", 2)?;
+    complete_preview(&mut app, None)?;
+    assert!(store.get_can_preview_movement());
+    assert!(!store.get_can_preview_aim());
+    assert!(!store.get_can_preview_fire());
+    app.action("undo", "")?;
+    assert!(!store.get_can_preview_movement());
     app.action("animation-trigger", "aim")?;
     app.action("undo", "")?;
     assert_eq!(app.document.draft.as_ref(), Some(&base));
@@ -548,6 +557,14 @@ fn preview_buttons_pair_pointer_keyboard_and_focus_release_edges() -> Result<()>
             .borrow_mut()
             .push((action.to_string(), value.to_string()))
     });
+    pointer(&ui, 0, 1110.0, 223.0);
+    pointer(&ui, 2, 1110.0, 223.0);
+    slint::platform::update_timers_and_animations();
+    assert!(events.borrow().is_empty());
+
+    store.set_can_preview_aim(true);
+    store.set_can_preview_fire(true);
+    store.set_can_preview_movement(true);
     pointer(&ui, 0, 1110.0, 223.0);
     pointer(&ui, 2, 1110.0, 223.0);
     slint::platform::update_timers_and_animations();
