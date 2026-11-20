@@ -44,6 +44,8 @@ mod job {
     ) -> Result<(String, Vec<u8>), &'static str> {
         let author = read_field(input, 1024).map_err(|_| "Invalid submitter name.")?;
         let author = std::str::from_utf8(&author).map_err(|_| "Invalid submitter name.")?;
+        let username = read_field(input, 128).map_err(|_| "Invalid username.")?;
+        let username = std::str::from_utf8(&username).map_err(|_| "Invalid username.")?;
         let validator = PresetValidator::default();
         let json = read_field(input, validator.limits().max_json_bytes)
             .map_err(|_| "The preset upload is incomplete or too large.")?;
@@ -54,7 +56,7 @@ mod job {
                 author: Some(author),
             })
             .map_err(rejection)?;
-        Ok((preset.download_filename().to_owned(), png))
+        Ok((preset.download_filename(username), png))
     }
 
     pub(super) fn handle(
@@ -81,6 +83,7 @@ mod job {
         let renderer = ShowcaseRenderer::new(include_bytes!("../../assets/Manrope.ttf")).unwrap();
         let mut request = Vec::new();
         write_field(&mut request, b"Player").unwrap();
+        write_field(&mut request, b"Nova").unwrap();
         write_field(
             &mut request,
             include_bytes!("../tests/fixtures/preset-v1.json"),
@@ -91,7 +94,7 @@ mod job {
         assert_eq!(response[0], 0);
         let mut fields = &response[1..];
         let filename = String::from_utf8(read_field(&mut fields, 128).unwrap()).unwrap();
-        assert!(filename.starts_with("crosshair-training-grid-") && filename.ends_with(".json"));
+        assert_eq!(filename, "nova-shared-training-grid.json");
         assert!(
             read_field(&mut fields, 4 * 1024 * 1024)
                 .unwrap()

@@ -403,5 +403,5 @@ fn same_input_produces_the_same_native_output_and_digest() {
     let b = validator.validate(SAMPLE).unwrap();
     assert_eq!(a.crosshair_png().unwrap(), b.crosshair_png().unwrap());
     assert_eq!(a.metadata().sha256, b.metadata().sha256);
-    assert_eq!(a.download_filename(), b.download_filename());
+    assert_eq!(a.download_filename("nova"), b.download_filename("nova"));
 }
