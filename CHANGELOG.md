@@ -2,19 +2,18 @@
 
 ## Unreleased
 
-- Show Windows' actual launch-at-sign-in setting and clarify when the installed
-  app is required. Add setup options for shortcuts, sign-in and launch after install.
+## [v0.1.0](https://github.com/ohne-b/crosshair-rs/releases/tag/v0.1.0) 2026-11-20
 
-- Keep middle-mouse canvas panning available in Animate and during local playback.
-- Give each layer independent Aim, Fire and Movement animation tabs, with separate
-  enable switches and combined playback. Disabling an animation shows its base shape in Designer. Existing animations retain their settings.
-- Add a Movement animation trigger with configurable keyboard bindings and local
-  preview. All four movement keys share one row in Keybinds. Effects respond while any movement key is held.
-- Add a Hold to hide shortcut above Movement in Keybinds. Bind your map key to
-  hide the crosshair while held and restore it on release.
-
-- Keep update downloads in a compact row with separate progress text, and fix the
-  engine launch argument that prevented the app reopening after installation.
+- First stable release for Windows 11 x64. Use a desktop crosshair overlay or the bundled Xbox Game Bar widget. Closing the editor keeps the overlay running.
+  ([#2](https://github.com/ohne-b/crosshair-rs/pull/2))
+- Create layered crosshairs, import images, undo edits and export PNG or SVG. Equip a built-in design from Browse or save a copy to edit. Small, whole-pixel strokes stay solid when you resize a design or change the overlay scale.
+  ([#9](https://github.com/ohne-b/crosshair-rs/pull/9), [#13](https://github.com/ohne-b/crosshair-rs/pull/13), [#15](https://github.com/ohne-b/crosshair-rs/pull/15))
+- Set per-profile Aim actions and animate layers independently on Aim, Fire and Movement. Pan the canvas during animation playback, configure all four movement keys in one row, and bind your map key to hide the crosshair while held.
+  ([#17](https://github.com/ohne-b/crosshair-rs/pull/17), [#20](https://github.com/ohne-b/crosshair-rs/pull/20), [#24](https://github.com/ohne-b/crosshair-rs/pull/24))
+- Install from one Windows setup file and choose shortcuts, launch at sign-in and whether to open the app after setup. Settings shows the Windows sign-in preference and download progress. In-app updates verify the installer and its embedded package, then reopen the app after installation. Prerelease updates are optional.
+  ([#4](https://github.com/ohne-b/crosshair-rs/pull/4), [#14](https://github.com/ohne-b/crosshair-rs/pull/14), [#20](https://github.com/ohne-b/crosshair-rs/pull/20))
+- Join the community from the editor sidebar or optional Discord Rich Presence. The Movement row now matches its neighbors, and button tooltips have clean rounded corners.
+  ([#6](https://github.com/ohne-b/crosshair-rs/pull/6), [#23](https://github.com/ohne-b/crosshair-rs/pull/23), [#25](https://github.com/ohne-b/crosshair-rs/pull/25))
 
 ## [v0.1.0-alpha.7](https://github.com/ohne-b/crosshair-rs/releases/tag/v0.1.0-alpha.7) 2026-11-16
 
