@@ -1,0 +1,24 @@
+[workspace]
+members = ["welcome", "showcase"]
+resolver = "3"
+
+[package]
+name = "community-bot"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.97"
+license = "GPL-3.0-only"
+publish = false
+
+[dependencies]
+anyhow = "=1.0.104"
+crosshair_welcome = { package = "crosshair-rs-welcome-renderer", path = "welcome" }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "stream"] }
+serenity = { version = "=0.12.5", default-features = false, features = ["cache", "client", "gateway", "model", "rustls_backend"] }
+tokio = { version = "1", features = ["io-util", "macros", "net", "rt-multi-thread", "sync", "time"] }
+
+[profile.release]
+strip = "symbols"
+
+[lints.rust]
+unsafe_code = "forbid"
