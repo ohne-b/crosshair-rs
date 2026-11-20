@@ -203,6 +203,17 @@ fn library_tabs_sort_picker_and_browse_actions_are_independent() -> Result<()> {
         }
     });
     ui.show()?;
+    click(&ui, 28.0, 681.0);
+    click(&ui, 28.0, 725.0);
+    key(&ui, Key::Return);
+    click(&ui, 28.0, 769.0);
+    assert!(events.borrow().ends_with(&[
+        ("navigate".into(), "3".into()),
+        ("discord".into(), "".into()),
+        ("discord".into(), "".into()),
+        ("github".into(), "".into()),
+    ]));
+    events.borrow_mut().clear();
     click(&ui, 1180.0, 130.0);
     key(&ui, Key::DownArrow);
     key(&ui, Key::Return);

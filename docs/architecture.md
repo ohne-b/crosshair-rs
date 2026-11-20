@@ -93,9 +93,9 @@ popovers and update states; adapt its backend to the native architecture.
   native caption hit testing/actions and Snap integration; native acceptance
   remains required. No On/Off text or profile
   overflow button; profile management lives in Settings. The rail has no logo separator.
-- Navigation: Crosshairs, Designer, Keybinds. Bottom left: **only** Settings and
-  GitHub linking to `https://github.com/ohne-b/crosshair-rs`. No sidebar updater
-  banner, social links, news or promotional tiles.
+- The navigation rail contains Crosshairs, Designer and Keybinds. Its footer contains
+  Settings, the Discord community invite and the GitHub repository, in that order.
+  Keep updater banners, news and promotional tiles out of the rail.
 - Designer: 44 px document toolbar, 210 px floating layer list, flexible canvas,
   288 px inspector. The layer list sizes to its contents and scrolls when needed;
   narrow mode retains layer access. Pair related numeric fields and keep section
@@ -893,7 +893,7 @@ Headless engine never periodically contacts GitHub. No automatic download/instal
 Use TDM's compact rhythm, 6 px bar and tabular values, no wizard/card stack.
 Keep bytes and percentages outside the bar. Unknown totals show bytes only.
 Cancel removes partial data and returns Available.
-A Settings dot may mark availability; never add another sidebar footer item.
+A dot on Settings may indicate update availability. Keep updater actions in Settings.
 
 ### Manifest and authenticity
 

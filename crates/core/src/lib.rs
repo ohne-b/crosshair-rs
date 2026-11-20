@@ -19,6 +19,7 @@ pub use validation::{ValidationError, validate_layer, validate_preset, validate_
 
 pub const SCHEMA_VERSION: u32 = 4;
 pub const PROTOCOL_VERSION: u32 = 8;
+pub const DISCORD_INVITE_URL: &str = "https://discord.gg/fX5yC8CduV";
 pub const MAX_CONFIG_BYTES: usize = 8 * 1024 * 1024;
 pub const MAX_PORTABLE_BYTES: u64 = 512 * 1024 * 1024;
 pub const MAX_ASSET_BYTES: u64 = 8 * 1024 * 1024;

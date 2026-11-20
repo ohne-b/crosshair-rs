@@ -5,7 +5,7 @@ use std::{
 };
 
 use anyhow::{Result, bail, ensure};
-use crosshair_core::{DiscordStyle, Settings};
+use crosshair_core::{DISCORD_INVITE_URL, DiscordStyle, Settings};
 use crosshair_platform::{
     identity::Identity,
     pipe::{Pipe, StopSignal},
@@ -43,7 +43,7 @@ impl Activity {
             "assets": { "large_image": ASSET_KEY, "large_text": "Crosshair-RS" },
             "buttons": [
                 { "label": "Download", "url": "https://github.com/ohne-b/crosshair-rs/releases" },
-                { "label": "Join Discord", "url": "https://discord.gg/fX5yC8CduV" }
+                { "label": "Join Discord", "url": DISCORD_INVITE_URL }
             ]
         });
         if let Some(state) = state {
