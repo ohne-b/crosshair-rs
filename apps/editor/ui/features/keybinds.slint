@@ -55,8 +55,6 @@ component TableHeader inherits Rectangle {
 component BindingItem inherits Rectangle {
     in property <BindingRow> binding;
     in property <bool> pending: false;
-    property <image> empty-image;
-    property <bool> movement: root.binding.direction != "";
     property <bool> saving: root.pending && Store.pending-shortcut != "new-shortcut";
     in property <length> viewport-width;
     in property <length> viewport-height;
@@ -67,7 +65,7 @@ component BindingItem inherits Rectangle {
     }
     height: max(56px, 12px * Theme.text-scale + 32px); vertical-stretch: 0; clip: true;
     HorizontalLayout { spacing: 0px;
-        if root.binding.global && !root.movement: Rectangle { horizontal-stretch: 1;
+        if root.binding.global: Rectangle { horizontal-stretch: 1;
             Text { x: 12px; width: root.binding.id == "aim" ? 88px : parent.width - 80px; text: root.binding.action; color: Theme.text; font-size: 12px * Theme.text-scale; vertical-alignment: center; }
             if root.binding.id == "aim": AimActionEditor { x: parent.width - self.width - 12px; y: (parent.height - self.height) / 2; height: max(36px, 12px * Theme.text-scale + 16px); width: min(self.preferred-width, max(0px, parent.width - 124px)); viewport-width: root.viewport-width; viewport-height: root.viewport-height; }
         }
@@ -88,18 +86,17 @@ component BindingItem inherits Rectangle {
             if !root.pending: RenameField { x: 6px; y: (parent.height - self.height) / 2; width: parent.width - 12px; value: root.binding.name; label: "Rename shortcut"; committed(value) => { Store.action("binding-name", root.binding.id + ":" + value); } }
         }
         Rectangle { width: 1px; background: Theme.border; }
-        Rectangle { min-width: root.movement ? 0px : 254px; preferred-width: self.min-width; max-width: root.movement ? 10000px : 254px; horizontal-stretch: root.movement ? 1 : 0;
-            capture-button := ActionButton { x: 12px; y: (parent.height - self.height) / 2; width: parent.width - (root.movement ? 16px : 24px); align-left: true;
+        Rectangle { width: 254px;
+            capture-button := ActionButton { x: 12px; y: (parent.height - self.height) / 2; width: 230px; align-left: true;
                 enabled: Store.connected && Store.interactive && !root.saving;
-                text: root.saving ? "Saving…" : root.pending || Store.capture-id == root.binding.id ? "Press a key" : !root.binding.global && !root.binding.enabled ? "Disabled: " + root.binding.chord : root.movement ? root.binding.direction + "  " + root.binding.chord : root.binding.chord;
-                label: root.movement ? root.binding.action + ": " + root.binding.chord : self.text;
-                icon: root.movement ? empty-image : @image-url("../../../../assets/icons/keyboard.svg"); selected: Store.capture-id == root.binding.id;
+                text: root.saving ? "Saving…" : root.pending || Store.capture-id == root.binding.id ? "Press a key" : !root.binding.global && !root.binding.enabled ? "Disabled: " + root.binding.chord : root.binding.chord;
+                icon: @image-url("../../../../assets/icons/keyboard.svg"); selected: Store.capture-id == root.binding.id;
                 clicked => { if Store.capture-id != root.binding.id { root.record(); } }
             }
         }
         Rectangle { width: 1px; background: Theme.border; }
-        Rectangle { width: root.movement ? 36px : 52px;
-            ActionButton { x: root.movement ? 2px : 10px; y: (parent.height - self.height) / 2; width: 32px; enabled: Store.connected && Store.interactive && !root.saving; icon: root.pending ? @image-url("../../../../assets/icons/x.svg") : @image-url("../../../../assets/icons/trash.svg"); label: root.pending ? "Discard new shortcut" : root.binding.global ? "Clear " + root.binding.action + " shortcut" : "Remove shortcut"; quiet: true; clicked => { Store.action(root.pending ? "discard-shortcut" : "binding-remove", root.pending ? "" : root.binding.id); } }
+        Rectangle { width: 52px;
+            ActionButton { x: 10px; y: (parent.height - self.height) / 2; width: 32px; enabled: Store.connected && Store.interactive && !root.saving; icon: root.pending ? @image-url("../../../../assets/icons/x.svg") : @image-url("../../../../assets/icons/trash.svg"); label: root.pending ? "Discard new shortcut" : root.binding.global ? "Clear " + root.binding.action + " shortcut" : "Remove shortcut"; quiet: true; clicked => { Store.action(root.pending ? "discard-shortcut" : "binding-remove", root.pending ? "" : root.binding.id); } }
         }
     }
     Rectangle { y: 0px; width: parent.width; height: 1px; background: Theme.border; }
@@ -123,12 +120,40 @@ export component Keybinds inherits Rectangle {
                 VerticalLayout { padding: 1px; spacing: 0px;
                     TableHeader { application: true; }
                     for binding in Store.bindings: BindingItem { viewport-width: root.width + root.absolute-position.x; viewport-height: root.height + root.absolute-position.y; binding: binding; visible: binding.global; height: self.visible ? max(56px, 12px * Theme.text-scale + 32px) : 0px; }
-                    if Store.movement-bindings.length > 0: HorizontalLayout { spacing: 0px; height: max(56px, 12px * Theme.text-scale + 32px);
-                        Rectangle { width: max(84px, movement-label.preferred-width + 24px);
-                            movement-label := Text { x: 12px; text: "Movement"; color: Theme.text; font-size: 12px * Theme.text-scale; vertical-alignment: center; height: parent.height; }
-                            Rectangle { height: 1px; background: Theme.border; }
+                    if Store.movement-bindings.length > 0: Rectangle {
+                        height: max(44px, 12px * Theme.text-scale + 24px); vertical-stretch: 0;
+                        Rectangle { y: 0px; height: 1px; width: parent.width; background: Theme.border; }
+                        HorizontalLayout { padding-left: 12px; padding-right: 12px; spacing: 12px;
+                            Text { text: "Movement"; color: Theme.text; font-size: 12px * Theme.text-scale; horizontal-stretch: 1; vertical-alignment: center; }
+                            Rectangle {
+                                preferred-width: segments.preferred-width; horizontal-stretch: 0;
+                                height: max(32px, 12px * Theme.text-scale + 16px); y: (parent.height - self.height) / 2;
+                                background: Theme.field; border-radius: Theme.radius; clip: true;
+                                segments := HorizontalLayout { spacing: 0px;
+                                    for binding[index] in Store.movement-bindings: Rectangle {
+                                        preferred-width: min(126px, max(74px, key.preferred-width + 20px)); min-width: 56px;
+                                        property <bool> show-clear: binding.enabled && (key.hovered || clear.hovered || key.focus-visible || clear.focus-visible);
+                                        if index > 0: Rectangle { x: 0px; y: 8px; width: 1px; height: parent.height - 16px; background: Theme.border; }
+                                        key := ActionButton {
+                                            x: 1px; width: parent.width - 1px - (parent.show-clear ? 22px : 0px); quiet: true;
+                                            enabled: Store.connected && Store.interactive;
+                                            text: Store.capture-id == binding.id ? "Press a key" : binding.direction + "  " + binding.chord;
+                                            label: binding.action + ": " + binding.chord; selected: Store.capture-id == binding.id;
+                                            clicked => { if Store.capture-id != binding.id {
+                                                Store.capture-region(self.absolute-position.x / 1px, self.absolute-position.y / 1px, self.width / 1px, self.height / 1px);
+                                                Store.action("capture", binding.id);
+                                            } }
+                                        }
+                                        clear := ActionButton {
+                                            x: parent.width - self.width; width: 22px; opacity: parent.show-clear ? 1 : 0; quiet: true;
+                                            icon: @image-url("../../../../assets/icons/x.svg"); label: "Clear " + binding.action + " shortcut";
+                                            enabled: Store.connected && Store.interactive && binding.enabled;
+                                            clicked => { Store.action("binding-remove", binding.id); }
+                                        }
+                                    }
+                                }
+                            }
                         }
-                        for binding in Store.movement-bindings: BindingItem { binding: binding; horizontal-stretch: 1; preferred-width: 0px; min-width: 0px; }
                     }
                 }
             }

@@ -306,17 +306,25 @@ fn animation_tabs_do_not_edit_and_reject_stale_field_events() -> Result<()> {
         2,
     )))?;
     assert_eq!(app.document.draft.as_ref(), Some(&base));
+    let store = ui.global::<Store>();
+    assert!(!store.get_animation_target_needed());
+    app.property_edit("/animation/enabled", "true", 2)?;
+    complete_preview(&mut app, None)?;
+    assert!(store.get_animation_target_needed());
+    assert!(!store.get_can_preview_movement());
+    app.action("undo", "")?;
+    assert!(!store.get_animation_target_needed());
     app.property_edit("@animated:/transform/x", "20", 2)?;
     complete_preview(&mut app, None)?;
     assert_eq!(
         app.document.draft.as_ref().unwrap().layers[0].animations[0].trigger,
         AnimationTrigger::Movement
     );
-    let store = ui.global::<Store>();
     assert!(!store.get_can_preview_movement());
     app.property_edit("/animation/enabled", "true", 2)?;
     complete_preview(&mut app, None)?;
     assert!(store.get_can_preview_movement());
+    assert!(!store.get_animation_target_needed());
     assert!(!store.get_can_preview_aim());
     assert!(!store.get_can_preview_fire());
     app.action("undo", "")?;
@@ -324,6 +332,53 @@ fn animation_tabs_do_not_edit_and_reject_stale_field_events() -> Result<()> {
     app.action("animation-trigger", "aim")?;
     app.action("undo", "")?;
     assert_eq!(app.document.draft.as_ref(), Some(&base));
+    ui.hide()?;
+    Ok(())
+}
+
+#[test]
+fn animation_enabled_switch_updates_the_live_draft_and_save() -> Result<()> {
+    let ui = window();
+    let store = ui.global::<Store>();
+    let mut app = app(&ui);
+    let mut preset = app.state.presets[0].clone();
+    preset.layers[0].animations = vec![Animation {
+        target: AnimationTarget {
+            x: Some(12.0),
+            ..Default::default()
+        },
+        ..Default::default()
+    }];
+    app.document.open(preset)?;
+    // Keep the receiver alive while checking the documents queued for the engine.
+    let (client, _commands) = Client::recording_for_test();
+    app.client = client;
+    store.set_connected(true);
+    store.on_property_edit(|selection, key, value, phase| {
+        ui_event(UiEvent::Property(
+            selection.into(),
+            key.into(),
+            value.into(),
+            phase,
+        ));
+    });
+    app.action("designer-mode", "animate")?;
+    assert!(store.get_can_preview_fire());
+
+    slint::platform::update_timers_and_animations();
+    pointer(&ui, 0, 1238.0, 205.0);
+    pointer(&ui, 2, 1238.0, 205.0);
+    while let Some(event) = EVENTS.with(|events| events.borrow_mut().pop_front()) {
+        app.event(event)?;
+    }
+    assert!(!app.document.draft.as_ref().unwrap().layers[0].animations[0].enabled);
+    complete_preview(&mut app, None)?;
+    let submitted = app.preview_inflight.as_ref().unwrap();
+    assert!(!submitted.layers[0].animations[0].enabled);
+    assert_eq!(submitted.layers[0].animations[0].target.x, Some(12.0));
+
+    app.save_document()?;
+    assert!(!app.inflight.as_ref().unwrap().layers[0].animations[0].enabled);
     ui.hide()?;
     Ok(())
 }

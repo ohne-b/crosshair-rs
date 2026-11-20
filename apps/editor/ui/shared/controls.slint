@@ -13,6 +13,7 @@ export component ActionButton inherits Rectangle {
     in property <bool> enabled: Store.interactive;
     in property <bool> danger: false;
     in property <bool> align-left: false;
+    out property <bool> hovered: touch.has-hover;
     out property <bool> has-focus: focus.has-focus;
     out property <bool> focus-visible: root.has-focus && Store.keyboard-navigation;
     callback clicked;

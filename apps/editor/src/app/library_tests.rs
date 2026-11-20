@@ -350,6 +350,27 @@ fn library_tabs_sort_picker_and_browse_actions_are_independent() -> Result<()> {
         }]))
         .into(),
     );
+    let movement = [
+        ("forward", "W", "\u{2191}"),
+        ("left", "A", "\u{2190}"),
+        ("backward", "S", "\u{2193}"),
+        ("right", "D", "\u{2192}"),
+    ];
+    store.set_movement_bindings(
+        Rc::new(slint::VecModel::from(
+            movement
+                .map(|(id, chord, direction)| crate::BindingRow {
+                    id: id.into(),
+                    action: id.into(),
+                    chord: chord.into(),
+                    direction: direction.into(),
+                    enabled: true,
+                    ..Default::default()
+                })
+                .to_vec(),
+        ))
+        .into(),
+    );
     snapshot(&window, "shortcuts.png")?;
     store.set_modal_kind(1);
     store.set_modal_title("Delete crosshair?".into());

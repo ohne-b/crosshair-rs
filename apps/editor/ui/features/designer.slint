@@ -19,7 +19,8 @@ component PropertyRow inherits Rectangle {
     in property <length> viewport-width;
     in property <length> viewport-height;
     property <bool> editable: Store.selection-editable && Store.interactive;
-    height: root.field.key == "/name" ? max(38px, 12px * Theme.text-scale + 24px) : root.field.kind == 0 ? max(38px, 12px * Theme.text-scale + 28px) : root.field.kind == 3 ? max(36px, 12px * Theme.text-scale + 16px) : max(58px, 12px * Theme.text-scale + 42px);
+    property <bool> target-hint: root.field.key == "/animation/enabled" && Store.animation-target-needed;
+    height: root.field.key == "/name" ? max(38px, 12px * Theme.text-scale + 24px) : root.field.kind == 0 ? max(38px, 12px * Theme.text-scale + 28px) : root.field.kind == 3 ? max(36px, 12px * Theme.text-scale + 16px) + (root.target-hint ? hint.preferred-height : 0px) : max(58px, 12px * Theme.text-scale + 42px);
     vertical-stretch: 0;
     if root.field.kind == 0: Rectangle {
         Divider { y: 0px; }
@@ -32,9 +33,11 @@ component PropertyRow inherits Rectangle {
         if root.field.checked: Text { x: parent.width - 18px; y: 6px; height: 32px; text: "+"; color: Theme.muted; vertical-alignment: center; }
     }
     if root.field.kind == 3: HorizontalLayout {
+        height: max(36px, 12px * Theme.text-scale + 16px);
         Text { text: root.field.label; color: Theme.muted; font-size: 12px * Theme.text-scale; vertical-alignment: center; horizontal-stretch: 1; }
         Switch { enabled: root.editable; checked: root.field.checked; label: root.field.label; toggled => { Store.property-edit(root.field.selection, root.field.key, root.field.checked ? "false" : "true", 2); } }
     }
+    hint := Text { visible: root.target-hint; y: max(36px, 12px * Theme.text-scale + 16px); width: parent.width; text: "Change an animated value to see this effect."; color: Theme.muted; font-size: 12px * Theme.text-scale; wrap: word-wrap; }
     if root.field.kind != 0 && root.field.kind != 3: VerticalLayout {
         padding-top: 3px; padding-bottom: 5px; spacing: 5px; alignment: start;
         if root.field.key != "/name": Text { text: root.field.label; color: Theme.muted; font-size: 11px * Theme.text-scale; height: 16px * Theme.text-scale; }

@@ -409,12 +409,17 @@ impl App {
             AnimationTrigger::Movement => 2,
         });
         store.set_single_selection(self.document.selected.len() == 1);
-        store.set_has_animation(self.document.selected_layer().is_some_and(|layer| {
+        let selected_animation = self.document.selected_layer().and_then(|layer| {
             layer
                 .animations
                 .iter()
-                .any(|a| a.trigger == self.animation_trigger)
-        }));
+                .find(|a| a.trigger == self.animation_trigger)
+                .map(|animation| (layer, animation))
+        });
+        store.set_has_animation(selected_animation.is_some());
+        store.set_animation_target_needed(
+            selected_animation.is_some_and(|(layer, a)| a.enabled && !a.effective_for(layer)),
+        );
         let can_preview = |trigger| {
             self.document.draft.as_ref().is_some_and(|preset| {
                 preset

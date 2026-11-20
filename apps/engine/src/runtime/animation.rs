@@ -334,6 +334,36 @@ mod tests {
     use super::*;
 
     #[test]
+    fn disabled_live_definition_invalidates_an_in_flight_frame_for_a_held_trigger() {
+        let mut preset = animated_rectangle(12.0);
+        let mut output = AnimationOutput::default();
+        let key = Some(render::Key::new(&preset, 1.0));
+        let held = [false, true, false];
+        assert!(output.sync(key, Some(&preset), 0, held, 0));
+        let moving = output.playback.sample(&preset, 50).preset;
+        assert_eq!(moving.layers[0].transform.rotation, 45.0);
+        let frame = output.begin_frame(&moving, 50).unwrap();
+
+        preset.layers[0].animations[0].enabled = false;
+        assert!(output.sync(key, Some(&preset), 0, held, 50));
+        assert!(!output.active());
+        assert!(!output.accept(frame));
+        let base = output.playback.sample(&preset, 75);
+        assert_eq!(base.preset.layers[0].transform.rotation, 0.0);
+        assert_eq!(base.next_frame_ms, None);
+
+        preset.layers[0].animations[0].enabled = true;
+        assert!(output.sync(key, Some(&preset), 0, held, 75));
+        assert!(output.active());
+        assert_eq!(
+            output.playback.sample(&preset, 125).preset.layers[0]
+                .transform
+                .rotation,
+            45.0
+        );
+    }
+
+    #[test]
     fn unchanged_preview_or_metadata_preserves_playback_but_definition_edits_reset() {
         let mut preset = animated_rectangle(12.0);
         let animation = preset.layers[0].animations.first_mut().unwrap();
