@@ -77,9 +77,14 @@ export component ActionButton inherits Rectangle {
         clicked => { root.activate(); }
     }
     if root.hover-feedback && root.label != "" && (root.text == "" || root.label != root.text): Tooltip {
-        Rectangle {
-            background: Theme.raised; border-radius: 8px; border-width: 1px; border-color: Theme.border;
-            HorizontalLayout { padding-left: 8px; padding-right: 8px; padding-top: 6px; padding-bottom: 6px; Text { text: root.label; color: Theme.text; font-size: 11px * Theme.text-scale; } }
+        HorizontalLayout {
+            padding: 2px;
+            // Slint draws the tooltip frame. Keep the system contrast fill inside it.
+            Rectangle {
+                background: Theme.high-contrast ? Theme.raised : transparent;
+                border-radius: 2px;
+                HorizontalLayout { padding-left: 6px; padding-right: 6px; padding-top: 4px; padding-bottom: 4px; Text { text: root.label; color: Theme.text; font-size: 11px * Theme.text-scale; } }
+            }
         }
     }
 }
