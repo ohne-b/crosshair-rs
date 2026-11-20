@@ -74,7 +74,7 @@ async fn publish(
         .member
         .as_ref()
         .map_or_else(|| cmd.user.display_name(), |m| m.display_name());
-    let (filename, png) = match render(author, &json)
+    let (filename, png) = match render(author, &cmd.user.name, &json)
         .await
         .context("The preview worker is unavailable. Try again shortly.")?
     {
@@ -112,7 +112,7 @@ enum WorkerReply {
 }
 
 #[cfg(unix)]
-async fn render(author: &str, json: &[u8]) -> Result<WorkerReply> {
+async fn render(author: &str, username: &str, json: &[u8]) -> Result<WorkerReply> {
     use std::time::Duration;
     use tokio::{
         io::{AsyncReadExt, AsyncWriteExt},
@@ -129,7 +129,7 @@ async fn render(author: &str, json: &[u8]) -> Result<WorkerReply> {
 
     tokio::time::timeout(Duration::from_secs(35), async {
         let mut socket = UnixStream::connect("/run/crosshair/showcase.sock").await?;
-        for data in [author.as_bytes(), json] {
+        for data in [author.as_bytes(), username.as_bytes(), json] {
             socket.write_u32(data.len().try_into()?).await?;
             socket.write_all(data).await?;
         }
@@ -158,6 +158,6 @@ async fn render(author: &str, json: &[u8]) -> Result<WorkerReply> {
 }
 
 #[cfg(not(unix))]
-async fn render(_: &str, _: &[u8]) -> Result<WorkerReply> {
+async fn render(_: &str, _: &str, _: &[u8]) -> Result<WorkerReply> {
     bail!("Showcase rendering requires Linux containers.")
 }

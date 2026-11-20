@@ -49,7 +49,6 @@ pub struct ValidatedPreset {
     pub(crate) raster: Arc<Raster>,
     /// High-resolution preview rendered by the same application renderer.
     pub(crate) preview_raster: Arc<Raster>,
-    pub(crate) filename: String,
 }
 
 impl std::fmt::Debug for ValidatedPreset {
@@ -57,7 +56,6 @@ impl std::fmt::Debug for ValidatedPreset {
         formatter
             .debug_struct("ValidatedPreset")
             .field("metadata", &self.metadata)
-            .field("filename", &self.filename)
             .finish_non_exhaustive()
     }
 }
@@ -71,8 +69,12 @@ impl ValidatedPreset {
         &self.original
     }
 
-    pub fn download_filename(&self) -> &str {
-        &self.filename
+    pub fn download_filename(&self, username: &str) -> String {
+        format!(
+            "{}-shared-{}.json",
+            slug(username, "user"),
+            slug(&self.metadata.name, "preset")
+        )
     }
 
     /// Pixel-accurate transparent PNG from the app's renderer at scale 1.
@@ -84,7 +86,7 @@ impl ValidatedPreset {
     }
 }
 
-pub(crate) fn filename(name: &str, digest: &str) -> String {
+fn slug(name: &str, fallback: &str) -> String {
     let mut slug = String::new();
     let mut separator = false;
     for ch in name.chars() {
@@ -102,15 +104,14 @@ pub(crate) fn filename(name: &str, digest: &str) -> String {
         }
     }
     if slug.is_empty() {
-        slug.push_str("preset");
+        slug.push_str(fallback);
     }
-    // The fixed prefix also avoids reserved Windows device filenames.
-    format!("crosshair-{slug}-{}.json", &digest[..8])
+    slug
 }
 
 #[cfg(test)]
 mod tests {
-    use super::filename;
+    use super::slug;
 
     #[test]
     fn filename_is_never_a_path_or_windows_device() {
@@ -122,9 +123,8 @@ mod tests {
             "NUL",
             "Training Grid",
         ] {
-            let value = filename(name, "12345678deadbeef");
-            assert!(value.starts_with("crosshair-"));
-            assert!(value.ends_with("-12345678.json"));
+            let value = slug(name, "preset");
+            assert!(!value.is_empty());
             assert!(!value.contains(['/', '\\', ':']));
         }
     }

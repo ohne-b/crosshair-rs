@@ -164,7 +164,6 @@ impl PresetValidator {
             warnings.push(Warning::ProfilePlacementIgnored);
         }
         let digest = format!("{:x}", Sha256::digest(bytes));
-        let filename = crate::preset::filename(&preset.name, &digest);
         let metadata = PresetMetadata {
             id: preset.id.to_string(),
             name: preset.name.clone(),
@@ -190,7 +189,6 @@ impl PresetValidator {
             original: Arc::from(bytes),
             raster,
             preview_raster,
-            filename,
         })
     }
 }
