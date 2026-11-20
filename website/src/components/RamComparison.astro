@@ -1,54 +1,53 @@
 ---
 import { ramComparison } from '../data/ram';
-import { createComparison, type ComparisonData } from '../lib/ram';
+import { createComparison, states, type ComparisonData } from '../lib/ram';
+
 interface Props {
   data?: ComparisonData;
 }
+
 const { data = ramComparison } = Astro.props;
 const comparison = createComparison(data);
 ---
 
 <section class="ram-comparison" aria-labelledby="ram-heading">
   <div class="wrap">
-    <div class="ram-head">
-      <h2 id="ram-heading">{comparison.heading}</h2>
+    <h2 id="ram-heading">{comparison.heading}</h2>
+    <div class="ram-legend">
+      {states.map((state) => <span class={state.id}>{state.name}</span>)}
     </div>
-    <div class="ram-charts">
-      {comparison.charts.map((chart) => (
-        <div class="ram-chart">
-          <h3>{chart.name}</h3>
-          <ul
-            class="ram-columns"
-            aria-label={`${chart.name}: ${comparison.estimated ? 'estimated RAM usage' : 'memory used by each app'}`}
+    <ul class="ram-columns" role="list">
+      {comparison.bars.map((bar) => {
+        const { menuOpen, menuClosed } = bar;
+        const closedHigher = menuClosed.percent > menuOpen.percent;
+        const equalHeight = menuOpen.percent === menuClosed.percent;
+        const sharedLabel = equalHeight && menuOpen.label === menuClosed.label;
+        return (
+          <li
+            class:list={['ram-column', { ours: bar.ours, equal: equalHeight, 'closed-higher': closedHigher }]}
+            style={`--open: ${menuOpen.percent}; --closed: ${menuClosed.percent}`}
           >
-            {chart.bars.map((bar) => (
-              <li class:list={['ram-column', { ours: bar.ours }]}>
-                <div
-                  class="ram-bar-space"
-                  style={`--bar-height: ${bar.percent}%`}
-                >
-                  <span class="ram-amount">{bar.label}</span>
-                  <div class="ram-bar" aria-hidden="true"></div>
-                </div>
-                <a
-                  class="ram-label"
-                  href={bar.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  {bar.name}
-                </a>
-              </li>
-            ))}
-          </ul>
-        </div>
-      ))}
-    </div>
+            <a class="ram-label" href={bar.url} target="_blank" rel="noopener noreferrer">
+              {bar.name}
+            </a>
+            <div class="ram-bar" aria-hidden="true"></div>
+            <span class:list={['ram-amount', { 'ram-amount-side': closedHigher }]}>
+              <span class="ram-sr-only">{sharedLabel ? 'Menu open and closed: ' : 'Menu open: '}</span>
+              {menuOpen.label}
+            </span>
+            {!sharedLabel && (
+              <span class:list={['ram-amount ram-amount-closed', { 'ram-amount-side': !closedHigher }]}>
+                <span class="ram-sr-only">Menu closed: </span>
+                {menuClosed.label}
+              </span>
+            )}
+          </li>
+        );
+      })}
+    </ul>
     {data.status === 'measured' && (
       <div class="ram-method">
-        <p>
-          Overlay active in both tests. Same scale. Measured on {data.testedOn}.
-        </p>
+        <p>Overlay active in both tests. Measured on {data.testedOn}.</p>
         <details>
           <summary>Test setup</summary>
           <p>{data.method}</p>
@@ -61,106 +60,122 @@ const comparison = createComparison(data);
     )}
   </div>
 </section>
+
 <style>
   .ram-comparison {
+    --ram-open: #81858a;
+    --ram-closed: var(--p-accent);
     padding: 32px 0 96px;
   }
-  .ram-comparison[hidden] {
-    display: none;
-  }
-  .ram-comparison > .wrap {
-    display: block;
-    height: auto;
-  }
-  .ram-head {
-    margin-bottom: 40px;
-  }
-  .ram-head h2 {
+  h2 {
     font-size: 28px;
     font-weight: 500;
     letter-spacing: -1px;
-    margin: 0;
+    margin: 0 0 28px;
   }
-  .ram-charts {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 48px;
+  .ram-legend {
+    display: flex;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 6px 24px;
+    color: var(--p-muted);
+    font-size: 14px;
   }
-  .ram-chart {
-    min-width: 0;
-    border-top: 1px solid #333538;
-    padding-top: 22px;
+  .ram-legend span {
+    display: flex;
+    align-items: center;
+    gap: 8px;
   }
-  .ram-chart h3 {
-    font-size: 18px;
-    line-height: 1.4;
-    font-weight: 500;
-    letter-spacing: -0.3px;
-    margin: 0 0 16px;
+  .ram-legend span::before {
+    content: '';
+    width: 12px;
+    height: 12px;
+    border-radius: 3px;
+    background: var(--ram-open);
+  }
+  .ram-legend .menuClosed::before {
+    background: var(--ram-closed);
   }
   .ram-columns {
+    --plot-height: clamp(12.5rem, 43vw, 30rem);
+    --bar-width: min(38%, 8.5rem);
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 16px;
     list-style: none;
-    padding: 30px 0 0;
+    padding: 56px 0 0;
     margin: 0;
   }
   .ram-column {
+    --higher: max(var(--open), var(--closed));
+    --lower: min(var(--open), var(--closed));
+    --lower-color: var(--ram-closed);
+    --upper-color: var(--ram-open);
+    position: relative;
     display: grid;
     justify-items: center;
-    grid-template-rows: 210px auto;
+    grid-template-rows: var(--plot-height) max-content;
     min-width: 0;
-    padding: 0;
-    margin: 0;
   }
-  .ram-bar-space {
-    position: relative;
-    display: flex;
-    align-items: flex-end;
-    width: min(80px, 100%);
-    height: 100%;
-    background: none;
+  .ram-column.closed-higher {
+    --lower-color: var(--ram-open);
+    --upper-color: var(--ram-closed);
   }
   .ram-bar {
-    width: 100%;
-    height: var(--bar-height);
-    background: #81858a;
+    --split: calc(var(--lower) / var(--higher) * 100%);
+    grid-row: 1;
+    align-self: end;
+    width: var(--bar-width);
+    height: calc(var(--higher) * 1%);
     border-radius: 6px 6px 0 0;
+    background: linear-gradient(to top, var(--lower-color) var(--split), var(--upper-color) var(--split));
+  }
+  .ram-column.equal .ram-bar {
+    background: repeating-linear-gradient(
+      135deg,
+      var(--ram-open) 0 8px,
+      var(--ram-closed) 8px 16px
+    );
   }
   .ram-amount {
     position: absolute;
-    bottom: calc(var(--bar-height) + 10px);
+    top: calc(var(--plot-height) * (100 - var(--higher)) / 100 - .5rem);
     left: 50%;
-    transform: translateX(-50%);
-    font-size: 16px;
-    line-height: 24px;
+    transform: translate(-50%, -100%);
+    font-size: clamp(.875rem, 1.8vw, 1.25rem);
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
   }
+  .ram-amount-closed {
+    color: var(--ram-closed);
+  }
   .ram-label {
+    grid-row: 2;
     display: inline-flex;
     align-items: center;
-    justify-content: center;
     min-height: 44px;
     margin-top: 6px;
+    padding-inline: 4px;
     text-align: center;
-    font-size: 14px;
+    font-size: clamp(.875rem, 1.6vw, 1.125rem);
     font-weight: 500;
-    color: var(--p-ink);
     text-decoration: none;
-    white-space: nowrap;
+    overflow-wrap: anywhere;
   }
   .ram-label:hover {
     text-decoration: underline;
     text-underline-offset: 4px;
   }
-  .ram-column.ours .ram-bar {
-    background: var(--p-accent);
-  }
-  .ram-column.ours .ram-amount,
   .ram-column.ours .ram-label {
-    color: var(--p-accent);
+    color: var(--ram-closed);
+  }
+  .ram-sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
   }
   .ram-method {
     color: #aeb0b4;
@@ -185,24 +200,24 @@ const comparison = createComparison(data);
   }
   @media (prefers-reduced-motion: no-preference) {
     @supports ((animation-timeline: view()) and (animation-range: entry)) {
-      .ram-chart {
+      .ram-columns {
         view-timeline: --ram-chart block;
       }
       .ram-bar {
         transform-origin: bottom;
         /* Longhands prevent the build from folding the timeline into unsupported shorthand. */
         animation-name: ram-grow;
-        animation-timing-function: linear;
+        animation-timing-function: ease-out;
         animation-fill-mode: both;
         animation-timeline: --ram-chart;
-        animation-range: entry 10% entry 90%;
+        animation-range: entry 20% entry 90%;
       }
       .ram-amount {
         animation-name: ram-amount-enter;
-        animation-timing-function: linear;
+        animation-timing-function: ease-out;
         animation-fill-mode: both;
         animation-timeline: --ram-chart;
-        animation-range: entry 40% entry 90%;
+        animation-range: entry 55% entry 95%;
       }
     }
   }
@@ -214,39 +229,25 @@ const comparison = createComparison(data);
     from { opacity: 0; }
     to { opacity: 1; }
   }
-  @media (max-width: 767px) {
-    .ram-charts {
-      grid-template-columns: 1fr;
-      gap: 30px;
+  @media (min-width: 640px) {
+    .ram-amount-side {
+      top: calc(var(--plot-height) * (100 - var(--lower)) / 100);
+      left: calc(50% + var(--bar-width) / 2 + .75rem);
+      transform: translateY(-50%);
     }
   }
-  @media (max-width: 639px) {
+  @media (width < 640px) {
     .ram-comparison {
       padding-block: 24px 64px;
     }
-    .ram-head {
-      margin-bottom: 24px;
-    }
-    .ram-head h2 {
+    h2 {
       font-size: 24px;
+      margin-bottom: 20px;
     }
-    .ram-chart h3 {
-      font-size: 17px;
-    }
-    .ram-columns {
-      gap: 12px;
-    }
-    .ram-column {
-      grid-template-rows: 180px auto;
-    }
-    .ram-bar-space {
-      width: min(60px, 100%);
-    }
-    .ram-amount {
-      font-size: 14px;
-    }
-    .ram-label {
-      font-size: 12px;
+    .ram-amount-closed {
+      grid-row: 3;
+      position: static;
+      transform: none;
     }
   }
 </style>
