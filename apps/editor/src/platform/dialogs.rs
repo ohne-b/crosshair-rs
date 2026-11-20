@@ -79,6 +79,7 @@ pub fn choose(owner: HWND, save: bool, kind: FileKind, suggested: &str) -> Resul
 pub fn open_url(owner: HWND, url: &str) -> Result<()> {
     ensure!(
         url.starts_with("https://github.com/ohne-b/crosshair-rs")
+            || url == crosshair_core::DISCORD_INVITE_URL
             || url == "https://slint.dev"
             || url == "https://www.gnu.org/licenses/gpl-3.0.en.html",
         "This link is not an application link"

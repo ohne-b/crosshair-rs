@@ -114,6 +114,7 @@ impl App {
                 }
                 self.show_animated_target()?;
             }
+            "discord" => dialogs::open_url(self.hwnd()?, DISCORD_INVITE_URL)?,
             "github" => dialogs::open_url(self.hwnd()?, "https://github.com/ohne-b/crosshair-rs")?,
             "license" => dialogs::open_url(
                 self.hwnd()?,

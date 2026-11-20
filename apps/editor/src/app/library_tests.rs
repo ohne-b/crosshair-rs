@@ -46,6 +46,66 @@ fn snapshot(window: &MinimalSoftwareWindow, name: &str) -> Result<()> {
 }
 
 #[test]
+fn settings_tooltip_has_a_uniform_fill_inside_its_corners() -> Result<()> {
+    use std::{cell::Cell, time::Duration};
+
+    struct Headless(Rc<MinimalSoftwareWindow>, Rc<Cell<Duration>>);
+    impl Platform for Headless {
+        fn create_window_adapter(&self) -> Result<Rc<dyn WindowAdapter>, slint::PlatformError> {
+            Ok(self.0.clone())
+        }
+        fn duration_since_start(&self) -> Duration {
+            self.1.get()
+        }
+    }
+    let window = MinimalSoftwareWindow::new(RepaintBufferType::NewBuffer);
+    let clock = Rc::new(Cell::new(Duration::ZERO));
+    slint::platform::set_platform(Box::new(Headless(window.clone(), clock.clone())))?;
+    let ui = AppWindow::new()?;
+    ui.window().set_size(slint::LogicalSize::new(1280.0, 800.0));
+    ui.global::<Store>().set_connected(true);
+    ui.show()?;
+    ui.window().dispatch_event(WindowEvent::PointerMoved {
+        position: slint::LogicalPosition::new(28.0, 681.0),
+    });
+    let before = ui.window().take_snapshot()?;
+    clock.set(Duration::from_secs(1));
+    slint::platform::update_timers_and_animations();
+    let after = ui.window().take_snapshot()?;
+    snapshot(&window, "settings-tooltip.png")?;
+
+    let stride = after.width() as usize;
+    let changed =
+        |x: usize, y: usize| before.as_slice()[y * stride + x] != after.as_slice()[y * stride + x];
+    let top = (681..750)
+        .find(|&y| changed(45, y))
+        .context("Settings tooltip did not appear")?;
+    let bottom = (top..750).rfind(|&y| changed(45, y)).unwrap();
+    let left = (0..45).find(|&x| changed(x, top + 10)).unwrap();
+    let right = (45..180).rfind(|&x| changed(x, top + 10)).unwrap();
+    for y in [top + 2, bottom - 2] {
+        let pixel = |x: usize| after.as_slice()[y * stride + x];
+        assert_eq!(pixel(left + 4), pixel(left + 12));
+        assert_eq!(pixel(right - 4), pixel(right - 12));
+    }
+    let theme = ui.global::<crate::Theme>();
+    theme.set_high_contrast(true);
+    theme.set_raised(slint::Color::from_rgb_u8(255, 255, 255));
+    theme.set_text(slint::Color::from_rgb_u8(0, 0, 0));
+    let contrast = ui.window().take_snapshot()?;
+    assert_eq!(
+        contrast.as_slice()[(top + 5) * stride + left + 8],
+        slint::Rgba8Pixel::new(255, 255, 255, 255)
+    );
+    assert!(
+        (top + 5..bottom - 4)
+            .any(|y| (left + 6..right - 5).any(|x| contrast.as_slice()[y * stride + x].r < 64))
+    );
+    ui.hide()?;
+    Ok(())
+}
+
+#[test]
 fn layer_eye_click_dispatches_visibility_toggle() -> Result<()> {
     struct Headless(Rc<MinimalSoftwareWindow>);
     impl Platform for Headless {
@@ -203,6 +263,17 @@ fn library_tabs_sort_picker_and_browse_actions_are_independent() -> Result<()> {
         }
     });
     ui.show()?;
+    click(&ui, 28.0, 681.0);
+    click(&ui, 28.0, 725.0);
+    key(&ui, Key::Return);
+    click(&ui, 28.0, 769.0);
+    assert!(events.borrow().ends_with(&[
+        ("navigate".into(), "3".into()),
+        ("discord".into(), "".into()),
+        ("discord".into(), "".into()),
+        ("github".into(), "".into()),
+    ]));
+    events.borrow_mut().clear();
     click(&ui, 1180.0, 130.0);
     key(&ui, Key::DownArrow);
     key(&ui, Key::Return);

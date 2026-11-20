@@ -6,6 +6,7 @@ export component ActionButton inherits Rectangle {
     in property <image> icon;
     in property <image> thumbnail;
     in property <bool> accent-icon: false;
+    in property <color> icon-color: root.primary ? Theme.on-accent : root.selected || root.accent-icon ? Theme.orange : Theme.muted;
     in property <string> label: root.text;
     in property <bool> primary: false;
     in property <bool> quiet: false;
@@ -48,7 +49,7 @@ export component ActionButton inherits Rectangle {
     content := HorizontalLayout {
         padding-left: root.text == "" ? 7px : 10px; padding-right: root.text == "" ? 7px : 10px; spacing: 8px; alignment: root.align-left ? start : center;
         if root.thumbnail.width > 0: Rectangle { min-width: 0px; preferred-width: 26px; max-width: 26px; Image { x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2; source: root.thumbnail; width: min(parent.width, root.thumbnail.width * 1px); height: min(parent.width, root.thumbnail.height * 1px); image-fit: contain; } }
-        if root.icon.width > 0: Rectangle { width: 18px; Image { y: (parent.height - 18px) / 2; source: root.icon; width: 18px; height: 18px; colorize: root.primary ? Theme.on-accent : root.selected || root.accent-icon ? Theme.orange : Theme.muted; } }
+        if root.icon.width > 0: Rectangle { width: 18px; Image { y: (parent.height - 18px) / 2; source: root.icon; width: 18px; height: 18px; colorize: root.icon-color; } }
         if root.text != "": Text { text: root.text; color: root.primary ? Theme.on-accent : Theme.text; font-size: 12px * Theme.text-scale; font-weight: root.primary ? 600 : 500; vertical-alignment: center; overflow: elide; }
     }
     focus := FocusScope {
@@ -76,9 +77,14 @@ export component ActionButton inherits Rectangle {
         clicked => { root.activate(); }
     }
     if root.hover-feedback && root.label != "" && (root.text == "" || root.label != root.text): Tooltip {
-        Rectangle {
-            background: Theme.raised; border-radius: 8px; border-width: 1px; border-color: Theme.border;
-            HorizontalLayout { padding-left: 8px; padding-right: 8px; padding-top: 6px; padding-bottom: 6px; Text { text: root.label; color: Theme.text; font-size: 11px * Theme.text-scale; } }
+        HorizontalLayout {
+            padding: 2px;
+            // Slint draws the tooltip frame. Keep the system contrast fill inside it.
+            Rectangle {
+                background: Theme.high-contrast ? Theme.raised : transparent;
+                border-radius: 2px;
+                HorizontalLayout { padding-left: 6px; padding-right: 6px; padding-top: 4px; padding-bottom: 4px; Text { text: root.label; color: Theme.text; font-size: 11px * Theme.text-scale; } }
+            }
         }
     }
 }
