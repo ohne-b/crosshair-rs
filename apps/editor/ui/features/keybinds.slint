@@ -131,11 +131,10 @@ export component Keybinds inherits Rectangle {
                                 background: Theme.field; border-radius: Theme.radius; clip: true;
                                 segments := HorizontalLayout { spacing: 0px;
                                     for binding[index] in Store.movement-bindings: Rectangle {
-                                        preferred-width: min(164px, max(112px, key.preferred-width + 32px)); min-width: 56px;
-                                        property <bool> show-clear: binding.enabled && (key.hovered || clear.hovered || key.focus-visible || clear.focus-visible);
+                                        preferred-width: min(210px, max(160px, key.preferred-width + 32px)); min-width: 56px;
                                         if index > 0: Rectangle { x: 0px; y: 8px; width: 1px; height: parent.height - 16px; background: Theme.border; }
                                         key := ActionButton {
-                                            x: 1px; width: parent.width - 1px - (parent.show-clear ? 32px : 0px); quiet: true;
+                                            x: 1px; width: parent.width - 1px - clear.width; quiet: true; hover-feedback: false;
                                             enabled: Store.connected && Store.interactive;
                                             text: Store.capture-id == binding.id ? "Press a key" : binding.direction + "  " + binding.chord;
                                             label: binding.action + ": " + binding.chord; selected: Store.capture-id == binding.id;
@@ -145,7 +144,7 @@ export component Keybinds inherits Rectangle {
                                             } }
                                         }
                                         clear := ActionButton {
-                                            x: parent.width - self.width; width: 32px; opacity: parent.show-clear ? 1 : 0; quiet: true;
+                                            x: parent.width - self.width; width: 32px; quiet: true; hover-feedback: false;
                                             icon: @image-url("../../../../assets/icons/trash.svg"); label: "Clear " + binding.action + " shortcut";
                                             enabled: Store.connected && Store.interactive && binding.enabled;
                                             clicked => { Store.action("binding-remove", binding.id); }
