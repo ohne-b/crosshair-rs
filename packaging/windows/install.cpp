@@ -201,22 +201,15 @@ void shortcut(REFKNOWNFOLDERID folder, std::wstring const& name, std::wstring co
     check_hresult(SHGetKnownFolderPath(folder, 0, nullptr, &raw));
     fs::path path = fs::path(raw) / (name + L".lnk");
     CoTaskMemFree(raw);
-    PIDLIST_ABSOLUTE target{};
-    auto parsing_name = std::wstring(L"shell:AppsFolder\\") + app;
-    check_hresult(SHParseDisplayName(parsing_name.c_str(), nullptr, &target, 0, nullptr));
-    struct Pidl { PIDLIST_ABSOLUTE value; ~Pidl() { CoTaskMemFree(value); } } expected{target};
     if (fs::exists(path)) {
         auto existing = create_instance<IShellLinkW>(CLSID_ShellLink);
         check_hresult(existing.as<IPersistFile>()->Load(path.c_str(), STGM_READ));
-        PIDLIST_ABSOLUTE previous{};
-        check_hresult(existing->GetIDList(&previous));
-        Pidl previous_target{previous};
-        com_ptr<IShellFolder> desktop;
-        check_hresult(SHGetDesktopFolder(desktop.put()));
-        // Saved shell links can encode the same app with different item-data bytes.
-        auto comparison = previous ? desktop->CompareIDs(SHCIDS_CANONICALONLY, previous, target) : S_FALSE;
-        check_hresult(comparison);
-        if (HRESULT_CODE(comparison) != 0) {
+        PROPVARIANT identity{};
+        auto status = existing.as<IPropertyStore>()->GetValue(PKEY_AppUserModel_ID, &identity);
+        auto owned = SUCCEEDED(status) && identity.vt == VT_LPWSTR && identity.pwszVal && app == identity.pwszVal;
+        PropVariantClear(&identity);
+        check_hresult(status);
+        if (!owned) {
             if (enabled) throw hresult_error(E_FAIL, L"A different shortcut already uses the crosshair-rs name.");
             return;
         }
@@ -224,6 +217,10 @@ void shortcut(REFKNOWNFOLDERID folder, std::wstring const& name, std::wstring co
     } else if (!enabled) {
         return;
     }
+    PIDLIST_ABSOLUTE target{};
+    auto parsing_name = std::wstring(L"shell:AppsFolder\\") + app;
+    check_hresult(SHParseDisplayName(parsing_name.c_str(), nullptr, &target, 0, nullptr));
+    struct Pidl { PIDLIST_ABSOLUTE value; ~Pidl() { CoTaskMemFree(value); } } expected{target};
     auto link = create_instance<IShellLinkW>(CLSID_ShellLink);
     check_hresult(link->SetIDList(target));
     check_hresult(link->SetDescription(name.c_str()));
