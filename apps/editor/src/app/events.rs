@@ -65,6 +65,7 @@ impl App {
                 let theme = ui.global::<crate::Theme>();
                 theme.set_text_scale(appearance.text_scale);
                 theme.set_animations(appearance.animations);
+                theme.set_high_contrast(appearance.colors.is_some());
                 let color = |rgb: u32| {
                     slint::Color::from_rgb_u8(rgb as u8, (rgb >> 8) as u8, (rgb >> 16) as u8)
                 };
