@@ -42,9 +42,9 @@ pub fn needs_mouse(state: &AppState, presets: &[&Preset], capture: bool, held: b
             .any(|preset| {
                 preset.layers.iter().any(|layer| {
                     layer
-                        .animation
-                        .as_ref()
-                        .is_some_and(|a| a.effective_for(layer) && a.trigger == trigger)
+                        .animations
+                        .iter()
+                        .any(|a| a.effective_for(layer) && a.trigger == trigger)
                 })
             })
     };
@@ -71,7 +71,9 @@ pub fn needs_mouse(state: &AppState, presets: &[&Preset], capture: bool, held: b
                     .is_some_and(|c| mouse(c.trigger) && animated(AnimationTrigger::Fire))
                 || profile.actions.reload.as_ref().is_some_and(|c| {
                     mouse(c.trigger)
-                        && (animated(AnimationTrigger::Aim) || animated(AnimationTrigger::Fire))
+                        && (animated(AnimationTrigger::Aim)
+                            || animated(AnimationTrigger::Fire)
+                            || animated(AnimationTrigger::Movement))
                 })
         })
 }
@@ -192,13 +194,13 @@ mod tests {
         let mut state = AppState::default();
         let selected = state.profiles[0].selected_preset;
         let target = state.presets.iter_mut().find(|p| p.id != selected).unwrap();
-        target.layers[0].animation = Some(crosshair_core::Animation {
+        target.layers[0].animations = vec![crosshair_core::Animation {
             target: crosshair_core::AnimationTarget {
                 opacity: Some(0.5),
                 ..Default::default()
             },
             ..Default::default()
-        });
+        }];
         let target_id = target.id;
         assert!(needs_mouse(&state, &[], false, false));
         assert!(state.profiles[0].bindings.is_empty());
@@ -217,8 +219,11 @@ mod tests {
         let mut playback = crosshair_core::Playback::default();
         playback.select(
             target,
-            input.held(AnimationTrigger::Aim),
-            input.held(AnimationTrigger::Fire),
+            [
+                input.held(AnimationTrigger::Aim),
+                input.held(AnimationTrigger::Fire),
+                input.held(AnimationTrigger::Movement),
+            ],
             0,
         );
         assert!(playback.sample(target, 75).preset.layers[0].opacity < 1.0);
@@ -228,8 +233,8 @@ mod tests {
             .find(|p| p.id == target_id)
             .unwrap()
             .layers[0]
-            .animation
-            .as_mut()
+            .animations
+            .first_mut()
             .unwrap()
             .enabled = false;
         assert!(!needs_mouse(&state, &[], false, false));
@@ -244,17 +249,28 @@ mod tests {
         state.profiles[0].actions.aim_action = AimAction::HideWhileHeld;
         assert!(needs_mouse(&state, &[], false, false));
         state.profiles[0].actions.aim_action = AimAction::None;
-        state.presets[0].layers[0].animation = Some(crosshair_core::Animation {
+        state.presets[0].layers[0].animations = vec![crosshair_core::Animation {
             target: crosshair_core::AnimationTarget {
                 x: Some(10.0),
                 ..Default::default()
             },
             ..Default::default()
+        }];
+        assert!(needs_mouse(&state, &[&state.presets[0]], false, false));
+        state.presets[0].layers[0]
+            .animations
+            .first_mut()
+            .unwrap()
+            .trigger = AnimationTrigger::Movement;
+        assert!(!needs_mouse(&state, &[&state.presets[0]], false, false));
+        state.profiles[0].actions.reload = Some(crosshair_core::InputChord {
+            trigger: InputKey::Mouse { button: 4 },
+            modifiers: vec![],
         });
         assert!(needs_mouse(&state, &[&state.presets[0]], false, false));
         state.presets[0].layers[0]
-            .animation
-            .as_mut()
+            .animations
+            .first_mut()
             .unwrap()
             .enabled = false;
         assert!(!needs_mouse(&state, &[&state.presets[0]], false, false));

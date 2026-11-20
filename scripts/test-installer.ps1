@@ -9,11 +9,12 @@ $directory = Join-Path $root ("quoted ' `$ path-" + [Guid]::NewGuid().ToString('
 New-Item -ItemType Directory -Path $directory -Force | Out-Null
 $package = Join-Path $directory 'package.msix'
 $framework = Join-Path $directory 'Microsoft.VCLibs.x64.14.00.appx'
-function Run-Check([string]$Executable, [string]$Arguments, [bool]$Success = $true) {
+function Run-Check([string]$Executable, [string]$Arguments, [bool]$Success = $true, [Nullable[int]]$ExpectedExitCode = $null) {
     $process = Start-Process -FilePath $Executable -ArgumentList $Arguments -WindowStyle Hidden -PassThru
     try {
         if (!$process.WaitForExit(60000)) { $process.Kill(); $process.WaitForExit(); throw 'Installer check timed out.' }
         if (($process.ExitCode -eq 0) -ne $Success) { throw "Unexpected result for $Arguments (exit $($process.ExitCode))." }
+        if ($null -ne $ExpectedExitCode -and $process.ExitCode -ne $ExpectedExitCode) { throw 'Setup did not preserve the native helper error code.' }
     } finally { $process.Dispose() }
 }
 try {
@@ -26,7 +27,12 @@ try {
     } finally { $archive.Dispose() }
     $fixture = Join-Path $directory 'fixture.exe'
     & (Join-Path $PSScriptRoot 'build-setup.ps1') -Package $package -Framework $framework -Output $fixture -Version '0.1.0-alpha.1' -Offline | Out-Null
+    $compilerPath = $env:Path
     Run-Check $fixture '/S /VERIFYONLY'
+    Run-Check $fixture '/S /VERIFYONLY /DESKTOP=1 /STARTMENU=1 /STARTUP=1'
+    Run-Check $fixture '/S /VERIFYONLY /DESKTOP=invalid' $false
+    Run-Check $fixture '/S /VERIFYONLY /STARTMENU=invalid' $false
+    Run-Check $fixture '/S /VERIFYONLY /STARTUP=invalid' $false
     $helpers = @(Get-ChildItem -LiteralPath $directory -Filter 'setup-*' -Directory | ForEach-Object { Join-Path $_.FullName 'install.exe' })
     if ($helpers.Count -ne 1) { throw 'Expected exactly one fixture helper.' }
     $helper = Join-Path $directory 'install.exe'
@@ -38,6 +44,10 @@ try {
     [IO.File]::WriteAllBytes($package, $original)
     [IO.File]::AppendAllText($framework, 'tampered')
     Run-Check $helper '--verify' $false
+    $damagedSetup = Join-Path $directory 'damaged-framework.exe'
+    & (Join-Path $PSScriptRoot 'build-setup.ps1') -Package $package -Framework $framework -Output $damagedSetup -Version '0.1.0-alpha.1' -Offline | Out-Null
+    if ($env:Path -cne $compilerPath) { throw 'Repeated setup builds changed the compiler PATH.' }
+    Run-Check $damagedSetup '/S /VERIFYONLY' $false -2147467259 # E_FAIL from the native hash check.
     Copy-Item -LiteralPath (Join-Path $ArtifactDirectory 'Microsoft.VCLibs.x64.14.00.appx') -Destination $framework -Force
     Run-Check $helper '--verify'
     $wrongVersionRejected = $false

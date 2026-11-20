@@ -19,7 +19,8 @@ component PropertyRow inherits Rectangle {
     in property <length> viewport-width;
     in property <length> viewport-height;
     property <bool> editable: Store.selection-editable && Store.interactive;
-    height: root.field.key == "/name" ? max(38px, 12px * Theme.text-scale + 24px) : root.field.kind == 0 ? max(38px, 12px * Theme.text-scale + 28px) : root.field.kind == 3 ? max(36px, 12px * Theme.text-scale + 16px) : max(58px, 12px * Theme.text-scale + 42px);
+    property <bool> target-hint: root.field.key == "/animation/enabled" && Store.animation-target-needed;
+    height: root.field.key == "/name" ? max(38px, 12px * Theme.text-scale + 24px) : root.field.kind == 0 ? max(38px, 12px * Theme.text-scale + 28px) : root.field.kind == 3 ? max(36px, 12px * Theme.text-scale + 16px) + (root.target-hint ? hint.preferred-height : 0px) : max(58px, 12px * Theme.text-scale + 42px);
     vertical-stretch: 0;
     if root.field.kind == 0: Rectangle {
         Divider { y: 0px; }
@@ -32,9 +33,11 @@ component PropertyRow inherits Rectangle {
         if root.field.checked: Text { x: parent.width - 18px; y: 6px; height: 32px; text: "+"; color: Theme.muted; vertical-alignment: center; }
     }
     if root.field.kind == 3: HorizontalLayout {
+        height: max(36px, 12px * Theme.text-scale + 16px);
         Text { text: root.field.label; color: Theme.muted; font-size: 12px * Theme.text-scale; vertical-alignment: center; horizontal-stretch: 1; }
         Switch { enabled: root.editable; checked: root.field.checked; label: root.field.label; toggled => { Store.property-edit(root.field.selection, root.field.key, root.field.checked ? "false" : "true", 2); } }
     }
+    hint := Text { visible: root.target-hint; y: max(36px, 12px * Theme.text-scale + 16px); width: parent.width; text: "Change an animated value to see this effect."; color: Theme.muted; font-size: 12px * Theme.text-scale; wrap: word-wrap; }
     if root.field.kind != 0 && root.field.kind != 3: VerticalLayout {
         padding-top: 3px; padding-bottom: 5px; spacing: 5px; alignment: start;
         if root.field.key != "/name": Text { text: root.field.label; color: Theme.muted; font-size: 11px * Theme.text-scale; height: 16px * Theme.text-scale; }
@@ -357,6 +360,14 @@ export component Designer inherits Rectangle {
                             ActionButton { text: "Finish drawing"; clicked => { Store.action("draw-finish", ""); } }
                             Divider {}
                         }
+                        if Store.animate && Store.single-selection: Rectangle {
+                            height: 32px; border-radius: 8px; background: Theme.field; border-width: 1px; border-color: Theme.border;
+                            HorizontalLayout { padding: 2px; spacing: 2px;
+                                ActionButton { text: "Aim"; height: 28px; min-width: 0px; preferred-width: 0px; selected: Store.animation-trigger == 0; quiet: true; horizontal-stretch: 1; clicked => { Store.action("animation-trigger", "aim"); } }
+                                ActionButton { text: "Fire"; height: 28px; min-width: 0px; preferred-width: 0px; selected: Store.animation-trigger == 1; quiet: true; horizontal-stretch: 1; clicked => { Store.action("animation-trigger", "fire"); } }
+                                ActionButton { text: "Move"; label: "Movement animation"; height: 28px; min-width: 0px; preferred-width: 0px; selected: Store.animation-trigger == 2; quiet: true; horizontal-stretch: 1; clicked => { Store.action("animation-trigger", "movement"); } }
+                            }
+                        }
                         for group in Store.fields: HorizontalLayout {
                             spacing: 10px; vertical-stretch: 0;
                             PropertyRow { viewport-width: root.width + root.absolute-position.x; viewport-height: root.height + root.absolute-position.y; field: group.first; horizontal-stretch: 1; }
@@ -364,9 +375,11 @@ export component Designer inherits Rectangle {
                         }
                         if Store.animate && Store.single-selection: VerticalLayout {
                             spacing: 8px;
+                            Text { text: "Preview inputs"; color: Theme.muted; font-size: 12px * Theme.text-scale; }
                             HorizontalLayout { spacing: 6px;
-                                PreviewTrigger { text: "Aim"; trigger: "aim"; horizontal-stretch: 1; }
-                                PreviewTrigger { text: "Fire"; trigger: "fire"; horizontal-stretch: 1; }
+                                PreviewTrigger { text: "Aim"; trigger: "aim"; enabled: Store.interactive && Store.can-preview-aim; horizontal-stretch: 1; }
+                                PreviewTrigger { text: "Fire"; trigger: "fire"; enabled: Store.interactive && Store.can-preview-fire; horizontal-stretch: 1; }
+                                PreviewTrigger { text: "Move"; trigger: "movement"; enabled: Store.interactive && Store.can-preview-movement; label: "Preview movement"; horizontal-stretch: 1; }
                                 ActionButton { text: "Reset"; clicked => { Store.action("animation-preview", "reset"); } }
                             }
                             if Store.animation-playing: ActionButton { text: "Stop"; icon: @image-url("../../../../assets/icons/x.svg"); clicked => { Store.action("animation-stop", ""); } }

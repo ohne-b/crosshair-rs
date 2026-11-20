@@ -3,6 +3,7 @@ use super::*;
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum ChangeKind {
     Settings,
+    Startup,
     Import,
     Restore,
 }
@@ -85,7 +86,7 @@ impl Runtime {
             self.updates.ensure_idle()?;
         }
         let history = match kind {
-            ChangeKind::Settings => None,
+            ChangeKind::Settings | ChangeKind::Startup => None,
             ChangeKind::Import => {
                 let mut history = self.app.history.clone();
                 history.record(&self.app.state, &candidate)?;
@@ -311,8 +312,9 @@ impl Runtime {
             Job::CommitState {
                 state: Box::new(change.candidate.clone()),
                 restore: change.kind == ChangeKind::Restore,
-                startup_changed: change.candidate.settings.launch_at_login
-                    != change.before.settings.launch_at_login,
+                startup_changed: change.kind == ChangeKind::Startup
+                    || change.candidate.settings.launch_at_login
+                        != change.before.settings.launch_at_login,
             },
             context,
         )?;

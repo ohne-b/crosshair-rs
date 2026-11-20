@@ -24,6 +24,7 @@ const QUEUE_CAPACITY: usize = 4;
 
 #[derive(Debug)]
 pub enum Job {
+    ReadStartup,
     Save {
         state: Box<AppState>,
         history_assets: BTreeSet<Id>,
@@ -76,6 +77,9 @@ pub enum Job {
 
 #[derive(Debug)]
 pub enum WorkReply {
+    Startup {
+        enabled: bool,
+    },
     Saved {
         revision: u64,
         cleanup_error: Option<String>,
@@ -199,6 +203,9 @@ fn rendering(renderer: &mut Option<Renderer>) -> Result<&mut Renderer> {
 
 fn run(store: &mut Store, renderer: &mut Option<Renderer>, job: Job) -> Result<WorkReply> {
     Ok(match job {
+        Job::ReadStartup => WorkReply::Startup {
+            enabled: crate::lifecycle::read_startup()?,
+        },
         Job::Save {
             state,
             history_assets,

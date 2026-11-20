@@ -2,6 +2,9 @@
 #include <shellapi.h>
 #include <shlobj.h>
 #include <shlwapi.h>
+#include <shobjidl.h>
+#include <propkey.h>
+#include <propvarutil.h>
 #include <sddl.h>
 #include <bcrypt.h>
 #include <winrt/Windows.Foundation.h>
@@ -11,6 +14,7 @@
 #include <winrt/Windows.System.h>
 #include <array>
 #include <filesystem>
+#include <fstream>
 #include <string>
 #include <vector>
 #include "payload.h"
@@ -139,6 +143,103 @@ void deploy(fs::path const& source) {
     if (FAILED(result.ExtendedErrorCode())) throw hresult_error(result.ExtendedErrorCode(), result.ErrorText());
 }
 
+Windows::ApplicationModel::Package installed() {
+    PackageManager manager;
+    for (auto const& package : manager.FindPackagesForUser(L"", payload_name, payload_publisher)) {
+        auto id = package.Id();
+        auto v = id.Version();
+        auto version = std::to_wstring(v.Major) + L"." + std::to_wstring(v.Minor) + L"." +
+            std::to_wstring(v.Build) + L"." + std::to_wstring(v.Revision);
+        if (id.Architecture() == Windows::System::ProcessorArchitecture::X64 &&
+            version == payload_version && package.Status().VerifyIsOK()) return package;
+    }
+    throw hresult_error(E_FAIL, L"Windows has not registered this version of crosshair-rs.");
+}
+
+DWORD activate(std::wstring const& app, std::wstring const& arguments) {
+    auto manager = create_instance<IApplicationActivationManager>(CLSID_ApplicationActivationManager, CLSCTX_LOCAL_SERVER);
+    DWORD process{};
+    check_hresult(manager->ActivateApplication(app.c_str(), arguments.c_str(), AO_NONE, &process));
+    return process;
+}
+
+void enable_startup(Windows::ApplicationModel::Package const& package) {
+    PWSTR local{};
+    check_hresult(SHGetKnownFolderPath(FOLDERID_LocalAppData, 0, nullptr, &local));
+    auto directory = fs::path(local) / L"Packages" / std::wstring(package.Id().FamilyName()) / L"LocalState";
+    CoTaskMemFree(local);
+    // A new reply in setup's AppData temp folder can be redirected away from the unpackaged reader.
+    fs::create_directories(directory);
+    GUID id{};
+    check_hresult(CoCreateGuid(&id));
+    wchar_t name[40]{};
+    StringFromGUID2(id, name, 40);
+    auto reply = directory / (std::wstring(L"startup-") + name + L".txt");
+    auto arguments = std::wstring(L"--configure-startup true --reply-file \"") + reply.wstring() + L"\"";
+    activate(std::wstring(package.Id().FamilyName()) + L"!Engine", arguments);
+    // Activation may return a resident engine; completion is the atomic reply, not process exit.
+    auto deadline = GetTickCount64() + 30000;
+    while (!fs::exists(reply)) {
+        if (GetTickCount64() >= deadline)
+            throw hresult_error(HRESULT_FROM_WIN32(ERROR_TIMEOUT), L"Windows did not finish changing launch at sign-in.");
+        Sleep(50);
+    }
+    if (fs::file_size(reply) > 16384)
+        throw hresult_error(E_FAIL, L"Windows did not return a valid startup configuration result.");
+    std::ifstream stream(reply, std::ios::binary);
+    std::string result((std::istreambuf_iterator<char>(stream)), std::istreambuf_iterator<char>());
+    stream.close();
+    check_bool(DeleteFileW(reply.c_str()));
+    if (result != "ok") {
+        if (result.starts_with("error\n")) throw hresult_error(E_FAIL, to_hstring(result.substr(6)));
+        throw hresult_error(E_FAIL, L"Launch at sign-in could not be configured. Open crosshair-rs Settings and try again.");
+    }
+}
+
+void shortcut(REFKNOWNFOLDERID folder, std::wstring const& name, std::wstring const& app, bool enabled) {
+    PWSTR raw{};
+    check_hresult(SHGetKnownFolderPath(folder, 0, nullptr, &raw));
+    fs::path path = fs::path(raw) / (name + L".lnk");
+    CoTaskMemFree(raw);
+    if (fs::exists(path)) {
+        auto existing = create_instance<IShellLinkW>(CLSID_ShellLink);
+        check_hresult(existing.as<IPersistFile>()->Load(path.c_str(), STGM_READ));
+        PROPVARIANT identity{};
+        auto status = existing.as<IPropertyStore>()->GetValue(PKEY_AppUserModel_ID, &identity);
+        auto owned = SUCCEEDED(status) && identity.vt == VT_LPWSTR && identity.pwszVal && app == identity.pwszVal;
+        PropVariantClear(&identity);
+        check_hresult(status);
+        if (!owned) {
+            if (enabled) throw hresult_error(E_FAIL, L"A different shortcut already uses the crosshair-rs name.");
+            return;
+        }
+        if (!enabled) { check_bool(DeleteFileW(path.c_str())); return; }
+    } else if (!enabled) {
+        return;
+    }
+    PIDLIST_ABSOLUTE target{};
+    auto parsing_name = std::wstring(L"shell:AppsFolder\\") + app;
+    check_hresult(SHParseDisplayName(parsing_name.c_str(), nullptr, &target, 0, nullptr));
+    struct Pidl { PIDLIST_ABSOLUTE value; ~Pidl() { CoTaskMemFree(value); } } expected{target};
+    auto link = create_instance<IShellLinkW>(CLSID_ShellLink);
+    check_hresult(link->SetIDList(target));
+    check_hresult(link->SetDescription(name.c_str()));
+    auto properties = link.as<IPropertyStore>();
+    PROPVARIANT identity{};
+    check_hresult(InitPropVariantFromString(app.c_str(), &identity));
+    auto status = properties->SetValue(PKEY_AppUserModel_ID, identity);
+    PropVariantClear(&identity);
+    check_hresult(status);
+    check_hresult(properties->Commit());
+    check_hresult(link.as<IPersistFile>()->Save(path.c_str(), TRUE));
+}
+
+bool option(std::wstring const& value) {
+    if (value == L"0") return false;
+    if (value == L"1") return true;
+    throw hresult_invalid_argument();
+}
+
 int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int) {
     bool quiet = false;
     try {
@@ -151,7 +252,9 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int) {
         auto verify_only = args.size() == 2 && args[1] == L"--verify";
         quiet = verify_only || (args.size() > 1 && args[1].ends_with(L"-silent"));
         auto elevated = args.size() == 3 && (args[1] == L"--elevated" || args[1] == L"--elevated-silent");
-        if (!(verify_only || (args.size() == 2 && (args[1] == L"--install" || args[1] == L"--install-silent")) || elevated))
+        auto apply_options = args.size() == 5 && (args[1] == L"--options" || args[1] == L"--options-silent");
+        auto launch = args.size() == 2 && args[1] == L"--launch";
+        if (!(verify_only || apply_options || launch || (args.size() == 2 && (args[1] == L"--install" || args[1] == L"--install-silent")) || elevated))
             throw hresult_invalid_argument();
         std::array<wchar_t, 32768> image{};
         auto length = GetModuleFileNameW(nullptr, image.data(), static_cast<DWORD>(image.size()));
@@ -165,6 +268,20 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int) {
         verify(package.get(), payload_hash);
         verify(framework.get(), framework_hash);
         if (verify_only) return 0;
+        if (apply_options || launch) {
+            auto package_info = installed();
+            auto app = std::wstring(package_info.Id().FamilyName()) + L"!Editor";
+            if (launch) { activate(app, L""); return 0; }
+            if (args[2] != L"keep") option(args[2]);
+            if (args[3] != L"keep") option(args[3]);
+            auto startup = option(args[4]);
+            // An unchecked option must not disable an existing sign-in preference on upgrade.
+            if (startup) enable_startup(package_info);
+            std::wstring name = package_info.Id().Name() == L"OhneB.crosshair-rs.Preview" ? L"crosshair-rs Preview" : L"crosshair-rs";
+            if (args[2] != L"keep") shortcut(FOLDERID_Desktop, name, app, option(args[2]));
+            if (args[3] != L"keep") shortcut(FOLDERID_Programs, name, app, option(args[3]));
+            return 0;
+        }
         if (elevated && args[2] != user_sid())
             throw hresult_error(E_ACCESSDENIED, L"Approve installation using the same Windows account.");
         if (IsUserAnAdmin()) { deploy(directory); return 0; }

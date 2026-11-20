@@ -7,6 +7,10 @@ pub enum Target {
     Aim,
     Fire,
     Reload,
+    Forward,
+    Left,
+    Backward,
+    Right,
 }
 
 impl Target {
@@ -16,6 +20,10 @@ impl Target {
             "aim" => Self::Aim,
             "fire" => Self::Fire,
             "reload" => Self::Reload,
+            "forward" => Self::Forward,
+            "left" => Self::Left,
+            "backward" => Self::Backward,
+            "right" => Self::Right,
             _ => Self::Binding(value.parse()?),
         })
     }
@@ -24,6 +32,10 @@ impl Target {
             Self::Aim => Some(&mut actions.aim),
             Self::Fire => Some(&mut actions.fire),
             Self::Reload => Some(&mut actions.reload),
+            Self::Forward => Some(&mut actions.movement[0]),
+            Self::Left => Some(&mut actions.movement[1]),
+            Self::Backward => Some(&mut actions.movement[2]),
+            Self::Right => Some(&mut actions.movement[3]),
             _ => None,
         }
     }
@@ -42,6 +54,10 @@ pub fn role_conflicts(
         (Target::Aim, actions.aim.as_ref()),
         (Target::Fire, actions.fire.as_ref()),
         (Target::Reload, actions.reload.as_ref()),
+        (Target::Forward, actions.movement[0].as_ref()),
+        (Target::Left, actions.movement[1].as_ref()),
+        (Target::Backward, actions.movement[2].as_ref()),
+        (Target::Right, actions.movement[3].as_ref()),
     ] {
         if Some(target) != own && assigned.is_some_and(|assigned| chords_conflict(assigned, chord))
         {

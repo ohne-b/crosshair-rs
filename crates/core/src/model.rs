@@ -145,8 +145,13 @@ pub struct Layer {
     pub opacity: f32,
     pub effects: Effects,
     pub content: Content,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub animation: Option<crate::Animation>,
+    #[serde(
+        default,
+        alias = "animation",
+        deserialize_with = "crate::animation::read_animations",
+        skip_serializing_if = "Vec::is_empty"
+    )]
+    pub animations: Vec<crate::Animation>,
 }
 
 impl Layer {
@@ -160,7 +165,7 @@ impl Layer {
             opacity: 1.0,
             effects: Effects::default(),
             content,
-            animation: None,
+            animations: Vec::new(),
         }
     }
 

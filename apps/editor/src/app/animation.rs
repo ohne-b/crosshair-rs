@@ -19,8 +19,11 @@ impl App {
             && self.window()?.global::<Store>().get_page() == 1
             && let Some(base) = &self.document.draft
         {
-            let animated =
-                crate::features::designer::animated_document(base, &self.document.selected);
+            let animated = crate::features::designer::animated_document(
+                base,
+                &self.document.selected,
+                self.animation_trigger,
+            );
             self.request_bitmap(animated)?;
         }
         Ok(())
@@ -47,7 +50,7 @@ impl App {
         }
         if !self.playing {
             self.playback_started = std::time::Instant::now();
-            self.playback.select(base, false, false, 0);
+            self.playback.select(base, [false, false, false], 0);
             self.playing = true;
             self.window()?.global::<Store>().set_animation_playing(true);
         }
@@ -61,6 +64,10 @@ impl App {
             "fire-down" | "fire-up" => AnimationEvent::Trigger {
                 trigger: AnimationTrigger::Fire,
                 down: value == "fire-down",
+            },
+            "movement-down" | "movement-up" => AnimationEvent::Trigger {
+                trigger: AnimationTrigger::Movement,
+                down: value == "movement-down",
             },
             _ => return Ok(()),
         };

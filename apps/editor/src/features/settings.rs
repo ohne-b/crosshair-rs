@@ -32,7 +32,7 @@ pub fn download_progress(status: &UpdateStatus) -> String {
     }
     match status.total.filter(|total| *total > 0) {
         Some(total) => format!(
-            "{} / {} · {}%",
+            "{} / {} - {}%",
             bytes(status.downloaded),
             bytes(total),
             (status.downloaded.saturating_mul(100) / total).min(100)
@@ -77,8 +77,14 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(download_progress(&status), "4.0 MB downloaded");
+        status.total = Some(0);
+        assert_eq!(download_progress(&status), "4.0 MB downloaded");
         status.total = Some(8_000_000);
-        assert!(download_progress(&status).ends_with("50%"));
+        assert_eq!(download_progress(&status), "4.0 MB / 8.0 MB - 50%");
+        status.downloaded = 0;
+        assert_eq!(download_progress(&status), "0.0 MB / 8.0 MB - 0%");
+        status.downloaded = 9_000_000;
+        assert_eq!(download_progress(&status), "9.0 MB / 8.0 MB - 100%");
         status.phase = UpdatePhase::Ready;
         status.error = Some("A deployment failure".into());
         assert_eq!(update_label(&status), "Installation couldn't start");

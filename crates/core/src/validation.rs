@@ -147,7 +147,19 @@ fn validate_layer_inner(layer: &Layer, assets: Option<&BTreeMap<Id, Asset>>) -> 
     number(layer.transform.scale, 0.01, 100.0, "layer.scale")?;
     number(layer.transform.rotation, -360.0, 360.0, "layer.rotation")?;
     number(layer.opacity, 0.0, 1.0, "layer.opacity")?;
-    if let Some(animation) = &layer.animation {
+    require(
+        layer.animations.len() <= 3,
+        "animations",
+        "at most one animation per trigger",
+    )?;
+    for (i, animation) in layer.animations.iter().enumerate() {
+        require(
+            !layer.animations[..i]
+                .iter()
+                .any(|a| a.trigger == animation.trigger),
+            "animations",
+            "duplicate trigger",
+        )?;
         validate_animation(layer, animation)?;
     }
     number(layer.effects.blur, 0.0, 64.0, "layer.blur")?;
@@ -502,7 +514,7 @@ pub fn validate_animation(layer: &Layer, animation: &Animation) -> Result {
         "fill animation is not supported by this layer",
     )?;
     let mut target = layer.clone();
-    target.animation = None;
+    target.animations.clear();
     t.apply(&mut target, 1.0);
     validate_layer_geometry(&target)
 }
@@ -520,6 +532,13 @@ pub fn validate_action_conflicts(
             !chord.trigger.is_pulse(),
             "actions.chord",
             "Aim and Fire require a key or mouse button with a release",
+        )?;
+    }
+    for chord in actions.movement.iter().flatten() {
+        require(
+            matches!(chord.trigger, InputKey::Keyboard { .. }),
+            "actions.movement",
+            "Movement requires keyboard keys",
         )?;
     }
     let mut chords: Vec<_> = bindings

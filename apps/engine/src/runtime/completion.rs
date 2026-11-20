@@ -73,13 +73,32 @@ impl Runtime {
                         }
                     }
                     After::Restore => self.frozen = false,
-                    After::Commit => self.cancel_change(&format!("{error:#}"), false),
+                    After::Commit => {
+                        self.cancel_change(&format!("{error:#}"), false);
+                        if self.options.test_data.is_none()
+                            && self
+                                .queue(
+                                    Job::ReadStartup,
+                                    Pending::internal(After::ReadStartup, self.app.state.revision),
+                                )
+                                .is_err()
+                        {
+                            self.app.status.startup_enabled = None;
+                        }
+                    }
+                    After::ReadStartup => {
+                        self.app.status.startup_enabled = None;
+                        eprintln!("Windows startup status could not be read: {error:#}");
+                    }
                     _ => {}
                 }
                 return Err(error);
             }
         };
         match reply {
+            WorkReply::Startup { enabled } => {
+                self.app.status.startup_enabled = Some(enabled);
+            }
             WorkReply::Saved {
                 revision,
                 cleanup_error,
@@ -229,7 +248,19 @@ impl Runtime {
                 self.begin_change(*state, pending.clone(), output::ChangeKind::Restore)?;
                 return Ok(None);
             }
-            WorkReply::Committed { state } => self.finish_change(*state)?,
+            WorkReply::Committed { state } => {
+                self.finish_change(*state)?;
+                if self.options.test_data.is_none()
+                    && self
+                        .queue(
+                            Job::ReadStartup,
+                            Pending::internal(After::ReadStartup, self.app.state.revision),
+                        )
+                        .is_err()
+                {
+                    self.app.status.startup_enabled = None;
+                }
+            }
             WorkReply::Stopped => self.stopped = true,
             WorkReply::Discarded { removed: _removed } => {}
             WorkReply::Disconnected { removed: _removed } => {}

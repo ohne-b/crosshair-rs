@@ -642,9 +642,14 @@ impl App {
             "export-profile" => self.export(ExportKind::Profile {
                 profile: value.parse()?,
             })?,
+            "startup" => self.send(
+                "startup",
+                Command::SetStartup {
+                    enabled: value.parse()?,
+                },
+            )?,
             "output-mode"
             | "monitor"
-            | "startup"
             | "show-on-launch"
             | "check-updates-setting"
             | "allow-prereleases"
@@ -666,7 +671,6 @@ impl App {
                             .and_then(|index| self.status.monitors.get(index))
                             .map(|monitor| monitor.id.clone())
                     }
-                    "startup" => settings.launch_at_login = value.parse()?,
                     "show-on-launch" => settings.show_on_launch = value.parse()?,
                     "allow-prereleases" => settings.allow_prereleases = value.parse()?,
                     "discord-presence" => settings.discord_presence = value.parse()?,
@@ -759,6 +763,22 @@ impl App {
                 self.show_animated_target()?;
             }
             "animation-tick" => self.playback_tick()?,
+            "animation-trigger" => {
+                let trigger = match value {
+                    "aim" => AnimationTrigger::Aim,
+                    "fire" => AnimationTrigger::Fire,
+                    "movement" => AnimationTrigger::Movement,
+                    _ => bail!("Choose a valid animation trigger"),
+                };
+                if self.document.gesture.is_some() {
+                    self.finish_group = true;
+                    self.finish_edit()?;
+                }
+                self.stop_playback();
+                self.animation_trigger = trigger;
+                self.refresh_document();
+                self.show_animated_target()?;
+            }
             "designer-mode" => {
                 self.stop_playback();
                 if self.document.gesture.is_some() {
@@ -864,7 +884,10 @@ impl App {
             "binding-remove" => {
                 if value == "global" {
                     self.set_global_toggle(None)?;
-                } else if matches!(value, "aim" | "fire" | "reload") {
+                } else if matches!(
+                    value,
+                    "aim" | "fire" | "reload" | "forward" | "left" | "backward" | "right"
+                ) {
                     self.apply_capture(Capture::Role(keybinds::Target::parse(value)?), None, None)?;
                 } else {
                     let mut profile = self.active_profile()?;
@@ -957,6 +980,7 @@ fn requires_finished_edit(action: &str) -> bool {
             | "discord-style"
             | "position-use"
             | "position-delete"
+            | "animation-trigger"
             | "designer-mode"
             | "animation-preview"
             | "aim-action"

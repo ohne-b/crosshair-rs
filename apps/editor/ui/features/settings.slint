@@ -94,7 +94,10 @@ export component Settings inherits Rectangle {
                     if root.category == 1: VerticalLayout { spacing: 12px; alignment: start;
                         SectionTitle { text: "STARTUP"; }
                         Group {
-                            Setting { label: "Launch at sign-in"; Switch { checked: Store.startup; label: "Launch engine at sign-in"; toggled => { Store.action("startup", Store.startup ? "false" : "true"); } } }
+                            Setting { label: "Launch at sign-in";
+                                if Store.startup-known: Switch { checked: Store.startup; label: "Launch engine at sign-in"; toggled => { Store.action("startup", Store.startup ? "false" : "true"); } }
+                                if !Store.startup-known: Text { text: "Unavailable"; color: Theme.muted; font-size: 12px * Theme.text-scale; vertical-alignment: center; }
+                            }
                             Setting { label: "Show crosshair on launch"; last: true; Switch { checked: Store.show-on-launch; label: "Show crosshair on launch"; toggled => { Store.action("show-on-launch", Store.show-on-launch ? "false" : "true"); } } }
                         }
                         SectionTitle { text: "INTERFACE"; }
@@ -143,15 +146,18 @@ export component Settings inherits Rectangle {
                                     ReleaseNotesLink {}
                                     ActionButton { icon: @image-url("../../../../assets/icons/info-circle.svg"); label: Store.update-error != "" ? "Update error details" : "About application updates"; quiet: true; clicked => { Store.action("update-help", ""); } }
                                 }
-                                if Store.update-version != "": Rectangle { height: 36px * Theme.text-scale; max-width: 384px;
-                                    if Store.update-phase == 4 && Store.update-total: Rectangle { height: 6px; border-radius: 3px; background: Theme.border; Rectangle { width: parent.width * clamp(Store.update-progress, 0, 1); height: 6px; border-radius: 3px; background: Theme.orange; } }
-                                    Text { y: 12px; text: Store.update-bytes; color: Theme.muted; font-size: 11px * Theme.text-scale; }
-                                }
                                 if Store.update-version != "" || Store.update-error != "": HorizontalLayout { spacing: 8px;
-                                    if Store.update-version != "" && (Store.update-phase == 3 || Store.update-phase == 7): ActionButton { text: "Download"; icon: @image-url("../../../../assets/icons/download.svg"); primary: true; enabled: Store.interactive && Store.connected; clicked => { Store.action("download-update", ""); } }
-                                    if Store.update-phase == 4: ActionButton { text: "Cancel"; enabled: Store.interactive && Store.connected; clicked => { Store.action("cancel-update", ""); } }
-                                    if Store.update-phase == 5: ActionButton { text: "Install and restart"; primary: true; enabled: Store.interactive && Store.connected; clicked => { Store.action("install-update", ""); } }
-                                    Rectangle { horizontal-stretch: 1; }
+                                    if Store.update-version != "" && (Store.update-phase == 3 || Store.update-phase == 4 || Store.update-phase == 7): Rectangle {
+                                        width: download.preferred-width; height: download.height; horizontal-stretch: 0;
+                                        download := ActionButton { visible: Store.update-phase != 4; width: parent.width; text: "Download"; icon: @image-url("../../../../assets/icons/download.svg"); primary: true; enabled: Store.interactive && Store.connected && Store.update-phase != 4; clicked => { Store.action("download-update", ""); } }
+                                        if Store.update-phase == 4: ActionButton { width: parent.width; text: "Cancel"; enabled: Store.interactive && Store.connected; clicked => { Store.action("cancel-update", ""); } }
+                                    }
+                                    if Store.update-phase == 4: Rectangle { y: (parent.height - self.height) / 2; height: 6px; vertical-stretch: 0; horizontal-stretch: 1; min-width: 0px; border-radius: 3px; background: Store.update-total ? Theme.border : transparent;
+                                        if Store.update-total: Rectangle { x: 0px; width: parent.width * clamp(Store.update-progress, 0, 1); height: 6px; border-radius: 3px; background: Theme.orange; }
+                                    }
+                                    if Store.update-phase == 4: Text { text: Store.update-bytes; color: Theme.muted; font-size: 11px * Theme.text-scale; horizontal-stretch: 0; min-width: self.preferred-width; vertical-alignment: center; }
+                                    if Store.update-phase == 5 || Store.update-phase == 6: ActionButton { text: "Install and restart"; primary: true; enabled: Store.interactive && Store.connected && Store.update-phase == 5; clicked => { Store.action("install-update", ""); } }
+                                    if Store.update-phase != 4: Rectangle { horizontal-stretch: 1; }
                                 }
                             }
                         }

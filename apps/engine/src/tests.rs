@@ -132,13 +132,13 @@ fn action_configuration_is_atomic_undoable_and_unrelated_edits_keep_holds() -> R
 #[test]
 fn fire_edges_and_animation_samples_do_not_change_durable_state_or_status() -> Result<()> {
     let (_directory, store, mut app) = application()?;
-    app.state.presets[0].layers[0].animation = Some(Animation {
+    app.state.presets[0].layers[0].animations = vec![Animation {
         target: AnimationTarget {
             x: Some(25.0),
             ..Default::default()
         },
         ..Default::default()
-    });
+    }];
     store.save(&app.state)?;
     let original = app.state.clone();
     let status_revision = app.status.revision;
