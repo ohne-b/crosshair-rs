@@ -22,7 +22,7 @@ its interactions are illustrative, not an implementation of the application.
 | Storage | Engine-owned versioned JSON and managed local image assets. |
 | Installation | One unsigned MSIX containing editor, engine and widget. Administrator approval for installation/updates; no Windows service. |
 | Updates | TDM's Settings interaction and signed latest.json contract, adapted to MSIX. |
-| Input | Global keyboard and mouse shortcuts, Aim actions, Fire and Reload animation triggers. No controllers. |
+| Input | Global keyboard and mouse shortcuts, Aim actions, Fire, Movement and Reload animation triggers. No controllers. |
 | Appearance | Orange placeholder logo, Tabler outline icons, Manrope interface font. |
 | License | GPL-3.0-only with a Game Bar SDK linking exception; third-party components retain their licenses. |
 
@@ -261,8 +261,8 @@ enters durable state or engine edit history.
 
 ### Animation editing and behavior
 
-Each layer has at most one optional animation: Base is its ordinary design and
-Animated contains only explicitly changed values. Unchanged properties inherit
+Each layer has independent optional Aim, Fire and Movement animations. Base is
+its ordinary design and each Animated target contains only explicitly changed values. Unchanged properties inherit
 Base, including later Base edits. Per-property Reset restores inheritance;
 Remove animation and definition edits use normal draft undo. Mode changes and
 playback never dirty the document. Empty, disabled or unchanged targets do no
@@ -277,12 +277,14 @@ Targets use the existing field limits; intermediate geometry may be fractional.
 Rotation follows the entered numeric delta, so 0 to 360 makes a full turn.
 Color interpolation uses premultiplied alpha; layer opacity is a separate multiplier.
 
-Trigger, Activation and Duration remain visible. Easing, On release, Repeat,
+Aim/Fire/Movement tabs, Enabled, Activation and Duration remain visible.
+Tabs use the Design/Animate segmented style; switching tabs does not edit the
+document. New definitions start disabled and each tab preserves its own settings. Easing, On release, Repeat,
 Direction and Delay live in the initially collapsed Timing section.
 
 | Control | Values and initial value |
 | --- | --- |
-| Trigger | Fire (initial) or Aim. |
+| Trigger tab | Aim, Fire (initial) or Movement. |
 | Activation | Hold (initial) or Press. |
 | Duration | 0-10,000 ms per leg; initially 150 ms. Zero is instant. |
 | Easing | Linear or Smooth (initial), a fixed ease-in/out curve. |
@@ -311,15 +313,25 @@ Direction and Delay live in the initially collapsed Timing section.
   effects. It changes neither selection nor visibility. Held triggers must release
   before restarting. It does not send input to a game or measure weapon state.
 - Resolve an Aim-selected target before delivering its Aim activation. A design
-  selected while Aim/Fire is held inherits matching Hold effects, never a new
+  selected while Aim/Fire/Movement is held inherits matching Hold effects, never a new
   Press event. Lifecycle resets require release and a fresh press instead.
 
-Aim, Fire and Reset preview controls sit below the animation fields. Pointer/key
+Simultaneous animations add numeric deltas relative to Base, then clamp the final
+values to existing property limits. Releasing one trigger leaves the others active.
+Colors blend in fixed Movement, Aim, Fire order, giving Fire the highest priority;
+activation order and serialized definition order do not change the result.
+Each layer/trigger has its own playback track. Legacy single definitions migrate
+to their matching trigger without changing their enabled state or settings.
+
+Aim, Fire, Move and Reset preview controls sit below the animation fields. Pointer/key
 down and release drive Hold; click or Space/Enter supplies Press. Local preview
 uses the same core evaluator in a separate session, without synthetic OS input.
-Animate shows target values for editing and disables canvas transformations
-during playback. Stop, leaving Animate, changing documents and closing clear
-local playback. Global shortcuts remain global even while previewing.
+Animate keeps target values editable and displays the Base pose for a disabled
+trigger. A preview input is available when any visible layer has a matching
+enabled animation that changes its Base pose. During playback, Animate disables
+canvas transformations while allowing middle-mouse viewport panning. Stop,
+leaving Animate, changing documents and closing clear local playback. Global
+shortcuts remain global even while previewing.
 
 Preview uses the existing asynchronous bitmap worker and a timer only while
 values change; it does not rebuild inspector models, thumbnails or hit-test
@@ -333,7 +345,7 @@ image/video export, custom easing, game detection or recoil/ammunition tracking.
 
 ### Keybinds
 
-The Action keybinds table contains Global toggle, Aim, Fire and Reload. Global
+The Action keybinds table contains Global toggle, Aim, Fire, Reload and one Movement row with four individually editable and clearable direction keys. Global
 toggle records the shortcut for the title/tray master switch. Aim has an
 action dropdown and a target thumbnail when relevant. Fire triggers animation;
 Reload resets it. Initial chords are Shift+Alt+Z, Right mouse, Left mouse and R,
@@ -348,6 +360,13 @@ shortcuts belong to the active profile. There is no controller column.
 | Show crosshair (Hold) | Hide until held, then show while held, subject to master enabled. |
 | Toggle saved crosshair (Press) | Alternate between a chosen saved design and the current base. |
 | Show saved crosshair (Hold) | Use a chosen saved design only while held. |
+
+Movement uses four configurable keyboard chords, initially W/A/S/D physical keys.
+The first accepted movement key starts the effect; additional held keys and
+keyboard repeat do not restart it. Releasing the last accepted key returns the
+effect according to its release setting. Opposing keys still count as held:
+this observes input, not game movement, velocity or accuracy. Existing shortcuts
+win conflicts during migration, leaving the conflicting movement key unbound.
 
 Choosing either saved action opens PresetPicker immediately. Choosing a card
 commits action and target together; Escape/outside/Close retains the previous
@@ -504,9 +523,9 @@ editable labels, never identity or filesystem paths.
 | Entity | Contents |
 | --- | --- |
 | App state | Schema version, settings, profiles/active ID, preset library, asset index, base selection/visibility, revisions. |
-| Profile | ID/name, selected preset, bindings, Aim/Fire/Reload chords and Aim action, scale/offset, saved positions. |
+| Profile | ID/name, selected preset, bindings, Aim/Fire/Reload and movement chords, Aim action, scale/offset, saved positions. |
 | Preset | ID/name, ordered layers, favorite, manual order, document revision and engine-owned global edit order for recency. |
-| Layer | ID/name, visible/locked, transform, opacity, typed content/effects and one optional animation definition. |
+| Layer | ID/name, visible/locked, transform, opacity, typed content/effects and up to three animation definitions, one per trigger. |
 | Content | Crosshair, rectangle, ellipse, triangle, text, image or freehand strokes. |
 | Binding | ID, optional display name, chord, preset-selection or visibility action, target if needed, enabled. |
 | Runtime only | Pressed devices/keys, Aim overrides, animation progress/paused poses, capture, transient draft previews, connections, caches, edit history and update state. |
@@ -714,7 +733,7 @@ keyboards. Track pressed state by device so one device cannot release another.
   Only Global toggle or Aim Toggle crosshair can turn the master on; Fire, Reload,
   selection and animation cannot. Animation opacity never changes the switch.
 - Aim action and Aim animation share one resolved event. Other roles, saved
-  shortcuts and Global toggle cannot also win that input. Required-modifier
+  shortcuts, movement keys and Global toggle cannot also win that input. Required-modifier
   release ends a hold; another device holding the trigger prevents early release.
 - Profile/binding changes, capture entry, device loss, lock/suspend, output
   reconfiguration, imports/reset and shutdown clear runtime state and block held
@@ -743,7 +762,7 @@ newest results to its event loop.
 Desktop pipe: current-user logon-session ACL, remote rejection, authenticated
 peer identity. Names include user/session but are not the security boundary.
 Prevent first-instance squatting; verify expected packaged executable identity.
-Handshake verifies build/protocol before accepting commands. Control protocol v5
+Handshake verifies build/protocol before accepting commands. Control protocol v7
 includes profile action configuration in atomic SetBindings commands, capture
 tokens and independently ordered engine status. Connection epochs are
 checked when queued events reach the editor, so a retired connection cannot change
@@ -793,11 +812,12 @@ preserve the last durable snapshot/backup and report recovery on next launch.
 Atomic rename alone is not a proven
 power-loss guarantee: exercise interruption boundaries.
 
-State schema 2, portable format 2 and layer clipboard format 2 retain action and
-animation definitions. Loaders accept version 1 explicitly and writers emit 2;
+State schema 4, portable format 4 and layer clipboard format 4 retain action and
+per-trigger animation definitions. Loaders accept versions 1/2/3 explicitly and writers emit 4;
 unknown newer versions fail rather than discard data. The v1 migration adds
 default action chords only when they do not conflict, leaving conflicting roles
-Unbound and Aim at No action. Existing static geometry/assets are preserved.
+Unbound and Aim at No action. Version 2 upgrades retain existing actions and add
+only nonconflicting movement defaults. Existing static geometry/assets are preserved.
 Loading migrates in memory without writing; the first atomic save preserves the
 validated original bytes as backup. Portable and embedded-state versions must
 agree. Import remaps all IDs and Aim references together.
@@ -838,6 +858,12 @@ DisabledByUser. Activation uses stable app IDs, not versioned WindowsApps paths.
 Settings/recovery publication captures the actual Windows startup state, verifies
 the requested state and compensates if reconciliation or durable publication
 fails. No WinRT startup wait runs on the input thread.
+The settings switch uses queried Windows state, including changes made outside
+the app; an unknown state is shown as unavailable. A dedicated startup command
+always reconciles the requested Windows state, even when the saved preference
+already matches. Installer configuration activates the packaged Engine by stable
+identity and exits before input or overlay initialization, or delegates to an
+already running engine's serialized worker.
 Handle lock/unlock, sleep/wake, display change and Windows shutdown deliberately.
 Normal use needs no administrator rights.
 
@@ -854,15 +880,16 @@ Headless engine never periodically contacts GitHub. No automatic download/instal
 | Idle | Version chip and check icon. |
 | Checking | Disabled check, concise checking status. |
 | Current | Up-to-date status. |
-| Available | Version, Download, Release notes; reserve progress space. |
-| Downloading | Thin progress, bytes, Cancel; percentage only with reliable total. |
+| Available | Version, Release notes; Download directly below. |
+| Downloading | Download becomes Cancel beside centered thin progress and inline bytes; percentage only with reliable total. |
 | Verified | Ready-to-install status, Install and restart. |
 | Installing | Disabled actions; state that overlay is closing for installation. |
 | Check/download error | Short inline error with details behind i; check again or retry Download. |
 | Install error | Recheck installed state, actionable recovery/manual release link; no blind retry loop. |
 
 Use TDM's compact rhythm, 6 px bar and tabular values, no wizard/card stack.
-Unknown totals show bytes only. Cancel removes partial data and returns Available.
+Keep bytes and percentages outside the bar. Unknown totals show bytes only.
+Cancel removes partial data and returns Available.
 A Settings dot may mark availability; never add another sidebar footer item.
 
 ### Manifest and authenticity
@@ -931,6 +958,12 @@ before using Windows `PackageManager.AddPackageByUriAsync` with `AllowUnsigned`,
 with no `.appinstaller` update association. It reuses a healthy installed x64
 VCLibs runtime meeting the minimum version, supplying the bundled dependency only
 when needed. This avoids redeploying a shared runtime used by other running apps.
+Setup's optional desktop and additional Start menu links target the package's
+Editor shell item and app ID, never a versioned executable path. The package's
+standard Start entry remains. Silent setup preserves options unless explicitly
+specified; an unchecked sign-in option preserves an existing preference. Matching
+extra links are removed when explicitly unchecked on reinstall; unrelated links
+are preserved. These ordinary shell links may remain after MSIX uninstall.
 Initial installation trusts the setup obtained from the project's GitHub release;
 it does not claim Windows code signing or a self-authenticating executable.
 [Microsoft's unsigned-package
@@ -1047,7 +1080,9 @@ Missing keys fail closed before any update request. Unsigned installation, helpe
 breakaway survival, two-version deployment and clean-install behavior require
 actual runtime evidence; source checks alone do not prove those gates.
 Validation installs the setup on its disposable hosted Windows runner, checks
-registration and installed engine startup, then removes that test registration.
+registration, stable shortcuts, packaged startup configuration and an isolated
+input-disabled engine, then removes that test registration. Signing in to Windows
+and visual installer acceptance remain manual checks.
 Interactive elevation/cancellation and upgrade recovery still need separate acceptance.
 
 ## Performance and validation

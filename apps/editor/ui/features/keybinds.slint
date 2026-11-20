@@ -119,7 +119,39 @@ export component Keybinds inherits Rectangle {
             Rectangle { vertical-stretch: 0; background: Theme.panel; border-radius: 10px; clip: true; border-width: 1px; border-color: Theme.border;
                 VerticalLayout { padding: 1px; spacing: 0px;
                     TableHeader { application: true; }
-                    for binding in Store.bindings: BindingItem { viewport-width: root.width + root.absolute-position.x; viewport-height: root.height + root.absolute-position.y; binding: binding; visible: binding.global; height: binding.global ? max(56px, 12px * Theme.text-scale + 32px) : 0px; }
+                    for binding in Store.bindings: BindingItem { viewport-width: root.width + root.absolute-position.x; viewport-height: root.height + root.absolute-position.y; binding: binding; visible: binding.global; height: self.visible ? max(56px, 12px * Theme.text-scale + 32px) : 0px; }
+                    if Store.movement-bindings.length > 0: Rectangle {
+                        height: max(44px, 12px * Theme.text-scale + 24px); vertical-stretch: 0;
+                        Rectangle { y: 0px; height: 1px; width: parent.width; background: Theme.border; }
+                        HorizontalLayout { padding-left: 12px; padding-right: 12px; spacing: 12px;
+                            Text { text: "Movement"; color: Theme.text; font-size: 12px * Theme.text-scale; horizontal-stretch: 1; vertical-alignment: center; }
+                            Rectangle {
+                                preferred-width: segments.preferred-width; horizontal-stretch: 0;
+                                height: max(32px, 12px * Theme.text-scale + 16px); y: (parent.height - self.height) / 2;
+                                segments := HorizontalLayout { spacing: 6px;
+                                    for binding in Store.movement-bindings: Rectangle {
+                                        preferred-width: min(210px, max(160px, key.preferred-width + 32px)); min-width: 56px;
+                                        key := ActionButton {
+                                            x: 0px; width: parent.width - clear.width - 4px; hover-feedback: false;
+                                            enabled: Store.connected && Store.interactive;
+                                            text: Store.capture-id == binding.id ? "Press a key" : binding.direction + "  " + binding.chord;
+                                            label: binding.action + ": " + binding.chord; selected: Store.capture-id == binding.id;
+                                            clicked => { if Store.capture-id != binding.id {
+                                                Store.capture-region(self.absolute-position.x / 1px, self.absolute-position.y / 1px, self.width / 1px, self.height / 1px);
+                                                Store.action("capture", binding.id);
+                                            } }
+                                        }
+                                        clear := ActionButton {
+                                            x: parent.width - self.width; width: 32px; quiet: true;
+                                            icon: @image-url("../../../../assets/icons/trash.svg"); label: "Clear " + binding.action + " shortcut";
+                                            enabled: Store.connected && Store.interactive && binding.enabled;
+                                            clicked => { Store.action("binding-remove", binding.id); }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }
             SectionTitle { text: "CROSSHAIR SHORTCUTS"; }
@@ -147,7 +179,7 @@ export component Keybinds inherits Rectangle {
                         visible: Store.pending-shortcut != "";
                         height: self.visible ? max(56px, 12px * Theme.text-scale + 32px) : 0px;
                         viewport-width: root.width + root.absolute-position.x; viewport-height: root.height + root.absolute-position.y;
-                        binding: { id: "new-shortcut", name: Store.preset-names[Store.target-index], action: "", target: "", target-index: Store.target-index, chord: "", enabled: true, shortcut: true, global: false };
+                        binding: { direction: "", id: "new-shortcut", name: Store.preset-names[Store.target-index], action: "", target: "", target-index: Store.target-index, chord: "", enabled: true, shortcut: true, global: false };
                     }
                     for binding in Store.bindings: BindingItem { viewport-width: root.width + root.absolute-position.x; viewport-height: root.height + root.absolute-position.y; binding: binding; visible: binding.shortcut; height: binding.shortcut ? max(56px, 12px * Theme.text-scale + 32px) : 0px; }
                 }

@@ -3,7 +3,7 @@ export struct PresetGroup { items: [PresetRow] }
 export struct LayerRow { id: string, name: string, kind: string, selected: bool, shown: bool, locked: bool }
 export struct FieldRow { selection: string, key: string, label: string, value: string, kind: int, minimum: float, maximum: float, step: float, numeric: float, checked: bool, choices: [string], selected: int, swatch: color, reset: bool }
 export struct FieldGroup { first: FieldRow, second: FieldRow, paired: bool }
-export struct BindingRow { id: string, name: string, action: string, target: string, target-index: int, chord: string, enabled: bool, shortcut: bool, global: bool }
+export struct BindingRow { direction: string, id: string, name: string, action: string, target: string, target-index: int, chord: string, enabled: bool, shortcut: bool, global: bool }
 export struct BoundsRow { id: string, x: float, y: float, width: float, height: float, selected: bool }
 
 export global Store {
@@ -58,8 +58,13 @@ export global Store {
     in-out property <bool> document-active: true;
     in-out property <string> inspector-selection;
     in-out property <bool> animate: false;
+    in-out property <int> animation-trigger: 1;
     in-out property <bool> single-selection: false;
     in-out property <bool> has-animation: false;
+    in-out property <bool> animation-target-needed: false;
+    in-out property <bool> can-preview-aim: false;
+    in-out property <bool> can-preview-fire: false;
+    in-out property <bool> can-preview-movement: false;
     in-out property <bool> animation-playing: false;
     in-out property <bool> document-open: false;
     in-out property <bool> selection-editable: false;
@@ -79,6 +84,7 @@ export global Store {
     in-out property <string> brush-color: "#F97316FF";
     in-out property <color> brush-swatch: #F97316;
     in-out property <[BindingRow]> bindings;
+    in-out property <[BindingRow]> movement-bindings;
     in-out property <string> capture-id;
     in-out property <int> aim-action: 0;
     in-out property <string> aim-target;
@@ -98,6 +104,7 @@ export global Store {
     in-out property <[string]> positions;
     in-out property <int> position-index: 0;
     in-out property <bool> startup: false;
+    in-out property <bool> startup-known: false;
     in-out property <bool> show-on-launch: true;
     in-out property <bool> check-updates: true;
     in-out property <bool> allow-prereleases: false;

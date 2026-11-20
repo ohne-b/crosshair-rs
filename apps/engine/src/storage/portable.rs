@@ -27,7 +27,7 @@ use super::{
 };
 
 const FORMAT: &str = "crosshair-rs";
-const VERSION: u32 = 2;
+const VERSION: u32 = 4;
 const RECORD_LIMIT: u64 = MAX_ASSET_BYTES.div_ceil(3) * 4 + 1024;
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize)]
@@ -188,7 +188,10 @@ fn select_export(state: &AppState, kind: ExportKind) -> Result<(Kind, AppState)>
 fn write_portable(store: &Store, state: &AppState, kind: Kind, writer: &mut File) -> Result<()> {
     validate_state(state)?;
     let mut writer = LimitWriter { writer, bytes: 0 };
-    writer.write_all(b"{\"format\":\"crosshair-rs\",\"version\":2,\"kind\":")?;
+    write!(
+        writer,
+        "{{\"format\":\"crosshair-rs\",\"version\":{VERSION},\"kind\":"
+    )?;
     serde_json::to_writer(&mut writer, &kind)?;
     writer.write_all(b",\"state\":")?;
     serde_json::to_writer(&mut writer, state)?;
@@ -534,7 +537,7 @@ impl<'de> Visitor<'de> for PortableSeed<'_> {
                 }
             }
         }
-        if format.as_deref() != Some(FORMAT) || !matches!(version, Some(1 | VERSION)) {
+        if format.as_deref() != Some(FORMAT) || !matches!(version, Some(1 | 2 | 3 | VERSION)) {
             return Err(de::Error::custom(
                 "Unsupported portable document format or version",
             ));

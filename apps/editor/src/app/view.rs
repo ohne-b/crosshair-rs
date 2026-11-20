@@ -99,7 +99,8 @@ impl App {
         } else {
             0
         });
-        store.set_startup(self.state.settings.launch_at_login);
+        store.set_startup(self.status.startup_enabled.unwrap_or(false));
+        store.set_startup_known(self.status.startup_enabled.is_some());
         store.set_show_on_launch(self.state.settings.show_on_launch);
         store.set_check_updates(self.state.settings.check_updates);
         store.set_allow_prereleases(self.state.settings.allow_prereleases);
@@ -250,6 +251,8 @@ impl App {
         };
         let store = ui.global::<Store>();
         store.set_visible(self.status.enabled);
+        store.set_startup(self.status.startup_enabled.unwrap_or(false));
+        store.set_startup_known(self.status.startup_enabled.is_some());
         store.set_visibility_reason(if self.status.enabled && !self.status.visible {
             match self
                 .state
@@ -400,12 +403,40 @@ impl App {
         let store = ui.global::<Store>();
         store.set_inspector_selection(self.selection_token().into());
         store.set_animate(self.animate);
+        store.set_animation_trigger(match self.animation_trigger {
+            AnimationTrigger::Aim => 0,
+            AnimationTrigger::Fire => 1,
+            AnimationTrigger::Movement => 2,
+        });
         store.set_single_selection(self.document.selected.len() == 1);
-        store.set_has_animation(
-            self.document
-                .selected_layer()
-                .is_some_and(|layer| layer.animation.is_some()),
+        let selected_animation = self.document.selected_layer().and_then(|layer| {
+            layer
+                .animations
+                .iter()
+                .find(|a| a.trigger == self.animation_trigger)
+                .map(|animation| (layer, animation))
+        });
+        store.set_has_animation(selected_animation.is_some());
+        store.set_animation_target_needed(
+            selected_animation.is_some_and(|(layer, a)| a.enabled && !a.effective_for(layer)),
         );
+        let can_preview = |trigger| {
+            self.document.draft.as_ref().is_some_and(|preset| {
+                preset
+                    .layers
+                    .iter()
+                    .filter(|layer| layer.visible)
+                    .any(|layer| {
+                        layer
+                            .animations
+                            .iter()
+                            .any(|a| a.trigger == trigger && a.effective_for(layer))
+                    })
+            })
+        };
+        store.set_can_preview_aim(can_preview(AnimationTrigger::Aim));
+        store.set_can_preview_fire(can_preview(AnimationTrigger::Fire));
+        store.set_can_preview_movement(can_preview(AnimationTrigger::Movement));
         store.set_document_open(self.document.draft.is_some());
         store.set_dirty(self.document.dirty || self.inflight.is_some());
         store.set_save_paused(self.document.save_paused || self.document.conflict);
@@ -442,7 +473,7 @@ impl App {
                 .map(|layer| {
                     if self.animate {
                         if self.document.selected.len() == 1 {
-                            designer::animation_fields(layer, &self.fonts)
+                            designer::animation_fields(layer, &self.fonts, self.animation_trigger)
                         } else {
                             Vec::new()
                         }
@@ -469,7 +500,11 @@ impl App {
                         value: field.value.clone().into(),
                         reset: self.animate
                             && self.document.selected_layer().is_some_and(|layer| {
-                                designer::animation_changed(layer, &field.key)
+                                designer::animation_changed(
+                                    layer,
+                                    &field.key,
+                                    self.animation_trigger,
+                                )
                             }),
                         ..Default::default()
                     };
@@ -541,7 +576,7 @@ impl App {
             .chain(self.document.selected.iter().copied())
             .map(|id| id.to_string())
             .chain(std::iter::once(if self.animate {
-                "animate".to_owned()
+                format!("animate:{:?}", self.animation_trigger)
             } else {
                 "design".to_owned()
             }))
@@ -575,8 +610,10 @@ impl App {
         let Some(ui) = self.ui.upgrade() else {
             return;
         };
+        let mut movement = Vec::new();
         let mut rows = vec![BindingRow {
             id: "global".into(),
+            direction: Default::default(),
             name: SharedString::default(),
             action: "Global toggle".into(),
             target: SharedString::default(),
@@ -618,14 +655,29 @@ impl App {
                     .and_then(|id| self.state.presets.iter().position(|p| p.id == id))
                     .map_or(-1, |i| i as i32),
             );
-            for (id, label, chord) in [
-                ("aim", "Aim", &profile.actions.aim),
-                ("fire", "Fire", &profile.actions.fire),
-                ("reload", "Reload", &profile.actions.reload),
+            for (id, label, direction, chord) in [
+                ("aim", "Aim", "", &profile.actions.aim),
+                ("fire", "Fire", "", &profile.actions.fire),
+                ("reload", "Reload", "", &profile.actions.reload),
+                ("forward", "Move forward", "↑", &profile.actions.movement[0]),
+                ("left", "Move left", "←", &profile.actions.movement[1]),
+                (
+                    "backward",
+                    "Move backward",
+                    "↓",
+                    &profile.actions.movement[2],
+                ),
+                ("right", "Move right", "→", &profile.actions.movement[3]),
             ] {
-                rows.push(BindingRow {
+                let group = if direction.is_empty() {
+                    &mut rows
+                } else {
+                    &mut movement
+                };
+                group.push(BindingRow {
                     id: id.into(),
                     action: label.into(),
+                    direction: direction.into(),
                     chord: chord
                         .as_ref()
                         .map(keybinds::chord_label)
@@ -665,6 +717,7 @@ impl App {
                         .and_then(|id| self.state.presets.iter().position(|preset| preset.id == id))
                         .map(|index| index as i32)
                         .unwrap_or(-1),
+                    direction: Default::default(),
                     shortcut: matches!(binding.action, BindingAction::SelectPreset { .. }),
                     global: false,
                 }
@@ -674,6 +727,11 @@ impl App {
         let pending_saved = rows
             .iter()
             .any(|row| row.id == store.get_pending_shortcut());
+        if !update_rows(&store.get_movement_bindings(), &movement, |a, b| {
+            a.id == b.id
+        }) {
+            store.set_movement_bindings(model(movement));
+        }
         if !update_rows(&store.get_bindings(), &rows, |a, b| a.id == b.id) {
             store.set_bindings(model(rows));
         }

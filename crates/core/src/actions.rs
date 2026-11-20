@@ -43,6 +43,9 @@ pub struct ActionBindings {
     pub fire: Option<InputChord>,
     pub reload: Option<InputChord>,
     pub aim_action: AimAction,
+    /// Forward, left, backward and right keyboard chords.
+    #[serde(default)]
+    pub movement: [Option<InputChord>; 4],
 }
 
 impl ActionBindings {
@@ -52,12 +55,14 @@ impl ActionBindings {
             fire: None,
             reload: None,
             aim_action: AimAction::None,
+            movement: Default::default(),
         }
     }
 
     pub fn chords(&self) -> impl Iterator<Item = &InputChord> {
         [&self.aim, &self.fire, &self.reload]
             .into_iter()
+            .chain(self.movement.iter())
             .filter_map(Option::as_ref)
     }
 }
@@ -75,6 +80,7 @@ impl Default for ActionBindings {
             fire: mouse(1),
             reload: Some(InputChord::key(0x13)),
             aim_action: AimAction::None,
+            movement: [0x11, 0x1e, 0x1f, 0x20].map(|key| Some(InputChord::key(key))),
         }
     }
 }
@@ -96,6 +102,17 @@ impl Profile {
         for binding in &mut self.bindings {
             if let crate::BindingAction::SelectPreset { preset } = &mut binding.action {
                 *preset = map(*preset);
+            }
+        }
+    }
+
+    fn install_default_movement(&mut self, global: Option<&InputChord>) {
+        for (index, chord) in ActionBindings::default().movement.into_iter().enumerate() {
+            self.actions.movement[index] = chord;
+            if crate::validation::validate_action_conflicts(&self.bindings, &self.actions, global)
+                .is_err()
+            {
+                self.actions.movement[index] = None;
             }
         }
     }
@@ -126,6 +143,7 @@ impl Profile {
                 }
             }
         }
+        self.install_default_movement(global);
     }
 }
 
@@ -138,6 +156,13 @@ pub fn migrate_state(mut state: AppState) -> Result<AppState, ValidationError> {
             }
             state.schema_version = crate::SCHEMA_VERSION;
         }
+        2 => {
+            for profile in &mut state.profiles {
+                profile.install_default_movement(state.settings.global_toggle.as_ref());
+            }
+            state.schema_version = crate::SCHEMA_VERSION;
+        }
+        3 => state.schema_version = crate::SCHEMA_VERSION,
         crate::SCHEMA_VERSION => {}
         _ => {
             return Err(ValidationError::new(
@@ -156,6 +181,45 @@ mod tests {
     use crate::{
         Animation, AnimationTarget, Binding, BindingAction, Content, Modifier, validate_state,
     };
+
+    #[test]
+    fn v2_migration_adds_movement_without_stealing_shortcuts_or_roles() {
+        let mut state = AppState::default();
+        state.profiles[0].actions.movement = Default::default();
+        state.profiles[0].actions.aim = Some(InputChord::key(0x11));
+        state.profiles[0].bindings.push(Binding::new(
+            InputChord::key(0x1e),
+            BindingAction::ToggleVisibility,
+        ));
+        state.settings.global_toggle = Some(InputChord::key(0x1f));
+        let mut json = serde_json::to_value(&state).unwrap();
+        json["schema_version"] = 2.into();
+        json["profiles"][0]["actions"]
+            .as_object_mut()
+            .unwrap()
+            .remove("movement");
+        let migrated = migrate_state(serde_json::from_value(json).unwrap()).unwrap();
+        assert_eq!(
+            migrated.profiles[0].actions.aim,
+            state.profiles[0].actions.aim
+        );
+        assert_eq!(migrated.profiles[0].bindings, state.profiles[0].bindings);
+        assert_eq!(
+            migrated.settings.global_toggle,
+            state.settings.global_toggle
+        );
+        assert_eq!(
+            migrated.profiles[0].actions.movement,
+            [None, None, None, Some(InputChord::key(0x20))]
+        );
+        assert_eq!(migrate_state(migrated.clone()).unwrap(), migrated);
+        let mut invalid = migrated;
+        invalid.profiles[0].actions.movement[0] = Some(InputChord {
+            trigger: InputKey::Mouse { button: 4 },
+            modifiers: vec![],
+        });
+        assert!(validate_state(&invalid).is_err());
+    }
 
     #[test]
     fn v1_migration_preserves_content_and_does_not_steal_existing_keys() {
@@ -182,7 +246,7 @@ mod tests {
         let old: AppState = serde_json::from_value(json).unwrap();
         assert_eq!(old.profiles[0].actions, ActionBindings::unbound());
         let migrated = migrate_state(old).unwrap();
-        assert_eq!(migrated.schema_version, 2);
+        assert_eq!(migrated.schema_version, crate::SCHEMA_VERSION);
         assert_eq!(migrated.presets, state.presets);
         assert_eq!(migrated.profiles[0].bindings, state.profiles[0].bindings);
         assert_eq!(migrated.profiles[0].actions.aim_action, AimAction::None);
@@ -192,7 +256,7 @@ mod tests {
             ActionBindings::default().aim
         );
         assert_eq!(migrate_state(migrated.clone()).unwrap(), migrated);
-        state.schema_version = 3;
+        state.schema_version = crate::SCHEMA_VERSION + 1;
         assert!(migrate_state(state).is_err());
     }
 
@@ -203,7 +267,7 @@ mod tests {
         let profile = &mut state.profiles[0];
         profile.actions.aim_action = AimAction::ShowPresetWhileHeld { preset: target };
         profile.bindings.push(Binding::new(
-            InputChord::key(0x20),
+            InputChord::key(0x21),
             BindingAction::SelectPreset { preset: target },
         ));
         assert_eq!(
@@ -250,14 +314,14 @@ mod tests {
     #[test]
     fn animation_definitions_round_trip_and_reject_invalid_targets() {
         let mut state = AppState::default();
-        state.presets[0].layers[0].animation = Some(Animation {
+        state.presets[0].layers[0].animations = vec![Animation {
             target: AnimationTarget {
                 thickness: Some(3.0),
                 x: Some(20.0),
                 ..Default::default()
             },
             ..Default::default()
-        });
+        }];
         validate_state(&state).unwrap();
         let encoded = serde_json::to_value(&state).unwrap();
         assert_eq!(
@@ -265,32 +329,32 @@ mod tests {
             state
         );
         let mut unknown = encoded.clone();
-        unknown["presets"][0]["layers"][0]["animation"]["target"]["script"] = "bad".into();
+        unknown["presets"][0]["layers"][0]["animations"][0]["target"]["script"] = "bad".into();
         assert!(serde_json::from_value::<AppState>(unknown).is_err());
-        let a = state.presets[0].layers[0].animation.as_mut().unwrap();
+        let a = state.presets[0].layers[0].animations.first_mut().unwrap();
         a.duration_ms = 0;
         validate_state(&state).unwrap();
         state.presets[0].layers[0]
-            .animation
-            .as_mut()
+            .animations
+            .first_mut()
             .unwrap()
             .duration_ms = 10001;
         assert!(validate_state(&state).is_err());
         state.presets[0].layers[0]
-            .animation
-            .as_mut()
+            .animations
+            .first_mut()
             .unwrap()
             .duration_ms = 150;
         state.presets[0].layers[0]
-            .animation
-            .as_mut()
+            .animations
+            .first_mut()
             .unwrap()
             .target
             .x = Some(f32::NAN);
         assert!(validate_state(&state).is_err());
         state.presets[0].layers[0]
-            .animation
-            .as_mut()
+            .animations
+            .first_mut()
             .unwrap()
             .target
             .x = Some(0.0);

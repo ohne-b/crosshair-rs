@@ -35,6 +35,7 @@ fn app(ui: &AppWindow) -> App {
         fonts: Vec::new(),
         fields: Vec::new(),
         animate: false,
+        animation_trigger: AnimationTrigger::Fire,
         playback: Playback::default(),
         playback_started: std::time::Instant::now(),
         playback_timer: slint::Timer::default(),
@@ -85,6 +86,33 @@ fn app(ui: &AppWindow) -> App {
         preview_pending: false,
         new_connection: false,
     }
+}
+
+#[test]
+fn startup_toggle_uses_windows_state_and_always_requests_reconciliation() -> Result<()> {
+    let ui = window();
+    let mut app = app(&ui);
+    let (client, commands) = Client::recording_for_test();
+    app.client = client;
+    app.state.settings.launch_at_login = true;
+    app.status.startup_enabled = Some(false);
+    app.refresh_status();
+    assert!(!ui.global::<Store>().get_startup());
+    assert!(ui.global::<Store>().get_startup_known());
+    app.action("startup", "true")?;
+    assert!(matches!(
+        &commands()[..],
+        [Command::SetStartup { enabled: true }]
+    ));
+    app.status.startup_enabled = Some(true);
+    app.refresh_status();
+    assert!(ui.global::<Store>().get_startup());
+    app.status.startup_enabled = None;
+    app.refresh_status();
+    assert!(!ui.global::<Store>().get_startup());
+    assert!(!ui.global::<Store>().get_startup_known());
+    ui.hide()?;
+    Ok(())
 }
 
 fn pointer(ui: &AppWindow, kind: i32, x: f32, y: f32) {
@@ -174,8 +202,8 @@ fn animation_mode_rejects_queued_base_edits_and_undo_restores_inheritance() -> R
     complete_preview(&mut app, None)?;
     assert_eq!(
         app.document.draft.as_ref().unwrap().layers[0]
-            .animation
-            .as_ref()
+            .animations
+            .first()
             .unwrap()
             .target
             .x,
@@ -192,22 +220,187 @@ fn animation_mode_rejects_queued_base_edits_and_undo_restores_inheritance() -> R
 }
 
 #[test]
-fn preview_frames_never_edit_the_document_and_stale_bitmaps_are_ignored() -> Result<()> {
+fn middle_mouse_pan_works_during_animation_without_editing() -> Result<()> {
     let ui = window();
     let mut app = app(&ui);
+    let base = app.state.presets[0].clone();
+    app.document.open(base.clone())?;
+    for (animate, playing) in [(false, false), (true, false), (true, true)] {
+        app.animate = animate;
+        app.playing = playing;
+        ui.global::<Store>().set_pan_x(0.0);
+        ui.global::<Store>().set_pan_y(0.0);
+        app.canvas_event(0, Point { x: 10.0, y: 20.0 }, 3, false)?;
+        app.canvas_event(1, Point { x: 40.0, y: 10.0 }, 3, false)?;
+        assert_eq!(ui.global::<Store>().get_pan_x(), 30.0);
+        assert_eq!(ui.global::<Store>().get_pan_y(), -10.0);
+        app.canvas_event(
+            0,
+            Point {
+                x: -500.0,
+                y: -500.0,
+            },
+            1,
+            false,
+        )?;
+        app.canvas_event(
+            1,
+            Point {
+                x: -1000.0,
+                y: -1000.0,
+            },
+            1,
+            false,
+        )?;
+        app.canvas_event(
+            2,
+            Point {
+                x: -1000.0,
+                y: -1000.0,
+            },
+            1,
+            false,
+        )?;
+        assert_eq!(ui.global::<Store>().get_pan_x(), 30.0);
+        app.canvas_event(1, Point { x: 50.0, y: 10.0 }, 3, false)?;
+        assert_eq!(ui.global::<Store>().get_pan_x(), 40.0);
+        app.canvas_event(2, Point { x: 40.0, y: 10.0 }, 3, false)?;
+        assert!(app.drag.is_none());
+        app.canvas_event(0, Point { x: 0.0, y: 0.0 }, 3, false)?;
+        app.canvas_event(3, Point { x: 0.0, y: 0.0 }, 1, false)?;
+        assert!(app.drag.is_none());
+        assert_eq!(app.document.draft.as_ref(), Some(&base));
+        assert!(!app.document.dirty);
+        assert!(!app.document.can_undo());
+    }
+    app.drag = Some(Drag::Move {
+        origin: Point { x: 0.0, y: 0.0 },
+        before: base.clone(),
+    });
+    app.group_open = true;
+    app.canvas_event(0, Point { x: 10.0, y: 10.0 }, 3, false)?;
+    app.canvas_event(2, Point { x: 20.0, y: 20.0 }, 3, false)?;
+    assert!(matches!(app.drag, Some(Drag::Move { .. })));
+    assert!(app.group_open);
+    ui.hide()?;
+    Ok(())
+}
+
+#[test]
+fn animation_tabs_do_not_edit_and_reject_stale_field_events() -> Result<()> {
+    let ui = window();
+    let mut app = app(&ui);
+    let base = app.state.presets[0].clone();
+    app.document.open(base.clone())?;
+    app.action("designer-mode", "animate")?;
+    let fire_token = app.selection_token();
+    app.action("animation-trigger", "movement")?;
+    assert_eq!(app.document.draft.as_ref(), Some(&base));
+    assert!(!app.document.dirty);
+    assert!(!app.document.can_undo());
+    assert_eq!(ui.global::<Store>().get_animation_trigger(), 2);
+    app.event(Event::Ui(UiEvent::Property(
+        fire_token,
+        "@animated:/transform/x".into(),
+        "100".into(),
+        2,
+    )))?;
+    assert_eq!(app.document.draft.as_ref(), Some(&base));
+    let store = ui.global::<Store>();
+    assert!(!store.get_animation_target_needed());
+    app.property_edit("/animation/enabled", "true", 2)?;
+    complete_preview(&mut app, None)?;
+    assert!(store.get_animation_target_needed());
+    assert!(!store.get_can_preview_movement());
+    app.action("undo", "")?;
+    assert!(!store.get_animation_target_needed());
+    app.property_edit("@animated:/transform/x", "20", 2)?;
+    complete_preview(&mut app, None)?;
+    assert_eq!(
+        app.document.draft.as_ref().unwrap().layers[0].animations[0].trigger,
+        AnimationTrigger::Movement
+    );
+    assert!(!store.get_can_preview_movement());
+    app.property_edit("/animation/enabled", "true", 2)?;
+    complete_preview(&mut app, None)?;
+    assert!(store.get_can_preview_movement());
+    assert!(!store.get_animation_target_needed());
+    assert!(!store.get_can_preview_aim());
+    assert!(!store.get_can_preview_fire());
+    app.action("undo", "")?;
+    assert!(!store.get_can_preview_movement());
+    app.action("animation-trigger", "aim")?;
+    app.action("undo", "")?;
+    assert_eq!(app.document.draft.as_ref(), Some(&base));
+    ui.hide()?;
+    Ok(())
+}
+
+#[test]
+fn animation_enabled_switch_updates_the_live_draft_and_save() -> Result<()> {
+    let ui = window();
+    let store = ui.global::<Store>();
+    let mut app = app(&ui);
     let mut preset = app.state.presets[0].clone();
-    preset.layers[0].animation = Some(Animation {
+    preset.layers[0].animations = vec![Animation {
         target: AnimationTarget {
             x: Some(12.0),
             ..Default::default()
         },
         ..Default::default()
+    }];
+    app.document.open(preset)?;
+    // Keep the receiver alive while checking the documents queued for the engine.
+    let (client, _commands) = Client::recording_for_test();
+    app.client = client;
+    store.set_connected(true);
+    store.on_property_edit(|selection, key, value, phase| {
+        ui_event(UiEvent::Property(
+            selection.into(),
+            key.into(),
+            value.into(),
+            phase,
+        ));
     });
+    app.action("designer-mode", "animate")?;
+    assert!(store.get_can_preview_fire());
+
+    slint::platform::update_timers_and_animations();
+    pointer(&ui, 0, 1238.0, 205.0);
+    pointer(&ui, 2, 1238.0, 205.0);
+    while let Some(event) = EVENTS.with(|events| events.borrow_mut().pop_front()) {
+        app.event(event)?;
+    }
+    assert!(!app.document.draft.as_ref().unwrap().layers[0].animations[0].enabled);
+    complete_preview(&mut app, None)?;
+    let submitted = app.preview_inflight.as_ref().unwrap();
+    assert!(!submitted.layers[0].animations[0].enabled);
+    assert_eq!(submitted.layers[0].animations[0].target.x, Some(12.0));
+
+    app.save_document()?;
+    assert!(!app.inflight.as_ref().unwrap().layers[0].animations[0].enabled);
+    ui.hide()?;
+    Ok(())
+}
+
+#[test]
+fn preview_frames_never_edit_the_document_and_stale_bitmaps_are_ignored() -> Result<()> {
+    let ui = window();
+    let mut app = app(&ui);
+    let mut preset = app.state.presets[0].clone();
+    preset.layers[0].animations = vec![Animation {
+        trigger: AnimationTrigger::Movement,
+        target: AnimationTarget {
+            x: Some(12.0),
+            ..Default::default()
+        },
+        ..Default::default()
+    }];
     app.document.open(preset.clone())?;
     app.animate = true;
     let (client, commands) = Client::recording_for_test();
     app.client = client;
-    app.preview_input("fire-down")?;
+    app.preview_input("movement-down")?;
     assert!(app.playing);
     assert!(
         !app.playback_timer.running(),
@@ -240,12 +433,12 @@ fn preview_frames_never_edit_the_document_and_stale_bitmaps_are_ignored() -> Res
         result: Ok((bitmap(), 1.0)),
     }))?;
     assert_eq!(ui.global::<Store>().get_preview_x(), 42.0);
-    app.preview_input("fire-up")?;
+    app.preview_input("movement-up")?;
     assert!(
         !app.playing,
         "A late release cannot restart a stopped session"
     );
-    app.preview_input("fire-down")?;
+    app.preview_input("movement-down")?;
     app.action("navigate", "2")?;
     let hidden_generation = app.playback_generation;
     app.action("navigate", "1")?;
@@ -353,6 +546,60 @@ fn captures_pin_profiles_reject_pulses_and_replace_roles_atomically() -> Result<
 }
 
 #[test]
+fn movement_capture_rebinds_clears_and_replaces_conflicts() -> Result<()> {
+    use crate::features::keybinds::Target;
+    let ui = window();
+    let mut app = app(&ui);
+    let (client, commands) = Client::recording_for_test();
+    app.client = client;
+    app.begin_capture(Capture::Role(Target::Forward))?;
+    commands();
+    app.complete_capture(Some(InputChord::key(0x21)))?;
+    assert!(matches!(
+        &commands()[..], [Command::SetBindings { profiles, .. }]
+        if profiles[0].actions.movement[0] == Some(InputChord::key(0x21))
+            && profiles[0].actions.movement[1..] == app.state.profiles[0].actions.movement[1..]
+    ));
+    app.begin_capture(Capture::Role(Target::Left))?;
+    commands();
+    assert!(
+        app.complete_capture(Some(InputChord {
+            trigger: InputKey::Pause,
+            modifiers: vec![],
+        }))
+        .is_err()
+    );
+    assert!(commands().is_empty());
+    app.action("binding-remove", "right")?;
+    assert!(matches!(
+        &commands()[..], [Command::SetBindings { profiles, .. }]
+        if profiles[0].actions.movement[3].is_none()
+    ));
+    app.begin_capture(Capture::Role(Target::Fire))?;
+    commands();
+    app.complete_capture(Some(InputChord::key(0x11)))?;
+    assert!(matches!(app.modal, Modal::Conflict(..)));
+    assert!(commands().is_empty());
+    app.confirm_modal("", false)?;
+    assert!(matches!(
+        &commands()[..], [Command::SetBindings { profiles, .. }]
+        if profiles[0].actions.movement[0].is_none()
+            && profiles[0].actions.fire == Some(InputChord::key(0x11))
+    ));
+    app.state.settings.global_toggle = Some(InputChord::key(0x11));
+    app.state.profiles[0].actions.movement[0] = None;
+    app.modal = Modal::NewProfile;
+    app.confirm_modal("New profile", false)?;
+    assert!(matches!(
+        &commands()[..], [Command::UpsertProfile { profile, .. }]
+        if profile.actions.movement[0].is_none()
+            && profile.actions.movement[1..] == ActionBindings::default().movement[1..]
+    ));
+    ui.hide()?;
+    Ok(())
+}
+
+#[test]
 fn preview_buttons_pair_pointer_keyboard_and_focus_release_edges() -> Result<()> {
     let ui = window();
     let store = ui.global::<Store>();
@@ -365,8 +612,16 @@ fn preview_buttons_pair_pointer_keyboard_and_focus_release_edges() -> Result<()>
             .borrow_mut()
             .push((action.to_string(), value.to_string()))
     });
-    pointer(&ui, 0, 1110.0, 158.0);
-    pointer(&ui, 2, 1110.0, 158.0);
+    pointer(&ui, 0, 1110.0, 223.0);
+    pointer(&ui, 2, 1110.0, 223.0);
+    slint::platform::update_timers_and_animations();
+    assert!(events.borrow().is_empty());
+
+    store.set_can_preview_aim(true);
+    store.set_can_preview_fire(true);
+    store.set_can_preview_movement(true);
+    pointer(&ui, 0, 1110.0, 223.0);
+    pointer(&ui, 2, 1110.0, 223.0);
     slint::platform::update_timers_and_animations();
     assert_eq!(
         &*events.borrow(),
@@ -405,8 +660,8 @@ fn preview_buttons_pair_pointer_keyboard_and_focus_release_edges() -> Result<()>
         "Moving focus must release held preview input: {:?}",
         events.borrow()
     );
-    pointer(&ui, 0, 1030.0, 158.0);
-    pointer(&ui, 2, 1030.0, 158.0);
+    pointer(&ui, 0, 1030.0, 223.0);
+    pointer(&ui, 2, 1030.0, 223.0);
     slint::platform::update_timers_and_animations();
     ui.window().dispatch_event(WindowEvent::KeyPressed {
         text: Key::Tab.into(),
@@ -429,6 +684,26 @@ fn preview_buttons_pair_pointer_keyboard_and_focus_release_edges() -> Result<()>
             ("animation-preview".into(), "fire-up".into())
         ],
         "Tab reaches each preview button once"
+    );
+    events.borrow_mut().clear();
+    ui.window().dispatch_event(WindowEvent::KeyPressed {
+        text: Key::Tab.into(),
+    });
+    ui.window().dispatch_event(WindowEvent::KeyReleased {
+        text: Key::Tab.into(),
+    });
+    ui.window().dispatch_event(WindowEvent::KeyPressed {
+        text: Key::Space.into(),
+    });
+    ui.window().dispatch_event(WindowEvent::KeyReleased {
+        text: Key::Space.into(),
+    });
+    assert_eq!(
+        &*events.borrow(),
+        &[
+            ("animation-preview".into(), "movement-down".into()),
+            ("animation-preview".into(), "movement-up".into())
+        ]
     );
     ui.hide()?;
     Ok(())

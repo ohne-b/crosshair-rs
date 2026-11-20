@@ -13,6 +13,7 @@ export component ActionButton inherits Rectangle {
     in property <bool> enabled: Store.interactive;
     in property <bool> danger: false;
     in property <bool> align-left: false;
+    in property <bool> hover-feedback: true;
     out property <bool> has-focus: focus.has-focus;
     out property <bool> focus-visible: root.has-focus && Store.keyboard-navigation;
     callback clicked;
@@ -28,7 +29,7 @@ export component ActionButton inherits Rectangle {
     horizontal-stretch: 0;
     vertical-stretch: 0;
     border-radius: Theme.radius;
-    background: !root.enabled ? transparent : root.danger && touch.has-hover ? #B4232A : root.primary ? (touch.has-hover || root.focus-visible ? Theme.orange.brighter(0.18) : Theme.orange) : touch.has-hover || root.focus-visible ? Theme.hover : root.selected ? Theme.raised : root.quiet ? transparent : Theme.raised;
+    background: !root.enabled ? transparent : root.danger && (root.hover-feedback && touch.has-hover) ? #B4232A : root.primary ? ((root.hover-feedback && touch.has-hover) || root.focus-visible ? Theme.orange.brighter(0.18) : Theme.orange) : (root.hover-feedback && touch.has-hover) || root.focus-visible ? Theme.hover : root.selected ? Theme.raised : root.quiet ? transparent : Theme.raised;
     border-width: 0px;
     border-color: Theme.muted;
     opacity: root.enabled ? 1 : 0.4;
@@ -74,7 +75,7 @@ export component ActionButton inherits Rectangle {
         }
         clicked => { root.activate(); }
     }
-    if root.label != "" && (root.text == "" || root.label != root.text): Tooltip {
+    if root.hover-feedback && root.label != "" && (root.text == "" || root.label != root.text): Tooltip {
         Rectangle {
             background: Theme.raised; border-radius: 8px; border-width: 1px; border-color: Theme.border;
             HorizontalLayout { padding-left: 8px; padding-right: 8px; padding-top: 6px; padding-bottom: 6px; Text { text: root.label; color: Theme.text; font-size: 11px * Theme.text-scale; } }

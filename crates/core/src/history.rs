@@ -722,7 +722,7 @@ mod tests {
         let mut state = before.clone();
         let alternate = state.presets[1].id;
         state.profiles[0].actions.aim_action = crate::AimAction::TogglePreset { preset: alternate };
-        state.profiles[0].actions.fire = Some(crate::InputChord::key(0x20));
+        state.profiles[0].actions.fire = Some(crate::InputChord::key(0x21));
         let after = state.profiles[0].actions.clone();
         let mut history = History::default();
         history.record(&before, &state).unwrap();

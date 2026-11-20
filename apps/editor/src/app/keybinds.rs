@@ -97,6 +97,18 @@ impl App {
                 ) || !matches!(chord.trigger, InputKey::Wheel { .. } | InputKey::Pause),
                 "Aim and Fire require a keyboard key or mouse button with a release"
             );
+            anyhow::ensure!(
+                !matches!(
+                    target,
+                    Capture::Role(
+                        keybinds::Target::Forward
+                            | keybinds::Target::Left
+                            | keybinds::Target::Backward
+                            | keybinds::Target::Right
+                    )
+                ) || matches!(chord.trigger, InputKey::Keyboard { .. }),
+                "Movement requires keyboard keys"
+            );
             let own = capture_target(&target);
             let conflict = self
                 .state

@@ -9,6 +9,7 @@ pub(super) enum SaveNext {
 
 #[derive(Clone)]
 pub(super) enum After {
+    ReadStartup,
     Reply,
     Add,
     Replace { expected_revision: u64 },
@@ -228,6 +229,16 @@ impl Runtime {
                     return Err(HistoryError::Editing.into());
                 }
                 let reply = self.app.command(owner, Command::Subscribe)?;
+                if self.options.test_data.is_none()
+                    && self
+                        .queue(
+                            Job::ReadStartup,
+                            Pending::internal(After::ReadStartup, self.app.state.revision),
+                        )
+                        .is_err()
+                {
+                    self.app.status.startup_enabled = None;
+                }
                 if self.change.is_none()
                     && self.app.state.settings.check_updates
                     && self.options.test_data.is_none()
@@ -281,6 +292,7 @@ impl Runtime {
                 expected_revision,
             } => {
                 self.app.expect_revision(expected_revision)?;
+                let profile = *profile;
                 ensure!(
                     self.app.history.editing().is_none(),
                     "Finish the current edit before changing profiles"
@@ -427,6 +439,12 @@ impl Runtime {
             }
             Command::OpenGameBar => {
                 return Ok(Some(lifecycle::open("ms-gamebar:", self.window.0)?));
+            }
+            Command::SetStartup { enabled } => {
+                let mut candidate = self.app.state.clone();
+                candidate.settings.launch_at_login = enabled;
+                self.begin_change(candidate, pending, output::ChangeKind::Startup)?;
+                return Ok(None);
             }
             Command::SetSettings {
                 settings,

@@ -20,6 +20,7 @@ pub struct Options {
     pub scope: String,
     pub test_data: Option<PathBuf>,
     pub no_input: bool,
+    pub configure_startup: Option<bool>,
     pub startup: bool,
     pub restore_visibility: bool,
     pub command: Option<RequestCommand>,
@@ -43,7 +44,17 @@ impl Options {
                         Some(arguments.next().context("Missing test directory")?.into())
                 }
                 "--no-input" => options.no_input = true,
+                "--configure-startup" => {
+                    options.configure_startup = Some(
+                        arguments
+                            .next()
+                            .context("Missing startup setting")?
+                            .parse()
+                            .context("Startup must be true or false")?,
+                    );
+                }
                 "--startup" => options.startup = true,
+                "--resume-update" => {} // Normal startup recovers the durable update journal.
                 "--restore-visibility" => options.restore_visibility = true,
                 "--command" => {
                     options.command = Some(serde_json::from_str(
@@ -64,6 +75,10 @@ impl Options {
         ensure!(
             !options.no_input || options.test_data.is_some(),
             "Disabled input requires isolated test storage"
+        );
+        ensure!(
+            options.configure_startup.is_none() || options.command.is_none(),
+            "Startup configuration cannot include another command"
         );
         control_pipe_name(&options.scope)?;
         Ok(options)
@@ -115,14 +130,10 @@ impl Options {
     }
 }
 
-pub fn with_startup<T>(enabled: bool, operation: impl FnOnce() -> Result<T>) -> Result<T> {
+fn with_startup_task<T>(operation: impl FnOnce(Option<StartupTask>) -> Result<T>) -> Result<T> {
     let identity = Identity::current()?;
     if !startup_package(identity.package.as_deref()) {
-        ensure!(
-            !enabled,
-            "Launch at sign-in requires the installed application"
-        );
-        return operation();
+        return operation(None);
     }
     use windows::Win32::System::Com::{COINIT_MULTITHREADED, CoInitializeEx, CoUninitialize};
     unsafe {
@@ -148,37 +159,112 @@ pub fn with_startup<T>(enabled: bool, operation: impl FnOnce() -> Result<T>) -> 
             break;
         }
     }
-    let Some(task) = task else {
+    operation(task)
+}
+
+pub fn read_startup() -> Result<bool> {
+    with_startup_task(|task| task.map_or(Ok(false), |task| Ok(startup_enabled(task.State()?))))
+}
+
+pub fn with_startup<T>(enabled: bool, operation: impl FnOnce() -> Result<T>) -> Result<T> {
+    if !startup_package(Identity::current()?.package.as_deref()) {
         ensure!(
             !enabled,
-            "Reinstall crosshair-rs with its setup to enable launch at sign-in"
+            "Launch at sign-in is available in the installed app. Open crosshair-rs from Start."
         );
         return operation();
-    };
-    let was_enabled = startup_enabled(task.State()?);
-    if enabled != was_enabled
-        && let Err(error) = set_startup(&task, enabled)
-    {
-        return match set_startup(&task, was_enabled) {
-            Ok(()) => Err(error),
-            Err(rollback) => Err(error.context(format!(
-                "Windows startup could not be restored after this failure: {rollback:#}"
-            ))),
+    }
+    with_startup_task(|task| {
+        let Some(task) = task else {
+            ensure!(
+                !enabled,
+                "The installed Windows startup task is missing. Reinstall crosshair-rs with its setup."
+            );
+            return operation();
         };
-    }
-    match operation() {
-        Ok(value) => Ok(value),
-        Err(error) => {
-            if enabled != was_enabled
-                && let Err(rollback) = set_startup(&task, was_enabled)
+        let was_enabled = startup_enabled(task.State()?);
+        if enabled != was_enabled
+            && let Err(error) = set_startup(&task, enabled)
+        {
+            if task
+                .State()
+                .is_ok_and(|state| startup_enabled(state) == was_enabled)
             {
-                return Err(error.context(format!(
-                    "Windows startup could not be restored after this failure: {rollback:#}"
-                )));
+                return Err(error);
             }
-            Err(error)
+            return match set_startup(&task, was_enabled) {
+                Ok(()) => Err(error),
+                Err(rollback) => Err(error.context(format!(
+                    "Windows startup could not be restored after this failure: {rollback:#}"
+                ))),
+            };
         }
+        match operation() {
+            Ok(value) => Ok(value),
+            Err(error) => {
+                if enabled != was_enabled
+                    && let Err(rollback) = set_startup(&task, was_enabled)
+                {
+                    return Err(error.context(format!(
+                        "Windows startup could not be restored after this failure: {rollback:#}"
+                    )));
+                }
+                Err(error)
+            }
+        }
+    })
+}
+
+pub fn configure_startup(options: &Options) -> Result<()> {
+    let enabled = options
+        .configure_startup
+        .context("Missing startup setting")?;
+    let result = (|| {
+        let identity = Identity::current()?;
+        ensure!(
+            startup_package(identity.package.as_deref()),
+            "Launch at sign-in is available in the installed app. Open crosshair-rs from Start."
+        );
+        if let Ok(pipe) = Pipe::connect(
+            &control_pipe_name(&options.scope)?,
+            &identity,
+            &["crosshair-engine.exe"],
+        ) {
+            pipe.write_message(&Request::new(1, RequestCommand::SetStartup { enabled }))?;
+            loop {
+                if let ServerMessage::Response(response) = pipe.read_message()? {
+                    if let Err(error) = response.result {
+                        bail!("{}", error.message);
+                    }
+                    return Ok(());
+                }
+            }
+        }
+        let root = options
+            .test_data
+            .clone()
+            .map_or_else(crate::storage::default_data_directory, Ok)?;
+        let store = crate::storage::Store::open(root)?;
+        let mut state = store.load()?;
+        if state.settings.launch_at_login != enabled {
+            state.settings.launch_at_login = enabled;
+            state.revision = state
+                .revision
+                .checked_add(1)
+                .context("Settings revision exhausted")?;
+        }
+        with_startup(enabled, || store.save(&state))
+    })();
+    if let Some(path) = &options.reply_file {
+        let reply = match &result {
+            Ok(()) => "ok".into(),
+            Err(error) => format!("error\n{error:#}"),
+        };
+        let pending = path.with_extension("pending");
+        std::fs::write(&pending, reply)?;
+        std::fs::rename(pending, path)?;
     }
+    result
 }
 
 fn startup_package(full_name: Option<&str>) -> bool {
@@ -195,6 +281,17 @@ fn startup_enabled(state: StartupTaskState) -> bool {
 }
 
 fn set_startup(task: &StartupTask, enabled: bool) -> Result<()> {
+    if enabled {
+        match task.State()? {
+            StartupTaskState::DisabledByUser => bail!(
+                "Launch at sign-in is disabled in Windows. Enable crosshair-rs in Windows Settings > Apps > Startup."
+            ),
+            StartupTaskState::DisabledByPolicy => {
+                bail!("Launch at sign-in is disabled by Windows policy.")
+            }
+            _ => {}
+        }
+    }
     let state = if enabled {
         task.RequestEnableAsync()?.join()?
     } else {
@@ -232,6 +329,37 @@ pub fn open(target: &str, hwnd: HWND) -> Result<Reply> {
 
 #[cfg(test)]
 mod startup_tests {
+    #[test]
+    fn installer_startup_options_are_explicit_and_do_not_accept_another_command() {
+        let parse = |values: &[&str]| {
+            super::Options::parse(&values.iter().map(|v| v.to_string()).collect::<Vec<_>>())
+        };
+        assert_eq!(
+            parse(&["--configure-startup", "true"])
+                .unwrap()
+                .configure_startup,
+            Some(true)
+        );
+        assert_eq!(
+            parse(&["--configure-startup", "false"])
+                .unwrap()
+                .configure_startup,
+            Some(false)
+        );
+        assert!(parse(&["--configure-startup"]).is_err());
+        assert!(parse(&["--configure-startup", "yes"]).is_err());
+        assert!(
+            parse(&[
+                "--configure-startup",
+                "true",
+                "--command",
+                "{\"type\":\"subscribe\"}"
+            ])
+            .is_err()
+        );
+        assert_eq!(parse(&[]).unwrap().configure_startup, None);
+    }
+
     #[test]
     fn startup_requires_our_package_not_an_inherited_unrelated_identity() {
         for name in [

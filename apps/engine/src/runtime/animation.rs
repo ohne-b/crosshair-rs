@@ -21,7 +21,7 @@ impl AnimationOutput {
         key: Option<render::Key>,
         definition: Option<&Preset>,
         input_epoch: u64,
-        held: [bool; 2],
+        held: [bool; 3],
         now: u64,
     ) -> bool {
         let reset = self.input_epoch != input_epoch;
@@ -40,19 +40,16 @@ impl AnimationOutput {
         if (reset || changed)
             && let Some(preset) = &self.definition
         {
-            self.playback.select(preset, held[0], held[1], now);
+            self.playback.select(preset, held, now);
         }
         true
     }
 
     pub(super) fn active(&self) -> bool {
         self.definition.as_ref().is_some_and(|p| {
-            p.layers.iter().any(|layer| {
-                layer
-                    .animation
-                    .as_ref()
-                    .is_some_and(|a| a.effective_for(layer))
-            })
+            p.layers
+                .iter()
+                .any(|layer| layer.animations.iter().any(|a| a.effective_for(layer)))
         })
     }
 
@@ -83,7 +80,7 @@ impl AnimationOutput {
             return false;
         };
         let affects_playback = preset.layers.iter().any(|layer| {
-            layer.animation.as_ref().is_some_and(|animation| {
+            layer.animations.iter().any(|animation| {
                 animation.effective_for(layer)
                     && match event {
                         AnimationEvent::Reload => true,
@@ -169,6 +166,7 @@ impl Runtime {
             [
                 self.app.input.held(AnimationTrigger::Aim),
                 self.app.input.held(AnimationTrigger::Fire),
+                self.app.input.held(AnimationTrigger::Movement),
             ],
             self.app.elapsed_ms(),
         ) {
@@ -336,14 +334,44 @@ mod tests {
     use super::*;
 
     #[test]
+    fn disabled_live_definition_invalidates_an_in_flight_frame_for_a_held_trigger() {
+        let mut preset = animated_rectangle(12.0);
+        let mut output = AnimationOutput::default();
+        let key = Some(render::Key::new(&preset, 1.0));
+        let held = [false, true, false];
+        assert!(output.sync(key, Some(&preset), 0, held, 0));
+        let moving = output.playback.sample(&preset, 50).preset;
+        assert_eq!(moving.layers[0].transform.rotation, 45.0);
+        let frame = output.begin_frame(&moving, 50).unwrap();
+
+        preset.layers[0].animations[0].enabled = false;
+        assert!(output.sync(key, Some(&preset), 0, held, 50));
+        assert!(!output.active());
+        assert!(!output.accept(frame));
+        let base = output.playback.sample(&preset, 75);
+        assert_eq!(base.preset.layers[0].transform.rotation, 0.0);
+        assert_eq!(base.next_frame_ms, None);
+
+        preset.layers[0].animations[0].enabled = true;
+        assert!(output.sync(key, Some(&preset), 0, held, 75));
+        assert!(output.active());
+        assert_eq!(
+            output.playback.sample(&preset, 125).preset.layers[0]
+                .transform
+                .rotation,
+            45.0
+        );
+    }
+
+    #[test]
     fn unchanged_preview_or_metadata_preserves_playback_but_definition_edits_reset() {
         let mut preset = animated_rectangle(12.0);
-        let animation = preset.layers[0].animation.as_mut().unwrap();
+        let animation = preset.layers[0].animations.first_mut().unwrap();
         animation.activation = Activation::Press;
         animation.repeat = true;
         let mut output = AnimationOutput::default();
         let key = |p: &Preset| Some(render::Key::new(p, 1.0));
-        assert!(output.sync(key(&preset), Some(&preset), 0, [false; 2], 0));
+        assert!(output.sync(key(&preset), Some(&preset), 0, [false; 3], 0));
         output.event(
             AnimationEvent::Trigger {
                 trigger: AnimationTrigger::Fire,
@@ -365,19 +393,19 @@ mod tests {
             45.0
         );
         // Removing an identical or inactive preview resolves to this same definition.
-        assert!(!output.sync(key(&preset), Some(&preset), 0, [false; 2], 50));
+        assert!(!output.sync(key(&preset), Some(&preset), 0, [false; 3], 50));
         preset.favorite = true;
         preset.name = "Renamed".into();
         preset.revision += 1;
-        assert!(output.sync(key(&preset), Some(&preset), 0, [false; 2], 50));
+        assert!(output.sync(key(&preset), Some(&preset), 0, [false; 3], 50));
         assert_eq!(
             output.playback.sample(&preset, 75).preset.layers[0]
                 .transform
                 .rotation,
             67.5
         );
-        preset.layers[0].animation.as_mut().unwrap().duration_ms = 200;
-        assert!(output.sync(key(&preset), Some(&preset), 0, [false; 2], 75));
+        preset.layers[0].animations.first_mut().unwrap().duration_ms = 200;
+        assert!(output.sync(key(&preset), Some(&preset), 0, [false; 3], 75));
         assert_eq!(
             output.playback.sample(&preset, 100).preset.layers[0]
                 .transform
@@ -397,7 +425,7 @@ mod tests {
                 ..Default::default()
             }),
         )];
-        preset.layers[0].animation = Some(Animation {
+        preset.layers[0].animations = vec![Animation {
             easing: Easing::Linear,
             duration_ms: 100,
             target: AnimationTarget {
@@ -405,7 +433,7 @@ mod tests {
                 ..Default::default()
             },
             ..Default::default()
-        });
+        }];
         preset
     }
 
@@ -435,10 +463,10 @@ mod tests {
     #[test]
     fn fire_reset_rejects_pending_frame_while_aim_continues_and_reload_clears_both() -> Result<()> {
         let mut preset = animated_rectangle(12.0);
-        preset.layers[0].animation.as_mut().unwrap().release = Release::Reset;
+        preset.layers[0].animations.first_mut().unwrap().release = Release::Reset;
         let mut aiming = preset.layers[0].clone();
         aiming.id = Id::new_v4();
-        aiming.animation.as_mut().unwrap().trigger = AnimationTrigger::Aim;
+        aiming.animations.first_mut().unwrap().trigger = AnimationTrigger::Aim;
         preset.layers.push(aiming);
         let mut output = AnimationOutput {
             definition: Some(preset.clone()),
@@ -508,7 +536,7 @@ mod tests {
     #[test]
     fn press_repeat_toggle_off_invalidates_pending_frame_and_returns_to_cached_base() {
         let mut preset = animated_rectangle(12.0);
-        let animation = preset.layers[0].animation.as_mut().unwrap();
+        let animation = preset.layers[0].animations.first_mut().unwrap();
         animation.activation = Activation::Press;
         animation.repeat = true;
         let mut output = AnimationOutput {
@@ -551,7 +579,12 @@ mod tests {
     #[test]
     fn irrelevant_and_no_change_animation_events_preserve_idle_pose() {
         let mut preset = animated_rectangle(12.0);
-        preset.layers[0].animation.as_mut().unwrap().target.rotation = Some(0.0);
+        preset.layers[0]
+            .animations
+            .first_mut()
+            .unwrap()
+            .target
+            .rotation = Some(0.0);
         let base = Playback::default().sample(&preset, 0).preset;
         let mut output = AnimationOutput {
             definition: Some(preset),
@@ -578,14 +611,14 @@ mod tests {
     #[test]
     fn sampled_alpha_rotation_and_bounds_match_ordinary_output_pixels() -> Result<()> {
         let mut preset = animated_rectangle(12.0);
-        let target = &mut preset.layers[0].animation.as_mut().unwrap().target;
+        let target = &mut preset.layers[0].animations.first_mut().unwrap().target;
         target.opacity = Some(0.0);
         target.x = Some(8.0);
         let mut playback = Playback::default();
-        playback.select(&preset, false, true, 0);
+        playback.select(&preset, [false, true, false], 0);
         let sample = playback.sample(&preset, 50).preset;
         let mut expected = preset;
-        expected.layers[0].animation = None;
+        expected.layers[0].animations.clear();
         expected.layers[0].transform.rotation = 45.0;
         expected.layers[0].transform.x = 4.0;
         expected.layers[0].opacity = 0.5;
@@ -615,7 +648,7 @@ mod tests {
             raster: Some(raster.clone()),
             ..Default::default()
         };
-        output.playback.select(&preset, false, true, 0);
+        output.playback.select(&preset, [false, true, false], 0);
         let pose = output.playback.sample(&preset, 50).preset;
         assert!(renderer.render(&pose, 1.0, &no_assets).is_err());
         output.failed = true;
@@ -629,9 +662,9 @@ mod tests {
     fn animation_raster_throughput() -> Result<()> {
         let mut preset = animated_rectangle(128.0);
         preset.layers[0].effects.blur = 8.0;
-        preset.layers[0].animation.as_mut().unwrap().repeat = true;
+        preset.layers[0].animations.first_mut().unwrap().repeat = true;
         let mut playback = Playback::default();
-        playback.select(&preset, false, true, 0);
+        playback.select(&preset, [false, true, false], 0);
         let mut renderer = crosshair_renderer::Renderer::new()?;
         let mut timings = Vec::new();
         for now in (0..5100).step_by(17) {
@@ -675,14 +708,14 @@ mod tests {
         let mut preset = Preset::new("idle");
         output.definition = Some(preset.clone());
         assert!(!output.active());
-        preset.layers[0].animation = Some(Animation {
+        preset.layers[0].animations = vec![Animation {
             repeat: true,
             target: AnimationTarget {
                 x: Some(preset.layers[0].transform.x),
                 ..Default::default()
             },
             ..Default::default()
-        });
+        }];
         output.definition = Some(preset);
         assert!(!output.active());
         output.last_submit = Some(100);

@@ -427,32 +427,42 @@ mod tests {
     }
 
     #[test]
-    fn migrating_v1_does_not_write_until_save_and_backup_preserves_original_bytes() -> Result<()> {
-        let directory = tempfile::tempdir()?;
-        let store = Store::open(directory.path())?;
-        let mut value = serde_json::to_value(AppState::default())?;
-        value["schema_version"] = 1.into();
-        for profile in value["profiles"].as_array_mut().unwrap() {
-            profile.as_object_mut().unwrap().remove("actions");
-        }
-        for preset in value["presets"].as_array_mut().unwrap() {
-            for layer in preset["layers"].as_array_mut().unwrap() {
-                layer.as_object_mut().unwrap().remove("animation");
+    fn migrating_old_versions_does_not_write_until_save_and_backup_preserves_original_bytes()
+    -> Result<()> {
+        for version in [1, 2, 3] {
+            let directory = tempfile::tempdir()?;
+            let store = Store::open(directory.path())?;
+            let mut value = serde_json::to_value(AppState::default())?;
+            value["schema_version"] = version.into();
+            for profile in value["profiles"].as_array_mut().unwrap() {
+                if version == 1 {
+                    profile.as_object_mut().unwrap().remove("actions");
+                } else if version == 2 {
+                    profile["actions"]
+                        .as_object_mut()
+                        .unwrap()
+                        .remove("movement");
+                }
             }
+            for preset in value["presets"].as_array_mut().unwrap() {
+                for layer in preset["layers"].as_array_mut().unwrap() {
+                    layer.as_object_mut().unwrap().remove("animation");
+                }
+            }
+            let original = serde_json::to_vec_pretty(&value)?;
+            let path = directory.path().join("state.json");
+            fs::write(&path, &original)?;
+            let state = store.load()?;
+            assert_eq!(state.schema_version, crosshair_core::SCHEMA_VERSION);
+            assert_eq!(fs::read(&path)?, original);
+            assert!(!directory.path().join("state.backup.json").exists());
+            store.save(&state)?;
+            assert_eq!(
+                fs::read(directory.path().join("state.backup.json"))?,
+                original
+            );
+            assert_eq!(store.load()?, state);
         }
-        let original = serde_json::to_vec_pretty(&value)?;
-        let path = directory.path().join("state.json");
-        fs::write(&path, &original)?;
-        let state = store.load()?;
-        assert_eq!(state.schema_version, crosshair_core::SCHEMA_VERSION);
-        assert_eq!(fs::read(&path)?, original);
-        assert!(!directory.path().join("state.backup.json").exists());
-        store.save(&state)?;
-        assert_eq!(
-            fs::read(directory.path().join("state.backup.json"))?,
-            original
-        );
-        assert_eq!(store.load()?, state);
         Ok(())
     }
 

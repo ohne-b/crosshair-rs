@@ -14,17 +14,14 @@ if ($identity.Name -notin @('OhneB.crosshair-rs', 'OhneB.crosshair-rs.Preview') 
 $hash = (Get-FileHash -LiteralPath $Package -Algorithm SHA256).Hash.ToLowerInvariant()
 $stage = Join-Path (Split-Path -Parent $Output) ('setup-' + [Guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $stage | Out-Null
-$vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio/Installer/vswhere.exe'
-$vsPath = & $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
-if (!$vsPath) { throw 'Visual Studio C++ build tools are required.' }
-$vcvars = Join-Path $vsPath 'VC/Auxiliary/Build/vcvars64.bat'
-$env:Path = (Split-Path -Parent $vswhere) + ';' + $env:Path
-$environmentLines = & $env:ComSpec /d /c ('call "' + $vcvars + '" >nul && set')
-if ($LASTEXITCODE) { throw 'Could not load the x64 compiler environment.' }
-foreach ($line in $environmentLines) {
-    if ($line -match '^([^=]+)=(.*)$') { [Environment]::SetEnvironmentVariable($matches[1], $matches[2], 'Process') }
+Initialize-X64Compiler
+$metadata = [ordered]@{ payload_hash=$hash; payload_name=$identity.Name; payload_publisher=$identity.Publisher; payload_version=$identity.Version }
+$header = foreach ($entry in $metadata.GetEnumerator()) {
+    $literal = ([string]$entry.Value).Replace('\', '\\').Replace('"', '\"')
+    if ($literal.Contains("`r") -or $literal.Contains("`n")) { throw 'Invalid installer metadata.' }
+    'constexpr wchar_t ' + $entry.Key + '[] = L"' + $literal + '";'
 }
-[IO.File]::WriteAllText((Join-Path $stage 'payload.h'), ('constexpr wchar_t payload_hash[] = L"' + $hash + '";'), [Text.UTF8Encoding]::new($false))
+[IO.File]::WriteAllLines((Join-Path $stage 'payload.h'), $header, [Text.UTF8Encoding]::new($false))
 $installer = Join-Path $stage 'install.exe'
 Push-Location $stage
 try {

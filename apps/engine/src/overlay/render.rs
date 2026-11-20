@@ -33,14 +33,31 @@ pub fn validate_animation_bounds(
     preset: &Preset,
     scale: f32,
 ) -> Result<()> {
-    if preset.layers.iter().any(|layer| layer.animation.is_some()) {
-        let mut target = preset.clone();
-        for layer in &mut target.layers {
-            if let Some(animation) = layer.animation.take() {
-                animation.target.apply(layer, 1.0);
+    if preset
+        .layers
+        .iter()
+        .any(|layer| !layer.animations.is_empty())
+    {
+        // Check every trigger combination; actual intermediate frames remain checked by render.
+        for mask in 1..8 {
+            let mut target = preset.clone();
+            for layer in &mut target.layers {
+                let animations = std::mem::take(&mut layer.animations);
+                let base = layer.clone();
+                for animation in animations {
+                    let bit = match animation.trigger {
+                        crosshair_core::AnimationTrigger::Aim => 1,
+                        crosshair_core::AnimationTrigger::Fire => 2,
+                        crosshair_core::AnimationTrigger::Movement => 4,
+                    };
+                    if mask & bit != 0 {
+                        animation.target.add_to(layer, &base, 1.0);
+                    }
+                }
+                crosshair_core::clamp_animated_layer(layer);
             }
+            renderer.measure(&target, scale)?;
         }
-        renderer.measure(&target, scale)?;
     }
     Ok(())
 }

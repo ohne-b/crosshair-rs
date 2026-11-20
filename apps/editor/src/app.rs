@@ -195,6 +195,7 @@ pub(crate) struct App {
     fonts: Vec<String>,
     fields: Vec<Field>,
     animate: bool,
+    animation_trigger: AnimationTrigger,
     playback: Playback,
     playback_started: std::time::Instant,
     playback_timer: slint::Timer,
@@ -293,6 +294,7 @@ pub fn run() -> Result<()> {
         fonts: Vec::new(),
         fields: Vec::new(),
         animate: false,
+        animation_trigger: AnimationTrigger::Fire,
         playback: Playback::default(),
         playback_started: std::time::Instant::now(),
         playback_timer: slint::Timer::default(),
@@ -486,7 +488,7 @@ impl App {
         self.send(
             "profile",
             Command::UpsertProfile {
-                profile,
+                profile: Box::new(profile),
                 expected_revision: self.state.revision,
             },
         )

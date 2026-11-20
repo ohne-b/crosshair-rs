@@ -18,7 +18,9 @@ impl App {
                     .selected_preset()
                     .context("Select a crosshair")?
                     .id;
-                self.profile_edit(Profile::new(value.trim(), selected))?;
+                let mut profile = Profile::new(value.trim(), selected);
+                profile.install_default_actions(self.state.settings.global_toggle.as_ref());
+                self.profile_edit(profile)?;
             }
             Modal::RenameProfile(id) => {
                 let mut profile = self
