@@ -4,12 +4,12 @@ export const applications = [
     name: 'crosshair-rs',
     url: 'https://github.com/ohne-b/crosshair-rs',
   },
-  { id: 'crosshair-x', name: 'Crosshair X', url: 'https://crosshairx.gg/' },
   {
     id: 'crossover',
     name: 'CrossOver',
     url: 'https://github.com/lacymorrow/crossover',
   },
+  { id: 'crosshair-x', name: 'Crosshair X', url: 'https://crosshairx.gg/' },
 ] as const;
 
 export const states = [
@@ -96,28 +96,30 @@ export function createComparison(data: ComparisonData) {
   const maximum = Math.max(
     ...readings.flatMap((row) => states.map((state) => row[state.id])),
   );
+  const rounded = data.status === 'reported';
   return {
     heading: estimated ? 'Estimated RAM usage' : 'RAM usage',
-    estimated,
-    charts: states.map((state) => ({
-      ...state,
-      bars: applications.map((app, index) => {
-        const row = readings[index]!;
-        const value = row[state.id];
-        const rounded = data.status === 'reported';
+    bars: applications.map((app, index) => {
+      const row = readings[index]!;
+      function reading(state: StateId) {
+        const value = row[state];
         const prefix =
           estimated || rounded
-            ? row.bounds?.[state.id] === 'lessThan'
+            ? row.bounds?.[state] === 'lessThan'
               ? '<'
               : '~'
             : '';
         return {
-          ...app,
-          ours: app.id === 'crosshair-rs',
           percent: (100 * value) / maximum,
           label: `${prefix}${rounded ? Math.round(value) : estimated ? value : value.toFixed(1)} ${data.unit}`,
         };
-      }),
-    })),
+      }
+      return {
+        ...app,
+        ours: app.id === 'crosshair-rs',
+        menuOpen: reading('menuOpen'),
+        menuClosed: reading('menuClosed'),
+      };
+    }),
   };
 }
