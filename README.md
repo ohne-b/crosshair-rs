@@ -23,6 +23,10 @@ and the [installation guide](docs/installation.md).
 [Documentation](docs/README.md) covers the editor, shortcuts, Game Bar and troubleshooting.
 Fullscreen compatibility depends on Xbox Game Bar and the game.
 
+## RAM usage
+
+<img src=".github/assets/ram-comparison.png" width="720" alt="Approximate RAM usage with the menu open and closed. crosshair-rs uses under 50 MiB open and under 5 MiB closed. CrossOver uses about 250 MiB open and 220 MiB closed. Crosshair X uses about 400 MiB in both states.">
+
 ## Contributing
 
 See [CONTRIBUTING.md](docs/CONTRIBUTING.md) for building, testing and pull requests.
