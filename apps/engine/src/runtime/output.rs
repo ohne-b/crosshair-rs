@@ -97,10 +97,7 @@ impl Runtime {
         if candidate.settings.output_mode == OutputMode::GameBar
             && candidate.settings.output_mode != self.app.state.settings.output_mode
         {
-            ensure!(
-                self.widget.is_some(),
-                "Install the Windows package and pin its Game Bar widget before switching output"
-            );
+            ensure!(self.widget.is_some(), "{}", self.widget_unavailable());
         }
         self.app.reset_input();
         self.sync_animation();

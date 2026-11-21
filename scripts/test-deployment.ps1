@@ -26,6 +26,16 @@ public static class PackageActivation {
     }
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     public static extern bool WaitNamedPipe(string name, uint timeout);
+    [DllImport("userenv.dll", CharSet = CharSet.Unicode)]
+    private static extern int DeriveAppContainerSidFromAppContainerName(string family, out IntPtr sid);
+    [DllImport("advapi32.dll")]
+    private static extern IntPtr FreeSid(IntPtr sid);
+    public static string WidgetSid(string family) {
+        IntPtr sid;
+        Marshal.ThrowExceptionForHR(DeriveAppContainerSidFromAppContainerName(family, out sid));
+        try { return new System.Security.Principal.SecurityIdentifier(sid).Value; }
+        finally { FreeSid(sid); }
+    }
 }
 '@
 $fixtureRoot = [IO.Path]::GetFullPath((Join-Path $ArtifactDirectory ('deployment-' + [Guid]::NewGuid().ToString('N'))))
@@ -106,6 +116,10 @@ try {
         if ([DateTime]::UtcNow -gt $deadline) { throw 'The isolated engine did not open its IPC endpoint.' }
         Start-Sleep -Milliseconds 50
     }
+    $session = [Diagnostics.Process]::GetCurrentProcess().SessionId
+    $sid = [PackageActivation]::WidgetSid($installed.PackageFamilyName)
+    $widgetPipe = "\\.\pipe\Sessions\$session\AppContainerNamedObjects\$sid\crosshair-rs.widget.v1.$session"
+    if (![PackageActivation]::WaitNamedPipe($widgetPipe, 1000)) { throw 'The installed engine could not open its Game Bar widget connection.' }
     Assert-Startup $arguments $true $testStatePath
     Assert-Startup $arguments $false $testStatePath
     $saved = Get-Content -LiteralPath $testStatePath -Raw | ConvertFrom-Json

@@ -77,11 +77,23 @@ struct App : ApplicationT<App> {
         widget_.MaxWindowSize({4096, 4096});
 
         auto weak = get_weak();
-        widget_.PinnedChanged([weak](auto const&, auto const&) { if (auto self = weak.get()) self->update_state(); });
-        widget_.VisibleChanged([weak](auto const&, auto const&) { if (auto self = weak.get()) self->update_state(); });
-        widget_.ClickThroughEnabledChanged([weak](auto const&, auto const&) { if (auto self = weak.get()) self->report(); });
-        widget_.RequestedOpacityChanged([weak](auto const&, auto const&) { if (auto self = weak.get()) { self->image_.Opacity(self->widget_.RequestedOpacity() / 100.0); self->report(); } });
-        widget_.WindowBoundsChanged([weak](auto const&, auto const&) { if (auto self = weak.get()) self->reposition(); });
+        // Game Bar can raise these events off the XAML thread.
+        auto on_ui = [weak, dispatcher = dispatcher_](auto action) {
+            return [weak, dispatcher, action](auto const&, auto const&) {
+                dispatcher.RunAsync(CoreDispatcherPriority::Normal, [weak, action] {
+                    if (auto self = weak.get(); self && self->widget_) action(self);
+                });
+            };
+        };
+        auto update = on_ui([](auto const& self) { self->update_state(); });
+        widget_.PinnedChanged(update);
+        widget_.VisibleChanged(update);
+        widget_.ClickThroughEnabledChanged(on_ui([](auto const& self) { self->report(); }));
+        widget_.RequestedOpacityChanged(on_ui([](auto const& self) {
+            self->image_.Opacity(self->widget_.RequestedOpacity());
+            self->report();
+        }));
+        widget_.WindowBoundsChanged(on_ui([](auto const& self) { self->reposition(); }));
         window_.SizeChanged([weak](auto const&, auto const&) { if (auto self = weak.get()) self->reposition(); });
         window_.Closed([weak](auto const&, auto const&) { if (auto self = weak.get()) { self->shutdown(); self->Exit(); } });
         display_ = DisplayInformation::GetForCurrentView();
@@ -223,7 +235,7 @@ private:
                     std::lock_guard lock(pending_mutex_);
                     if (!valid_locked(*next)) continue;
                     image_.Source(bitmap);
-                    image_.Opacity(widget_.RequestedOpacity() / 100.0);
+                    image_.Opacity(widget_.RequestedOpacity());
                     current_ = h; status_.generation = h.generation; presentation_epoch_ = next->connection;
                 }
                 reposition();

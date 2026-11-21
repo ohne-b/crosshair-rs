@@ -58,7 +58,6 @@ impl Widget {
             identity.package.is_some(),
             "Game Bar requires the installed application"
         );
-        allow_widget_queries(&identity)?;
         let shared = Arc::new(Shared {
             frame: Mutex::new(Frame {
                 generation: 1,
@@ -80,11 +79,7 @@ impl Widget {
         let worker = thread::Builder::new()
             .name("widget connection".into())
             .spawn(move || {
-                let name = format!(
-                    r"\\.\pipe\LOCAL\crosshair-rs.widget.v1.{}",
-                    identity.session
-                );
-                let mut listener = match Listener::bind(&name, identity.clone(), true) {
+                let mut listener = match Listener::bind_widget(identity.clone()) {
                     Ok(listener) => listener,
                     Err(error) => {
                         let _ = started.send(Err(error));
@@ -328,99 +323,6 @@ fn decode_status(bytes: &[u8; 64], session: u32) -> Result<Status> {
             dpi: value(20),
         },
     })
-}
-
-fn allow_widget_queries(identity: &Identity) -> Result<()> {
-    use crosshair_platform::identity::{owned, raw, wide};
-    use windows::{
-        Win32::{
-            Foundation::{HLOCAL, LocalFree},
-            Security::{
-                ACL,
-                Authorization::{
-                    EXPLICIT_ACCESS_W, GRANT_ACCESS, GetSecurityInfo, SE_KERNEL_OBJECT,
-                    SetEntriesInAclW, SetSecurityInfo, TRUSTEE_IS_SID, TRUSTEE_IS_UNKNOWN,
-                    TRUSTEE_W,
-                },
-                DACL_SECURITY_INFORMATION, FreeSid,
-                Isolation::DeriveAppContainerSidFromAppContainerName,
-                NO_INHERITANCE, PSECURITY_DESCRIPTOR, TOKEN_QUERY,
-            },
-            System::Threading::{
-                GetCurrentProcess, OpenProcessToken, PROCESS_QUERY_LIMITED_INFORMATION,
-            },
-        },
-        core::PCWSTR,
-    };
-    let family = wide(
-        identity
-            .package_family
-            .as_deref()
-            .ok_or_else(|| anyhow::anyhow!("Package identity is unavailable"))?,
-    );
-    unsafe {
-        let sid = DeriveAppContainerSidFromAppContainerName(PCWSTR(family.as_ptr()))?;
-        let grant = |handle, access| -> Result<()> {
-            let mut old = std::ptr::null_mut::<ACL>();
-            let mut descriptor = PSECURITY_DESCRIPTOR::default();
-            GetSecurityInfo(
-                handle,
-                SE_KERNEL_OBJECT,
-                DACL_SECURITY_INFORMATION,
-                None,
-                None,
-                Some(&mut old),
-                None,
-                Some(&mut descriptor),
-            )
-            .ok()?;
-            let entry = EXPLICIT_ACCESS_W {
-                grfAccessPermissions: access,
-                grfAccessMode: GRANT_ACCESS,
-                grfInheritance: NO_INHERITANCE,
-                Trustee: TRUSTEE_W {
-                    TrusteeForm: TRUSTEE_IS_SID,
-                    TrusteeType: TRUSTEE_IS_UNKNOWN,
-                    ptstrName: windows::core::PWSTR(sid.0.cast()),
-                    ..Default::default()
-                },
-            };
-            let mut updated = std::ptr::null_mut();
-            let merged = SetEntriesInAclW(Some(&[entry]), Some(old), &mut updated).ok();
-            let result = merged.and_then(|_| {
-                SetSecurityInfo(
-                    handle,
-                    SE_KERNEL_OBJECT,
-                    DACL_SECURITY_INFORMATION,
-                    None,
-                    None,
-                    Some(updated),
-                    None,
-                )
-                .ok()
-            });
-            let _ = LocalFree(Some(HLOCAL(descriptor.0)));
-            if !updated.is_null() {
-                let _ = LocalFree(Some(HLOCAL(updated.cast())));
-            }
-            result.map_err(Into::into)
-        };
-        let result = (|| -> Result<()> {
-            grant(GetCurrentProcess(), PROCESS_QUERY_LIMITED_INFORMATION.0)?;
-            let mut token = Default::default();
-            OpenProcessToken(
-                GetCurrentProcess(),
-                windows::Win32::Security::TOKEN_ACCESS_MASK(
-                    TOKEN_QUERY.0 | 0x0004_0000 | 0x0002_0000,
-                ),
-                &mut token,
-            )?;
-            let token = owned(token);
-            grant(raw(&token), TOKEN_QUERY.0)
-        })();
-        FreeSid(sid);
-        result
-    }
 }
 
 #[cfg(test)]

@@ -299,8 +299,7 @@ impl Runtime {
                 }
                 self.app.status.render_error = None;
             } else {
-                self.app.status.render_error =
-                    Some("Install the Windows package to use Game Bar output".into());
+                self.app.status.render_error = Some(self.widget_unavailable().into());
             }
         } else {
             if !self.changing_output()
