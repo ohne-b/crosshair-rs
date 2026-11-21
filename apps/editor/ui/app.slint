@@ -11,11 +11,11 @@ import { Library } from "features/library.slint";
 import { Designer } from "features/designer.slint";
 import { Keybinds } from "features/keybinds.slint";
 import { Settings } from "features/settings.slint";
-export { Store, PresetRow, PresetGroup, LayerRow, FieldRow, FieldGroup, BindingRow, SelectionBounds, CanvasTile } from "shared/models.slint";
+export { Store, StartupRead, PresetRow, PresetGroup, LayerRow, FieldRow, FieldGroup, BindingRow, SelectionBounds, CanvasTile } from "shared/models.slint";
 export { Theme } from "shared/tokens.slint";
 
 export component AppWindow inherits Window {
-    title: "crosshair-rs";
+    title: "crosshair-editor";
     icon: @image-url("../../../packaging/windows/Assets/Square150x150Logo.png");
     preferred-width: 1280px; preferred-height: 800px;
     min-width: min(960px, Store.work-width * 1px); min-height: min(640px, Store.work-height * 1px);
@@ -26,6 +26,8 @@ export component AppWindow inherits Window {
     property <int> modal-kind: Store.modal-kind;
     property <bool> menu-open: menu.is-open;
     property <bool> help-open: help.is-open;
+    property <bool> startup-visible: Store.connected && !Store.read-only && Store.page == 3 && Store.settings-category == 1;
+    changed startup-visible => { if root.startup-visible { Store.action("read-startup", ""); } }
     changed modal-kind => {
         if root.modal-kind == 3 { menu.show(); } else { menu.close(); }
         if root.modal-kind == 5 { help.show(); } else { help.close(); }

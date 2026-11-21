@@ -20,13 +20,24 @@ are not Windows-signed. In-app updates authenticate both using the project's rel
 No certificate import or Developer Mode is needed. Normal use does not require
 administrator rights. `latest.json` and `SHA256SUMS` are update and verification metadata.
 
+For a manual upgrade, save your edits and choose **Quit** from the tray before
+running setup. If Windows reports the app is in use, you can quit it and select
+**Retry** in setup. Install the newer version over the existing one to keep your
+presets and settings. Preview builds appear as **crosshair-rs Preview** in Start
+and Game Bar and use separate settings from releases.
+
 For a source build, see [Contributing](CONTRIBUTING.md#development).
 
 ## Fullscreen with Game Bar
 
-1. Choose **Game Bar** in **Settings > Display > Display mode**.
-2. Press **Win+G**, open **crosshair-rs** from Widgets, then pin it and enable click-through.
-3. Position the widget on your target display, then close the Game Bar panel.
+1. In **Settings > Display**, choose **Game Bar**. If the widget needs setup,
+   Desktop stays active and the editor shows the next step.
+2. Click **Open widget**. If the toolbar is hidden, press **Win+G**. You can
+   also open **crosshair-rs** (or **crosshair-rs Preview**) from **Widgets**.
+   Pin it on your target display and turn on **Enable click-through**.
+3. Press **Win+G** again. When the editor shows **Ready to switch to Game Bar**,
+   click **Use Game Bar**. To switch back, choose **Desktop** in Display mode.
+   You can leave the widget pinned for next time.
 
 Desktop mode covers normal windows and borderless games. Fullscreen support
 depends on Game Bar and the game; Vulkan/OpenGL fullscreen can be restricted.

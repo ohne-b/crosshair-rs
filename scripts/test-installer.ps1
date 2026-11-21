@@ -68,6 +68,11 @@ try {
         $reader = [IO.StreamReader]::new($archive.GetEntry('AppxManifest.xml').Open())
         try { [xml]$manifest = $reader.ReadToEnd() } finally { $reader.Dispose() }
         $visuals = $manifest.SelectSingleNode("//*[local-name()='Application' and @Id='Editor']/*[local-name()='VisualElements']")
+        $widget = $manifest.SelectSingleNode("//*[local-name()='AppExtension' and @Id='CrosshairOverlay']")
+        $widgetVisuals = $manifest.SelectSingleNode("//*[local-name()='Application' and @Id='Widget']/*[local-name()='VisualElements']")
+        $displayName = if ($manifest.Package.Identity.Name.EndsWith('.Preview')) { 'crosshair-rs Preview' } else { 'crosshair-rs' }
+        if ($visuals.DisplayName -cne $displayName -or $widget.DisplayName -cne $displayName) { throw 'Editor and Game Bar must identify their installed channel.' }
+        if ($widgetVisuals.DisplayName -cne 'crosshair-gamebar') { throw 'The widget process must be named crosshair-gamebar.' }
         if ($visuals.BackgroundColor -ne 'transparent') { throw 'Editor icon background must be transparent.' }
         $pri = Join-Path $directory 'resources.pri'
         $entry = $archive.GetEntry('resources.pri')
@@ -77,7 +82,23 @@ try {
         & (Get-WindowsSdkTool 'makepri') dump /if $pri /of $dump /dt detailed /o | Out-Null
         if ($LASTEXITCODE -ne 0) { throw 'Cannot inspect package resource index.' }
         [xml]$index = Get-Content -LiteralPath $dump -Raw
+        # A single-byte encoding lets us compare embedded PNG payloads without changing any bytes.
+        $bytes = [Text.Encoding]::GetEncoding(28591)
+        $executables = foreach ($processName in @('crosshair-editor', 'crosshair-engine', 'crosshair-gamebar')) {
+            $fileName = "$processName.exe"
+            $path = Join-Path $directory $fileName
+            [IO.Compression.ZipFileExtensions]::ExtractToFile($archive.GetEntry($fileName), $path)
+            $info = [Diagnostics.FileVersionInfo]::GetVersionInfo($path)
+            if ($info.FileDescription -cne $processName -or $info.FileVersion -cne $build.version) { throw "Incorrect process description or version on $fileName." }
+            $bytes.GetString([IO.File]::ReadAllBytes($path))
+        }
         foreach ($size in @(16, 24, 32, 48, 256)) {
+            $entry = $archive.GetEntry("Assets/Square44x44Logo.targetsize-$size.png")
+            $reader = [IO.BinaryReader]::new($entry.Open())
+            try { $logo = $bytes.GetString($reader.ReadBytes([int]$entry.Length)) } finally { $reader.Dispose() }
+            foreach ($executable in $executables) {
+                if (!$executable.Contains($logo)) { throw "An executable is missing the packaged $size px logo." }
+            }
             foreach ($form in @('UNPLATED', 'LIGHTUNPLATED')) {
                 $candidate = $index.SelectSingleNode("//NamedResource[@name='Square44x44Logo.png']/Candidate[QualifierSet/Qualifier[@name='TargetSize' and @value='$size'] and QualifierSet/Qualifier[@name='AlternateForm' and @value='$form']]")
                 if (!$candidate) { throw "Missing indexed taskbar icon: $size $form" }

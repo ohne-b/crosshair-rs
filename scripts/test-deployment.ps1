@@ -26,6 +26,25 @@ public static class PackageActivation {
     }
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     public static extern bool WaitNamedPipe(string name, uint timeout);
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
+    static extern int GetPackageFamilyName(IntPtr process, ref uint length, System.Text.StringBuilder family);
+    public static bool HasPackage(System.Diagnostics.Process process, string expected) {
+        uint length = 128;
+        var family = new System.Text.StringBuilder((int)length);
+        try { return GetPackageFamilyName(process.Handle, ref length, family) == 0 && family.ToString() == expected; }
+        catch (System.InvalidOperationException) { return false; }
+        catch (System.ComponentModel.Win32Exception) { return false; }
+    }
+    [DllImport("userenv.dll", CharSet = CharSet.Unicode)]
+    private static extern int DeriveAppContainerSidFromAppContainerName(string family, out IntPtr sid);
+    [DllImport("advapi32.dll")]
+    private static extern IntPtr FreeSid(IntPtr sid);
+    public static string WidgetSid(string family) {
+        IntPtr sid;
+        Marshal.ThrowExceptionForHR(DeriveAppContainerSidFromAppContainerName(family, out sid));
+        try { return new System.Security.Principal.SecurityIdentifier(sid).Value; }
+        finally { FreeSid(sid); }
+    }
 }
 '@
 $fixtureRoot = [IO.Path]::GetFullPath((Join-Path $ArtifactDirectory ('deployment-' + [Guid]::NewGuid().ToString('N'))))
@@ -34,6 +53,14 @@ $shortcutName = if ($identity.Name.EndsWith('.Preview')) { 'crosshair-rs Preview
 $shortcuts = @([Environment]::GetFolderPath('DesktopDirectory'), [Environment]::GetFolderPath('Programs')) | ForEach-Object { Join-Path $_ $shortcutName }
 foreach ($shortcut in $shortcuts) { if (Test-Path -LiteralPath $shortcut) { throw 'A shortcut already exists; refusing to replace it.' } }
 $setup = (Resolve-Path -LiteralPath (Join-Path $ArtifactDirectory $build.setup)).Path
+$helpers = @(Get-ChildItem -LiteralPath $ArtifactDirectory -Directory -Filter 'setup-*' | ForEach-Object { Join-Path $_.FullName 'install.exe' })
+if ($helpers.Count -ne 1) { throw 'Expected one native helper from the tested setup build.' }
+function Assert-ShortcutDefaults([int]$Expected) {
+    $process = Start-Process -FilePath $helpers[0] -ArgumentList '--shortcut-defaults' -WindowStyle Hidden -PassThru
+    try {
+        if (!$process.WaitForExit(30000) -or $process.ExitCode -ne $Expected) { throw "Unexpected shortcut defaults; expected $Expected." }
+    } finally { $process.Dispose() }
+}
 function Run-Setup([string]$Arguments) {
     $process = Start-Process -FilePath $setup -ArgumentList $Arguments -WindowStyle Hidden -PassThru
     try {
@@ -66,10 +93,45 @@ function Assert-Startup([string]$Arguments, [bool]$Enabled, [string]$StatePath) 
     $state = Get-Content -LiteralPath $StatePath -Raw | ConvertFrom-Json
     if ($state.settings.launch_at_login -ne $Enabled) { throw 'Startup configuration was not durably saved.' }
 }
+function Assert-WidgetWindow([bool]$Open) {
+    $deadline = [DateTime]::UtcNow.AddSeconds(15)
+    do {
+        $response = Activate-Request '--ipc-scope deployment-qa --command "{\"type\":\"subscribe\"}"' | ConvertFrom-Json
+        $widget = $response.result.Ok.status.widget
+        if ($null -ne $widget.window_open -and $widget.window_open -eq $Open -and !$widget.connected) { return }
+        Start-Sleep -Milliseconds 100
+    } while ([DateTime]::UtcNow -lt $deadline)
+    throw "The installed engine did not report window_open=$Open with the widget pipe disconnected."
+}
+function Get-BrokerCount {
+    $brokers = @(Get-Process -Name RuntimeBroker -ErrorAction SilentlyContinue | Where-Object {
+        $_.SessionId -eq $session -and [PackageActivation]::HasPackage($_, $installed.PackageFamilyName)
+    })
+    $brokers.Count
+}
+function Wait-ControlPipe {
+    $deadline = [DateTime]::UtcNow.AddSeconds(15)
+    while (![PackageActivation]::WaitNamedPipe($pipeName, 100)) {
+        if ([DateTime]::UtcNow -gt $deadline) { throw 'The isolated engine did not open its IPC endpoint.' }
+        Start-Sleep -Milliseconds 50
+    }
+}
+function Stop-TestEngine([int]$EngineId) {
+    $quit = Activate-Request '--ipc-scope deployment-qa --command "{\"type\":\"quit\",\"discard_unsaved\":false}"'
+    $response = $quit | ConvertFrom-Json
+    if ($null -eq $response.result.PSObject.Properties['Ok']) { throw 'The isolated engine could not shut down.' }
+    $resident = Get-Process -Id $EngineId -ErrorAction SilentlyContinue
+    if ($resident) {
+        try { if (!$resident.WaitForExit(15000)) { throw 'The isolated engine did not exit after acknowledging Quit.' } }
+        finally { $resident.Dispose() }
+    }
+}
 $installed = $null
 $engineStarted = $false
 try {
+    Assert-ShortcutDefaults 3
     Run-Setup '/S /DESKTOP=1 /STARTMENU=1 /STARTUP=1'
+    Assert-ShortcutDefaults 3
     $installed = Get-AppxPackage -Name $identity.Name
     if (!$installed -or $installed.Version -ne $build.packageVersion -or $installed.Publisher -cne $identity.Publisher -or $installed.Status -ne 'Ok') { throw 'Windows did not register the expected package.' }
     $engineApp = $installed.PackageFamilyName + '!Engine'
@@ -82,6 +144,12 @@ try {
         $item = $shell.NameSpace((Split-Path -Parent $shortcut)).ParseName((Split-Path -Leaf $shortcut))
         if ($item.ExtendedProperty('System.AppUserModel.ID') -cne ($installed.PackageFamilyName + '!Editor')) { throw 'Shortcut does not use the stable packaged app identity.' }
     }
+    $custom = (New-Object -ComObject WScript.Shell).CreateShortcut($shortcuts[0])
+    $custom.Description = 'Custom crosshair shortcut'
+    $custom.Save()
+    $customHash = (Get-FileHash -LiteralPath $shortcuts[0]).Hash
+    Run-Setup '/S /DESKTOP=1'
+    if ((Get-FileHash -LiteralPath $shortcuts[0]).Hash -cne $customHash) { throw 'An enabled shortcut lost its user customization.' }
     Run-Setup '/S'
     Run-Setup '/S /STARTUP=1'
     foreach ($shortcut in $shortcuts) { if (!(Test-Path -LiteralPath $shortcut)) { throw 'A silent upgrade removed an omitted shortcut option.' } }
@@ -100,13 +168,19 @@ try {
     # Start from the installed editor, as the Start menu does, to exercise a cold engine launch.
     $editorPid = [PackageActivation]::Start(($installed.PackageFamilyName + '!Editor'), $arguments)
     $engineStarted = $true
-    $pipeName = '\\.\pipe\LOCAL\crosshair-rs.control.v1.' + [Diagnostics.Process]::GetCurrentProcess().SessionId + '.deployment-qa'
-    $deadline = [DateTime]::UtcNow.AddSeconds(15)
-    while (![PackageActivation]::WaitNamedPipe($pipeName, 100)) {
-        if ([DateTime]::UtcNow -gt $deadline) { throw 'The isolated engine did not open its IPC endpoint.' }
-        Start-Sleep -Milliseconds 50
-    }
+    $pipeName = '\\.\pipe\LOCAL\crosshair-rs.control.v1.' + [Diagnostics.Process]::GetCurrentProcess().SessionId + '.deployment-qa.' + $installed.PackageFamilyName
+    Wait-ControlPipe
+    $session = [Diagnostics.Process]::GetCurrentProcess().SessionId
+    $sid = [PackageActivation]::WidgetSid($installed.PackageFamilyName)
+    $widgetPipe = "\\.\pipe\Sessions\$session\AppContainerNamedObjects\$sid\crosshair-rs.widget.v1.$session"
+    if (![PackageActivation]::WaitNamedPipe($widgetPipe, 1000)) { throw 'The installed engine could not open its Game Bar widget connection.' }
+    # Windows startup is disabled even though the synthetic settings say enabled.
+    $startupRead = '--ipc-scope deployment-qa --command "{\"type\":\"read_startup\"}"'
+    $startup = (Activate-Request $startupRead | ConvertFrom-Json).result.Ok.status.startup_enabled
+    if ($startup -isnot [bool] -or $startup) { throw 'The on-demand read did not report the actual disabled Windows startup task.' }
     Assert-Startup $arguments $true $testStatePath
+    $startup = (Activate-Request $startupRead | ConvertFrom-Json).result.Ok.status.startup_enabled
+    if ($startup -ne $true) { throw 'The on-demand read did not observe the enabled Windows startup task.' }
     Assert-Startup $arguments $false $testStatePath
     $saved = Get-Content -LiteralPath $testStatePath -Raw | ConvertFrom-Json
     if ($saved.settings.show_on_launch -or $saved.settings.discord_presence -or $saved.base_visible -or $saved.revision -le $state.revision) { throw 'Startup reconciliation changed unrelated settings or did not commit.' }
@@ -128,14 +202,11 @@ try {
             if (!$editor.WaitForExit(15000)) { throw 'The isolated editor did not close.' }
         } finally { $editor.Dispose() }
     }
-    $quit = Activate-Request '--ipc-scope deployment-qa --command "{\"type\":\"quit\",\"discard_unsaved\":false}"'
-    $response = $quit | ConvertFrom-Json
-    if ($null -eq $response.result.PSObject.Properties['Ok']) { throw 'The isolated engine could not shut down.' }
-    $resident = Get-Process -Id $enginePid -ErrorAction SilentlyContinue
-    if ($resident) {
-        try { if (!$resident.WaitForExit(15000)) { throw 'The isolated engine did not exit after acknowledging Quit.' } }
-        finally { $resident.Dispose() }
-    }
+    $markerPath = Join-Path $env:LOCALAPPDATA "Packages/$($installed.PackageFamilyName)/TempState/crosshair-widget-$session.open"
+    $marker = [IO.FileStream]::new($markerPath, 'CreateNew', 'Write', 'None', 4096, [IO.FileOptions]::DeleteOnClose)
+    try { Assert-WidgetWindow $true } finally { $marker.Dispose() }
+    Assert-WidgetWindow $false
+    Stop-TestEngine $enginePid
     $engineStarted = $false
     $start = [Diagnostics.ProcessStartInfo]::new((Join-Path $installed.InstallLocation 'crosshair-engine.exe'), '--build-info')
     $start.UseShellExecute = $false
@@ -149,6 +220,10 @@ try {
     } finally { $engine.Dispose() }
     Run-Setup '/S /DESKTOP=0 /STARTMENU=0'
     foreach ($shortcut in $shortcuts) { if (Test-Path -LiteralPath $shortcut) { throw 'Explicitly clearing a shortcut option did not remove its owned shortcut.' } }
+    Assert-ShortcutDefaults 0
+    Run-Setup '/S /DESKTOP=1'
+    Assert-ShortcutDefaults 1
+    Run-Setup '/S /DESKTOP=0'
     $unrelatedTarget = Join-Path $fixtureRoot 'unrelated.txt'
     Set-Content -LiteralPath $unrelatedTarget -Value 'Unrelated shortcut target'
     $links = New-Object -ComObject WScript.Shell
@@ -157,12 +232,53 @@ try {
         $link.TargetPath = $unrelatedTarget
         $link.Save()
     }
+    Assert-ShortcutDefaults 0
     $unrelatedHashes = @($shortcuts | ForEach-Object { (Get-FileHash -LiteralPath $_).Hash })
     Run-Setup '/S /DESKTOP=0 /STARTMENU=0'
     for ($index = 0; $index -lt $shortcuts.Count; $index++) {
         if ((Get-FileHash -LiteralPath $shortcuts[$index]).Hash -cne $unrelatedHashes[$index]) { throw 'Setup changed an unrelated shortcut with the same name.' }
     }
-    Write-Output 'Setup registration, stable shortcuts, silent-option preservation and startup reconciliation after a cold editor launch passed. Windows sign-in itself was not exercised.'
+    # Exercise the real upgrade installer with an older package identity version and synthetic settings.
+    $previousVersion = '0.0.0.1'
+    if ([version]$build.packageVersion -gt [version]$previousVersion) {
+        $layout = Join-Path $fixtureRoot 'previous-layout'
+        $previous = Join-Path $fixtureRoot 'previous.msix'
+        $makeappx = Get-WindowsSdkTool 'makeappx'
+        & $makeappx unpack /p (Join-Path $ArtifactDirectory $build.package) /d $layout | Out-Null
+        if ($LASTEXITCODE) { throw 'Could not unpack the upgrade fixture.' }
+        $manifestPath = Join-Path $layout 'AppxManifest.xml'
+        [xml]$manifest = Get-Content -Raw -LiteralPath $manifestPath
+        $manifest.Package.Identity.SetAttribute('Version', $previousVersion)
+        $manifest.Save($manifestPath)
+        & $makeappx pack /d $layout /p $previous | Out-Null
+        if ($LASTEXITCODE) { throw 'Could not pack the previous-version fixture.' }
+        Remove-AppxPackage -Package $installed.PackageFullName
+        Add-AppxPackage -AllowUnsigned -Path $previous
+        $old = Get-AppxPackage -Name $identity.Name
+        if ($old.Version -ne $previousVersion -or $old.PackageFamilyName -cne $installed.PackageFamilyName) { throw 'Wrong upgrade fixture registration.' }
+        New-Item -ItemType Directory -Force (Split-Path -Parent $statePath) | Out-Null
+        Copy-Item -LiteralPath $testStatePath -Destination $statePath
+        $stateHash = (Get-FileHash -LiteralPath $statePath).Hash
+        Run-Setup '/S'
+        $upgraded = Get-AppxPackage -Name $identity.Name
+        if ($upgraded.Version -ne $build.packageVersion -or $upgraded.Status -ne 'Ok' -or
+            (Get-FileHash -LiteralPath $statePath).Hash -cne $stateHash) { throw 'The in-place upgrade failed to retain the saved settings.' }
+        Write-Output 'The normal setup upgraded an older package in place and preserved the saved settings byte-for-byte.'
+    }
+    # Exercise the ordinary packaged startup path using the disposable runner's own package storage.
+    $beforeLaunch = Get-BrokerCount
+    $enginePid = [PackageActivation]::Start($engineApp, '--ipc-scope deployment-qa')
+    $engineStarted = $true
+    Wait-ControlPipe
+    $status = (Activate-Request '--ipc-scope deployment-qa --command "{\"type\":\"subscribe\"}"' | ConvertFrom-Json).result.Ok.status
+    if (!$status.PSObject.Properties['startup_enabled'] -or $null -ne $status.startup_enabled) { throw 'Desktop launch read Windows startup settings before they were requested.' }
+    $onDesktop = Get-BrokerCount
+    $status = (Activate-Request $startupRead | ConvertFrom-Json).result.Ok.status
+    if ($status.startup_enabled -isnot [bool]) { throw 'The installed app did not return the Windows sign-in setting.' }
+    Write-Output "Package Runtime Broker instances before launch: $beforeLaunch, on Desktop: $onDesktop, after reading sign-in: $(Get-BrokerCount)."
+    Stop-TestEngine $enginePid
+    $engineStarted = $false
+    Write-Output 'Setup registration, shortcut defaults and ownership, silent-option preservation and startup reconciliation after a cold editor launch passed. Windows sign-in itself was not exercised.'
 } finally {
     if ($engineStarted) {
         try { Activate-Request '--ipc-scope deployment-qa --command "{\"type\":\"quit\",\"discard_unsaved\":false}"' | Out-Null } catch { Write-Warning 'The isolated engine did not acknowledge cleanup before package removal.' }

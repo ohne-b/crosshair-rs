@@ -846,6 +846,7 @@ fn library_tabs_sort_picker_and_browse_actions_are_independent() -> Result<()> {
         0,
         client::Event::Completed {
             tag,
+            revision: app.state.revision + 1,
             reply: Reply::Created { id: Id::new_v4() },
         },
     ))?;

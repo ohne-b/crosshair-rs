@@ -97,10 +97,10 @@ impl Runtime {
         if candidate.settings.output_mode == OutputMode::GameBar
             && candidate.settings.output_mode != self.app.state.settings.output_mode
         {
-            ensure!(
-                self.widget.is_some(),
-                "Install the Windows package and pin its Game Bar widget before switching output"
-            );
+            ensure!(self.widget.is_some(), "{}", self.widget_unavailable());
+            if let Some(hint) = self.app.status.widget.setup_hint() {
+                anyhow::bail!(hint);
+            }
         }
         self.app.reset_input();
         self.sync_animation();
@@ -150,7 +150,7 @@ impl Runtime {
             respond,
         } = change.phase
         {
-            if blank(&self.widget_status, generation) {
+            if self.widget_blank(generation) {
                 let error = error.clone();
                 self.finish_cancel(change, &error, respond);
             } else {
@@ -271,16 +271,11 @@ impl Runtime {
                         .map_or(0, |widget| widget.present(None, [0, 0], false));
                     change.old_hidden = true;
                     change.phase = Phase::Blank(generation);
-                    if self
-                        .widget
-                        .as_ref()
-                        .is_none_or(|widget| !widget.ever_connected())
-                        || blank(&self.widget_status, generation)
-                    {
+                    if self.widget_blank(generation) {
                         self.activate_desktop(change)?;
                     }
                 }
-                Phase::Blank(generation) if blank(&self.widget_status, generation) => {
+                Phase::Blank(generation) if self.widget_blank(generation) => {
                     self.activate_desktop(change)?
                 }
                 _ => {}
@@ -300,7 +295,9 @@ impl Runtime {
 
     fn persist_change(&mut self, change: &mut Change) -> Result<()> {
         let mut context = change.context.clone();
-        context.after = After::Commit;
+        let reconcile_startup = matches!(change.kind, ChangeKind::Startup | ChangeKind::Restore)
+            || change.candidate.settings.launch_at_login != change.before.settings.launch_at_login;
+        context.after = After::Commit { reconcile_startup };
         change.candidate.revision = change.candidate.revision.max(
             self.app
                 .state
@@ -312,9 +309,7 @@ impl Runtime {
             Job::CommitState {
                 state: Box::new(change.candidate.clone()),
                 restore: change.kind == ChangeKind::Restore,
-                startup_changed: change.kind == ChangeKind::Startup
-                    || change.candidate.settings.launch_at_login
-                        != change.before.settings.launch_at_login,
+                reconcile_startup,
             },
             context,
         )?;
@@ -439,7 +434,7 @@ impl Runtime {
             && let Some(widget) = &self.widget
         {
             let generation = widget.present(None, [0, 0], false);
-            if change.old_hidden && !blank(&self.widget_status, generation) {
+            if change.old_hidden && !self.widget_blank(generation) {
                 change.phase = Phase::Rollback {
                     generation,
                     error: error.into(),
@@ -516,14 +511,30 @@ impl Runtime {
             }
             return;
         }
-        self.cancel_change("The output did not become ready. Pin the widget, enable click-through and check its placement, then retry", true);
+        if let Phase::Blank(generation) | Phase::Rollback { generation, .. } = change.phase
+            && self.widget_blank(generation)
+        {
+            self.refresh();
+            return;
+        }
+        let message = match change.candidate.settings.output_mode {
+            OutputMode::Desktop => "Reopen the Game Bar widget so it can clear its crosshair before switching to Desktop",
+            OutputMode::GameBar => self.app.status.widget.setup_hint().unwrap_or(
+                "Game Bar could not present the crosshair. Check the widget's position on the selected monitor and its opacity",
+            ),
+        };
+        self.cancel_change(message, true);
         self.refresh();
+    }
+
+    fn widget_blank(&self, generation: u64) -> bool {
+        blank(&self.widget_status, generation) || self.widget.as_ref().is_none_or(Widget::host_gone)
     }
 
     pub(super) fn acknowledge_widget_blank(&mut self) {
         if self
             .widget_clear_required
-            .is_some_and(|generation| blank(&self.widget_status, generation))
+            .is_some_and(|generation| self.widget_blank(generation))
         {
             self.widget_clear_required = None;
         }

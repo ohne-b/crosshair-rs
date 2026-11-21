@@ -120,6 +120,10 @@ impl App {
                 self.hwnd()?,
                 "https://github.com/ohne-b/crosshair-rs/blob/main/LICENSE.md",
             )?,
+            "get-installer" => dialogs::open_url(
+                self.hwnd()?,
+                "https://github.com/ohne-b/crosshair-rs/releases",
+            )?,
             "release-notes" => {
                 let url = self
                     .status
@@ -619,14 +623,43 @@ impl App {
             "export-profile" => self.export(ExportKind::Profile {
                 profile: value.parse()?,
             })?,
+            "read-startup" => {
+                if store.get_startup_read() != StartupRead::Checking {
+                    store.set_startup_read(StartupRead::Unavailable);
+                    self.send("read-startup", Command::ReadStartup)?;
+                    store.set_startup_read(StartupRead::Checking);
+                }
+            }
             "startup" => self.send(
                 "startup",
                 Command::SetStartup {
                     enabled: value.parse()?,
                 },
             )?,
-            "output-mode"
-            | "monitor"
+            "output-mode" => {
+                let mode = match value {
+                    "0" => OutputMode::Desktop,
+                    "1" => OutputMode::GameBar,
+                    _ => bail!("Choose Desktop or Game Bar"),
+                };
+                if store.get_switching_output() {
+                    return Ok(());
+                }
+                store.set_gamebar_setup(mode == OutputMode::GameBar);
+                if self.state.settings.output_mode != mode {
+                    let mut settings = self.state.settings.clone();
+                    settings.output_mode = mode;
+                    self.send(
+                        "output-mode",
+                        Command::SetSettings {
+                            settings,
+                            expected_revision: self.state.revision,
+                        },
+                    )?;
+                    store.set_switching_output(true);
+                }
+            }
+            "monitor"
             | "show-on-launch"
             | "check-updates-setting"
             | "allow-prereleases"
@@ -634,13 +667,6 @@ impl App {
             | "discord-style" => {
                 let mut settings = self.state.settings.clone();
                 match action {
-                    "output-mode" => {
-                        settings.output_mode = if value == "1" {
-                            OutputMode::GameBar
-                        } else {
-                            OutputMode::Desktop
-                        }
-                    }
                     "monitor" => {
                         settings.monitor = value
                             .parse::<usize>()?

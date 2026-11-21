@@ -84,11 +84,47 @@ pub(super) fn app(ui: &AppWindow) -> App {
         close_flush_pending: false,
         recovery_shown: false,
         connection_epoch: 0,
+        output_ack_revision: None,
         install_requested: false,
         shutdown_requested: None,
         preview_pending: false,
         new_connection: false,
     }
+}
+
+#[test]
+fn launch_at_sign_in_is_read_only_when_general_settings_are_visible() -> Result<()> {
+    let ui = window();
+    let store = ui.global::<Store>();
+    let reads = Rc::new(std::cell::Cell::new(0));
+    let observed = reads.clone();
+    store.on_action(move |action, _| {
+        if action == "read-startup" {
+            observed.set(observed.get() + 1);
+        }
+    });
+    let assert_reads = |expected| {
+        slint::platform::update_timers_and_animations();
+        assert_eq!(reads.get(), expected);
+    };
+    store.set_connected(true);
+    assert_reads(0);
+    store.set_page(3);
+    assert_reads(0);
+    store.set_settings_category(1);
+    assert_reads(1);
+    store.set_startup(true);
+    assert_reads(1);
+    store.set_connected(false);
+    assert_reads(1);
+    store.set_connected(true);
+    assert_reads(2);
+    store.set_page(0);
+    assert_reads(2);
+    store.set_page(3);
+    assert_reads(3);
+    ui.hide()?;
+    Ok(())
 }
 
 #[test]
@@ -98,18 +134,47 @@ fn startup_toggle_uses_windows_state_and_always_requests_reconciliation() -> Res
     let (client, commands) = Client::recording_for_test();
     app.client = client;
     app.state.settings.launch_at_login = true;
-    app.status.startup_enabled = Some(false);
-    app.refresh_status();
+    app.action("read-startup", "")?;
+    app.action("read-startup", "")?;
+    assert_eq!(
+        ui.global::<Store>().get_startup_read(),
+        StartupRead::Checking
+    );
+    app.event(Event::Engine(
+        0,
+        client::Event::Completed {
+            tag: "read-startup".into(),
+            revision: app.state.revision,
+            reply: Reply::Status {
+                status: EngineStatus {
+                    startup_enabled: Some(false),
+                    ..Default::default()
+                },
+            },
+        },
+    ))?;
+    assert!(ui.global::<Store>().get_show_startup_switch());
     assert!(!ui.global::<Store>().get_startup());
     assert!(ui.global::<Store>().get_startup_known());
     app.action("startup", "true")?;
     assert!(matches!(
         &commands()[..],
-        [Command::SetStartup { enabled: true }]
+        [Command::ReadStartup, Command::SetStartup { enabled: true }]
     ));
     app.status.startup_enabled = Some(true);
     app.refresh_status();
     assert!(ui.global::<Store>().get_startup());
+    app.action("read-startup", "")?;
+    app.event(Event::Engine(
+        0,
+        client::Event::Failed {
+            tag: "read-startup".into(),
+            message: "Windows is busy".into(),
+            conflict: false,
+        },
+    ))?;
+    app.refresh_status();
+    assert!(!ui.global::<Store>().get_show_startup_switch());
     app.status.startup_enabled = None;
     app.refresh_status();
     assert!(!ui.global::<Store>().get_startup());
@@ -413,6 +478,7 @@ fn animation_enabled_switch_updates_the_live_draft_and_save() -> Result<()> {
         app.connection_epoch,
         client::Event::Completed {
             tag: "document".into(),
+            revision: app.state.revision,
             reply: Reply::Ack {
                 document_revision: Some(2),
             },
@@ -424,6 +490,7 @@ fn animation_enabled_switch_updates_the_live_draft_and_save() -> Result<()> {
             app.connection_epoch,
             client::Event::Completed {
                 tag: tag.into(),
+                revision: app.state.revision,
                 reply: Reply::Ack {
                     document_revision: None,
                 },
@@ -561,6 +628,92 @@ fn action_picker_cancellation_and_late_profile_events_do_not_commit() -> Result<
     app.action("aim-target", &target)?;
     assert!(commands().is_empty());
     ui.hide()?;
+    Ok(())
+}
+
+#[test]
+fn game_bar_setup_keeps_desktop_selected_and_allows_retry() -> Result<()> {
+    let ui = window();
+    let mut app = app(&ui);
+    let (client, commands) = Client::recording_for_test();
+    app.client = client;
+    app.status.widget.installed = true;
+    let store = ui.global::<Store>();
+    app.refresh_status();
+    app.action("output-mode", "1")?;
+    app.action("output-mode", "1")?;
+    assert!(store.get_gamebar_setup() && store.get_switching_output());
+    assert_eq!(store.get_output_mode(), 0);
+    assert!(
+        matches!(&commands()[..], [Command::SetSettings { settings, .. }] if settings.output_mode == OutputMode::GameBar)
+    );
+    app.event(Event::Engine(
+        0,
+        client::Event::Failed {
+            tag: "output-mode".into(),
+            message: app.status.widget.setup_hint().unwrap().into(),
+            conflict: false,
+        },
+    ))?;
+    assert!(!store.get_switching_output());
+    assert!(store.get_error().is_empty());
+    assert!(!store.get_widget_open());
+    store.set_page(3);
+    store.set_connected(true);
+    let closed = ui.window().take_snapshot()?;
+    app.status.widget.window_open = true;
+    app.refresh_status();
+    assert!(store.get_widget_open() && !store.get_widget_pinned());
+    assert!(!store.get_widget_ready());
+    let open = ui.window().take_snapshot()?;
+    let orange = slint::Rgba8Pixel::new(249, 115, 22, 255);
+    let grey = slint::Rgba8Pixel::new(41, 41, 41, 255);
+    assert!(
+        closed
+            .as_slice()
+            .iter()
+            .zip(open.as_slice())
+            .any(|(before, after)| *before == orange && *after == grey),
+        "Opening the widget should change the primary button to a neutral button"
+    );
+    // Foregrounding and dismissing Win+G only changes the unpinned widget's pipe.
+    app.status.widget.connected = true;
+    app.refresh_status();
+    app.status.widget.connected = false;
+    app.refresh_status();
+    assert!(store.get_widget_open() && !store.get_widget_ready());
+    assert_eq!(ui.window().take_snapshot()?.as_slice(), open.as_slice());
+    app.status.widget.window_open = false;
+    app.refresh_status();
+    assert!(!store.get_widget_open());
+    assert_eq!(ui.window().take_snapshot()?.as_slice(), closed.as_slice());
+    app.status.widget.connected = true;
+    app.status.widget.pinned = true;
+    app.status.widget.click_through = true;
+    app.refresh_status();
+    assert!(store.get_widget_ready());
+    assert!(store.get_widget_pinned());
+    app.action("output-mode", "1")?;
+    assert!(matches!(&commands()[..], [Command::SetSettings { .. }]));
+    let revision = app.state.revision + 1;
+    app.event(Event::Engine(
+        0,
+        client::Event::Completed {
+            tag: "output-mode".into(),
+            revision,
+            reply: Reply::Ack {
+                document_revision: None,
+            },
+        },
+    ))?;
+    app.action("output-mode", "1")?;
+    assert!(commands().is_empty() && store.get_switching_output());
+    let mut state = app.state.clone();
+    state.revision = revision;
+    state.settings.output_mode = OutputMode::GameBar;
+    app.event(Event::Engine(0, client::Event::State(state)))?;
+    assert!(!store.get_switching_output());
+    assert_eq!(store.get_output_mode(), 1);
     Ok(())
 }
 

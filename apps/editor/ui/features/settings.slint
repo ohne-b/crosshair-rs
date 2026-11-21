@@ -1,5 +1,5 @@
 import { ScrollView, ProgressIndicator } from "std-widgets.slint";
-import { Store } from "../shared/models.slint";
+import { Store, StartupRead } from "../shared/models.slint";
 import { Theme } from "../shared/tokens.slint";
 import { DropDown } from "../shared/dropdown.slint";
 import { ActionButton, EditField, Switch, Divider, SectionTitle } from "../shared/controls.slint";
@@ -58,8 +58,8 @@ export component Settings inherits Rectangle {
                     if root.category == 0: VerticalLayout { spacing: 12px; alignment: start;
                         SectionTitle { text: "DISPLAY"; }
                         Group {
-                            Setting { label: "Display mode";
-                                DropDown { width: 180px; model: ["Desktop", "Game Bar"]; current-index: Store.output-mode; accessible-label: "Output mode"; selected(index) => { Store.action("output-mode", index); } }
+                            Setting { label: Store.switching-output ? "Switching display mode…" : "Display mode";
+                                DropDown { width: 180px; model: ["Desktop", "Game Bar"]; enabled: Store.interactive && !Store.switching-output; current-index: Store.output-mode; accessible-label: "Output mode"; selected(index) => { Store.action("output-mode", index); } }
                                 ActionButton { icon: @image-url("../../../../assets/icons/info-circle.svg"); label: "Display compatibility"; quiet: true; clicked => { Store.action("gamebar-help", ""); } }
                             }
                             Setting { label: "Monitor"; last: true;
@@ -83,10 +83,16 @@ export component Settings inherits Rectangle {
                                 ActionButton { icon: @image-url("../../../../assets/icons/trash.svg"); label: "Remove saved position"; enabled: Store.positions.length > 0 && Store.interactive; quiet: true; clicked => { Store.action("position-delete", Store.position-index); } }
                             }
                         }
-                        if Store.output-mode == 1: VerticalLayout { spacing: 12px;
+                        if Store.gamebar-setup || Store.output-mode == 1: VerticalLayout { spacing: 12px;
                             SectionTitle { text: "GAME BAR"; }
                             Group { Setting { label: Store.widget-status; last: true;
-                                ActionButton { text: "Open Game Bar"; clicked => { Store.action("open-gamebar", ""); } }
+                                if !Store.widget-installed: ActionButton { text: "Get installer"; clicked => { Store.action("get-installer", ""); } }
+                                if Store.widget-ready && Store.output-mode == 0: ActionButton { text: "Use Game Bar"; primary: true; enabled: Store.interactive && !Store.switching-output; clicked => { Store.action("output-mode", "1"); } }
+                                if Store.widget-installed && (!Store.widget-ready || Store.output-mode == 1): ActionButton {
+                                    text: Store.widget-open && !Store.widget-pinned ? "Pin in Game Bar" : "Open widget";
+                                    primary: !Store.widget-open;
+                                    clicked => { Store.action("open-gamebar", ""); }
+                                }
                                 ActionButton { icon: @image-url("../../../../assets/icons/info-circle.svg"); label: "Game Bar setup"; quiet: true; clicked => { Store.action("gamebar-help", ""); } }
                             } }
                         }
@@ -95,8 +101,8 @@ export component Settings inherits Rectangle {
                         SectionTitle { text: "STARTUP"; }
                         Group {
                             Setting { label: "Launch at sign-in";
-                                if Store.startup-known: Switch { checked: Store.startup; label: "Launch engine at sign-in"; toggled => { Store.action("startup", Store.startup ? "false" : "true"); } }
-                                if !Store.startup-known: Text { text: "Unavailable"; color: Theme.muted; font-size: 12px * Theme.text-scale; vertical-alignment: center; }
+                                if Store.show-startup-switch: Switch { checked: Store.startup; label: "Launch engine at sign-in"; toggled => { Store.action("startup", Store.startup ? "false" : "true"); } }
+                                if !Store.show-startup-switch: Text { text: Store.startup-read == StartupRead.checking ? "Checking…" : "Unavailable"; color: Theme.muted; font-size: 12px * Theme.text-scale; vertical-alignment: center; }
                             }
                             Setting { label: "Show crosshair on launch"; last: true; Switch { checked: Store.show-on-launch; label: "Show crosshair on launch"; toggled => { Store.action("show-on-launch", Store.show-on-launch ? "false" : "true"); } } }
                         }

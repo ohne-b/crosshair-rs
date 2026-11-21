@@ -1,4 +1,7 @@
+pub mod presence;
+
 use std::{
+    os::windows::io::OwnedHandle,
     sync::{
         Arc, Condvar, Mutex,
         atomic::{AtomicBool, Ordering},
@@ -11,10 +14,28 @@ use std::{
 use anyhow::{Result, ensure};
 use crosshair_core::protocol::WidgetStatus;
 use crosshair_platform::{
-    identity::Identity,
+    identity::{Identity, raw},
     pipe::{Listener, Pipe, StopSignal},
 };
 use crosshair_renderer::Raster;
+use windows::Win32::{Foundation::WAIT_OBJECT_0, System::Threading::WaitForSingleObject};
+
+enum LastHost {
+    NeverConnected,
+    Observed(Option<OwnedHandle>),
+}
+
+impl LastHost {
+    fn gone(&self) -> bool {
+        match self {
+            Self::NeverConnected => true,
+            Self::Observed(Some(process)) => unsafe {
+                WaitForSingleObject(raw(process), 0) == WAIT_OBJECT_0
+            },
+            Self::Observed(None) => false,
+        }
+    }
+}
 
 #[derive(Clone)]
 struct Frame {
@@ -39,7 +60,7 @@ struct Shared {
     changed: Condvar,
     stopped: AtomicBool,
     connected: AtomicBool,
-    ever_connected: AtomicBool,
+    last_host: Mutex<LastHost>,
     pipe: Mutex<Option<Pipe>>,
 }
 
@@ -58,7 +79,6 @@ impl Widget {
             identity.package.is_some(),
             "Game Bar requires the installed application"
         );
-        allow_widget_queries(&identity)?;
         let shared = Arc::new(Shared {
             frame: Mutex::new(Frame {
                 generation: 1,
@@ -71,7 +91,7 @@ impl Widget {
             changed: Condvar::new(),
             stopped: AtomicBool::new(false),
             connected: AtomicBool::new(false),
-            ever_connected: AtomicBool::new(false),
+            last_host: Mutex::new(LastHost::NeverConnected),
             pipe: Mutex::new(None),
         });
         let (started, ready) = mpsc::sync_channel(1);
@@ -80,11 +100,7 @@ impl Widget {
         let worker = thread::Builder::new()
             .name("widget connection".into())
             .spawn(move || {
-                let name = format!(
-                    r"\\.\pipe\LOCAL\crosshair-rs.widget.v1.{}",
-                    identity.session
-                );
-                let mut listener = match Listener::bind(&name, identity.clone(), true) {
+                let mut listener = match Listener::bind_widget(identity.clone()) {
                     Ok(listener) => listener,
                     Err(error) => {
                         let _ = started.send(Err(error));
@@ -101,7 +117,8 @@ impl Widget {
                     };
                     *thread_shared.pipe.lock().unwrap() = Some(pipe.clone());
                     thread_shared.connected.store(true, Ordering::Release);
-                    thread_shared.ever_connected.store(true, Ordering::Release);
+                    *thread_shared.last_host.lock().unwrap() =
+                        LastHost::Observed(pipe.client_exit_handle().ok());
                     let reading = pipe.clone();
                     let callback = notify.clone();
                     let disconnected = Arc::new(AtomicBool::new(false));
@@ -242,8 +259,8 @@ impl Widget {
         }
     }
 
-    pub fn ever_connected(&self) -> bool {
-        self.shared.ever_connected.load(Ordering::Acquire)
+    pub fn host_gone(&self) -> bool {
+        self.shared.last_host.lock().unwrap().gone()
     }
 }
 
@@ -320,6 +337,7 @@ fn decode_status(bytes: &[u8; 64], session: u32) -> Result<Status> {
         presented: flags & 64 != 0,
         widget: WidgetStatus {
             installed: true,
+            window_open: false,
             connected: flags & 1 != 0,
             pinned: flags & 2 != 0,
             visible: flags & 4 != 0,
@@ -330,102 +348,38 @@ fn decode_status(bytes: &[u8; 64], session: u32) -> Result<Status> {
     })
 }
 
-fn allow_widget_queries(identity: &Identity) -> Result<()> {
-    use crosshair_platform::identity::{owned, raw, wide};
-    use windows::{
-        Win32::{
-            Foundation::{HLOCAL, LocalFree},
-            Security::{
-                ACL,
-                Authorization::{
-                    EXPLICIT_ACCESS_W, GRANT_ACCESS, GetSecurityInfo, SE_KERNEL_OBJECT,
-                    SetEntriesInAclW, SetSecurityInfo, TRUSTEE_IS_SID, TRUSTEE_IS_UNKNOWN,
-                    TRUSTEE_W,
-                },
-                DACL_SECURITY_INFORMATION, FreeSid,
-                Isolation::DeriveAppContainerSidFromAppContainerName,
-                NO_INHERITANCE, PSECURITY_DESCRIPTOR, TOKEN_QUERY,
-            },
-            System::Threading::{
-                GetCurrentProcess, OpenProcessToken, PROCESS_QUERY_LIMITED_INFORMATION,
-            },
-        },
-        core::PCWSTR,
-    };
-    let family = wide(
-        identity
-            .package_family
-            .as_deref()
-            .ok_or_else(|| anyhow::anyhow!("Package identity is unavailable"))?,
-    );
-    unsafe {
-        let sid = DeriveAppContainerSidFromAppContainerName(PCWSTR(family.as_ptr()))?;
-        let grant = |handle, access| -> Result<()> {
-            let mut old = std::ptr::null_mut::<ACL>();
-            let mut descriptor = PSECURITY_DESCRIPTOR::default();
-            GetSecurityInfo(
-                handle,
-                SE_KERNEL_OBJECT,
-                DACL_SECURITY_INFORMATION,
-                None,
-                None,
-                Some(&mut old),
-                None,
-                Some(&mut descriptor),
-            )
-            .ok()?;
-            let entry = EXPLICIT_ACCESS_W {
-                grfAccessPermissions: access,
-                grfAccessMode: GRANT_ACCESS,
-                grfInheritance: NO_INHERITANCE,
-                Trustee: TRUSTEE_W {
-                    TrusteeForm: TRUSTEE_IS_SID,
-                    TrusteeType: TRUSTEE_IS_UNKNOWN,
-                    ptstrName: windows::core::PWSTR(sid.0.cast()),
-                    ..Default::default()
-                },
-            };
-            let mut updated = std::ptr::null_mut();
-            let merged = SetEntriesInAclW(Some(&[entry]), Some(old), &mut updated).ok();
-            let result = merged.and_then(|_| {
-                SetSecurityInfo(
-                    handle,
-                    SE_KERNEL_OBJECT,
-                    DACL_SECURITY_INFORMATION,
-                    None,
-                    None,
-                    Some(updated),
-                    None,
-                )
-                .ok()
-            });
-            let _ = LocalFree(Some(HLOCAL(descriptor.0)));
-            if !updated.is_null() {
-                let _ = LocalFree(Some(HLOCAL(updated.cast())));
-            }
-            result.map_err(Into::into)
-        };
-        let result = (|| -> Result<()> {
-            grant(GetCurrentProcess(), PROCESS_QUERY_LIMITED_INFORMATION.0)?;
-            let mut token = Default::default();
-            OpenProcessToken(
-                GetCurrentProcess(),
-                windows::Win32::Security::TOKEN_ACCESS_MASK(
-                    TOKEN_QUERY.0 | 0x0004_0000 | 0x0002_0000,
-                ),
-                &mut token,
-            )?;
-            let token = owned(token);
-            grant(raw(&token), TOKEN_QUERY.0)
-        })();
-        FreeSid(sid);
-        result
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn desktop_recovery_requires_proof_the_last_host_exited() -> Result<()> {
+        use std::os::windows::process::CommandExt;
+        use std::process::{Command, Stdio};
+
+        assert!(LastHost::NeverConnected.gone());
+        assert!(!LastHost::Observed(None).gone());
+        let current = unsafe {
+            use windows::Win32::System::Threading::{
+                GetCurrentProcessId, OpenProcess, PROCESS_SYNCHRONIZE,
+            };
+            crosshair_platform::identity::owned(OpenProcess(
+                PROCESS_SYNCHRONIZE,
+                false,
+                GetCurrentProcessId(),
+            )?)
+        };
+        assert!(!LastHost::Observed(Some(current)).gone());
+        let mut child = Command::new(std::env::current_exe()?)
+            .arg("--list")
+            .creation_flags(0x0800_0000)
+            .stdout(Stdio::null())
+            .spawn()?;
+        let process = std::os::windows::io::AsHandle::as_handle(&child).try_clone_to_owned()?;
+        child.wait()?;
+        assert!(LastHost::Observed(Some(process)).gone());
+        Ok(())
+    }
+
     #[test]
     fn frame_preserves_asymmetric_origin_and_negative_monitor_position() {
         let frame = Frame {

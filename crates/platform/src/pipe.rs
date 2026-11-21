@@ -1,3 +1,5 @@
+mod widget;
+
 use std::{
     mem::size_of,
     os::windows::io::OwnedHandle,
@@ -18,8 +20,6 @@ use windows::{
             Authorization::{
                 ConvertStringSecurityDescriptorToSecurityDescriptorW, SDDL_REVISION_1,
             },
-            FreeSid,
-            Isolation::DeriveAppContainerSidFromAppContainerName,
             PSECURITY_DESCRIPTOR, SECURITY_ATTRIBUTES,
         },
         Storage::FileSystem::{
@@ -35,15 +35,15 @@ use windows::{
                 PIPE_REJECT_REMOTE_CLIENTS, PIPE_TYPE_BYTE, PIPE_WAIT,
             },
             Threading::{
-                CreateEventW, INFINITE, ResetEvent, SetEvent, WaitForMultipleObjects,
-                WaitForSingleObject,
+                CreateEventW, INFINITE, OpenProcess, PROCESS_SYNCHRONIZE, ResetEvent, SetEvent,
+                WaitForMultipleObjects, WaitForSingleObject,
             },
         },
     },
     core::PCWSTR,
 };
 
-use crate::identity::{Identity, owned, raw, sid_string, wide};
+use crate::identity::{Identity, owned, raw, wide};
 
 const FRAME_DEADLINE: Duration = Duration::from_secs(15);
 
@@ -137,6 +137,14 @@ impl Pipe {
             GetNamedPipeServerProcessId(self.raw(), &mut pid)?;
         }
         Identity::process(pid)
+    }
+
+    pub fn client_exit_handle(&self) -> Result<OwnedHandle> {
+        let mut pid = 0;
+        unsafe {
+            GetNamedPipeClientProcessId(self.raw(), &mut pid)?;
+            Ok(owned(OpenProcess(PROCESS_SYNCHRONIZE, false, pid)?))
+        }
     }
 
     pub fn raw(&self) -> HANDLE {
@@ -319,10 +327,24 @@ pub struct Listener {
 }
 
 impl Listener {
-    pub fn bind(name: &str, identity: Identity, widget: bool) -> Result<Self> {
-        let descriptor = SecurityDescriptor::new(&identity, widget)?;
+    pub fn bind(name: &str, identity: Identity) -> Result<Self> {
+        Self::new(name, identity, None)
+    }
+
+    pub fn bind_widget(identity: Identity) -> Result<Self> {
+        let sid = widget::prepare_access(&identity)?;
+        let session = identity.session;
+        // The UWP client's LOCAL pipe resolves inside its AppContainer namespace.
+        let name = format!(
+            r"\\.\pipe\Sessions\{session}\AppContainerNamedObjects\{sid}\crosshair-rs.widget.v1.{session}"
+        );
+        Self::new(&name, identity, Some(&sid))
+    }
+
+    fn new(name: &str, identity: Identity, widget_sid: Option<&str>) -> Result<Self> {
+        let descriptor = SecurityDescriptor::new(&identity, widget_sid)?;
         let pending = create(name, &descriptor, true)?;
-        let allowed_clients = if widget {
+        let allowed_clients = if widget_sid.is_some() {
             vec!["crosshair-gamebar.exe".into()]
         } else {
             vec!["crosshair-editor.exe".into(), "crosshair-engine.exe".into()]
@@ -375,24 +397,11 @@ struct SecurityDescriptor {
     value: PSECURITY_DESCRIPTOR,
 }
 impl SecurityDescriptor {
-    fn new(identity: &Identity, widget: bool) -> Result<Self> {
+    fn new(identity: &Identity, widget_sid: Option<&str>) -> Result<Self> {
         let mut sddl = format!("D:P(A;;GA;;;{})", identity.logon_sid);
-        if widget {
-            let family =
-                wide(identity.package_family.as_deref().ok_or_else(|| {
-                    anyhow::anyhow!("Game Bar requires the packaged application")
-                })?);
-            let sid =
-                unsafe { DeriveAppContainerSidFromAppContainerName(PCWSTR(family.as_ptr()))? };
-            let value = unsafe { sid_string(sid) };
-            unsafe {
-                FreeSid(sid);
-            }
+        if let Some(sid) = widget_sid {
             // AppContainer access checks both ordinary and restricted package identities.
-            sddl.push_str(&format!(
-                "(A;;GRGW;;;WD)(A;;GRGW;;;{})S:(ML;;NW;;;LW)",
-                value?
-            ));
+            sddl.push_str(&format!("(A;;GRGW;;;WD)(A;;GRGW;;;{sid})S:(ML;;NW;;;LW)"));
         }
         let sddl = wide(&sddl);
         let mut value = PSECURITY_DESCRIPTOR::default();
@@ -473,7 +482,7 @@ mod tests {
         let server_name = name.clone();
         let server_file = filename.clone();
         let worker = thread::spawn(move || -> Result<()> {
-            let mut listener = Listener::bind(&server_name, Identity::current()?, false)?;
+            let mut listener = Listener::bind(&server_name, Identity::current()?)?;
             listener.allowed_clients = vec![server_file];
             ready.send(listener.stop_signal())?;
             let pipe = listener.accept()?;
@@ -497,8 +506,8 @@ mod tests {
     #[test]
     fn first_instance_cannot_be_taken_over() -> Result<()> {
         let name = control_pipe_name(&Id::new_v4().to_string())?;
-        let _first = Listener::bind(&name, Identity::current()?, false)?;
-        assert!(Listener::bind(&name, Identity::current()?, false).is_err());
+        let _first = Listener::bind(&name, Identity::current()?)?;
+        assert!(Listener::bind(&name, Identity::current()?).is_err());
         Ok(())
     }
 }

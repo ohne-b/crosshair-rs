@@ -13,9 +13,7 @@ $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $packageRoot = if ($OutputDirectory) { [IO.Path]::GetFullPath($OutputDirectory) } else { Join-Path $repoRoot 'target/packages' }
 New-Item -ItemType Directory -Force $packageRoot | Out-Null
-$cargo = Get-Content -LiteralPath (Join-Path $repoRoot 'Cargo.toml') -Raw
-$packageSection = [regex]::Match($cargo, '(?ms)^\[workspace\.package\]\s*(.*?)(?=^\[|\z)').Groups[1].Value
-$productVersion = [regex]::Match($packageSection, '(?m)^version\s*=\s*"([^"\r\n]+)"\s*$').Groups[1].Value
+$productVersion = Get-WorkspaceProductVersion $repoRoot
 if ($Publisher -notmatch ', OID\.2\.25\.311729368913984317654407730594956997722=1$') { throw 'The publisher must use the Windows unsigned-package namespace.' }
 $msixVersion = & node (Join-Path $PSScriptRoot 'release.mjs') package-version $productVersion
 if ($LASTEXITCODE) { throw 'The workspace version cannot be mapped to MSIX.' }
@@ -101,7 +99,13 @@ if ($LASTEXITCODE -ne 0) { throw 'Dependency license collection failed; no insta
 [xml]$manifest = Get-Content -LiteralPath (Join-Path $repoRoot 'packaging/windows/AppxManifest.xml') -Raw
 $manifest.Package.Identity.SetAttribute('Publisher', $Publisher)
 $manifest.Package.Identity.SetAttribute('Version', [string]$msixVersion)
-if (!$ReleaseCandidate) { $manifest.Package.Identity.Name += '.Preview' }
+if (!$ReleaseCandidate) {
+    $manifest.Package.Identity.Name += '.Preview'
+    $manifest.Package.Properties.DisplayName = 'crosshair-rs Preview'
+    foreach ($node in $manifest.SelectNodes("//*[@DisplayName='crosshair-rs']")) {
+        $node.SetAttribute('DisplayName', 'crosshair-rs Preview')
+    }
+}
 $sdkReadme = Get-Content -LiteralPath (Join-Path $repoRoot 'target/gamebar/deps/microsoft.gaming.xboxgamebar.7.3.2607010/readme.txt') -Raw
 $proxyXml = [regex]::Match($sdkReadme, '(?s)<Extension Category="windows\.activatableClass\.proxyStub">.*?</Extension>').Value
 if (!$proxyXml) { throw 'Pinned SDK proxy registration is missing.' }

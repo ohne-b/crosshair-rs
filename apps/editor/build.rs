@@ -2,7 +2,7 @@
 mod icon;
 
 fn main() {
-    icon::embed();
+    icon::embed("EDITOR");
     slint_build::compile_with_config(
         "ui/app.slint",
         slint_build::CompilerConfiguration::new().with_style("fluent-dark".into()),

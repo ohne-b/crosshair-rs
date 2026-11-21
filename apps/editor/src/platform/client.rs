@@ -75,6 +75,7 @@ pub enum Event {
     Message(ServerMessage),
     Completed {
         tag: String,
+        revision: u64,
         reply: Reply,
     },
     Failed {
@@ -707,8 +708,14 @@ fn worker(options: Options, jobs: Receiver<Job>, client: Client, events: Events)
         }
         match result {
             Ok(Response {
-                result: Ok(reply), ..
-            }) => notify(Event::Completed { tag, reply }),
+                result: Ok(reply),
+                revision,
+                ..
+            }) => notify(Event::Completed {
+                tag,
+                revision,
+                reply,
+            }),
             Ok(Response {
                 result: Err(error), ..
             }) => notify(Event::Failed {

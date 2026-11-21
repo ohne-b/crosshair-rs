@@ -130,6 +130,7 @@ struct Runtime {
     last_image: Option<(Arc<crosshair_renderer::Raster>, [i32; 2])>,
     capture_timer: bool,
     widget: Option<Widget>,
+    widget_start_error: Option<String>,
     widget_center: bool,
     updates: Updates,
     work: Work,
@@ -183,12 +184,6 @@ pub fn run(options: Options) -> Result<()> {
     let store = Store::open(&root)?;
     let root = store.root().to_path_buf();
     let mut app = App::open(&store, options.restore_visibility || recovery.is_some())?;
-    if options.test_data.is_none() {
-        match lifecycle::read_startup() {
-            Ok(enabled) => app.status.startup_enabled = Some(enabled),
-            Err(error) => eprintln!("Windows startup status could not be read: {error:#}"),
-        }
-    }
     if let Some(recovery) = &recovery {
         app.state.base_visible = recovery.restart.visible;
     }
@@ -256,17 +251,19 @@ pub fn run(options: Options) -> Result<()> {
     let render = render::Worker::start(root.clone(), move |result| {
         render_wake.complete(Event::Render(result))
     })?;
-    let widget = if identity.package.is_some() {
+    let mut widget_start_error = None;
+    app.status.widget.installed = identity.package.is_some();
+    let session = identity.session;
+    let widget = if app.status.widget.installed {
         let widget_wake = wake.clone();
         match Widget::start(identity.clone(), move |status| {
             widget_wake.complete(Event::Widget(status));
         }) {
-            Ok(widget) => {
-                app.status.widget.installed = true;
-                Some(widget)
-            }
+            Ok(widget) => Some(widget),
             Err(error) => {
-                app.status.render_error = Some(format!("Game Bar: {error:#}"));
+                widget_start_error =
+                    Some(format!("Could not open the Game Bar connection: {error:#}"));
+                app.status.render_error.clone_from(&widget_start_error);
                 None
             }
         }
@@ -304,6 +301,7 @@ pub fn run(options: Options) -> Result<()> {
         last_image: None,
         capture_timer: false,
         widget,
+        widget_start_error,
         widget_center: true,
         updates,
         work,
@@ -326,6 +324,14 @@ pub fn run(options: Options) -> Result<()> {
     if recovery.as_ref().is_some_and(|r| r.restart.reopen_editor) {
         runtime.open_editor()?;
     }
+    let mut window_presence = if runtime.app.status.widget.installed {
+        widget::presence::WindowPresence::for_package(session, runtime.window.0).ok()
+    } else {
+        None
+    };
+    runtime.app.status.widget.window_open = window_presence
+        .as_ref()
+        .is_some_and(|watch| watch.is_open());
     runtime.displays();
     runtime.refresh();
     let mut message = MSG::default();
@@ -383,6 +389,19 @@ pub fn run(options: Options) -> Result<()> {
                     }
                 }
                 WM_TIMER => runtime.timer(message.wParam.0),
+                widget::presence::CHANGED => {
+                    if let Some(watch) = &window_presence {
+                        let watching = watch.rearm().is_ok();
+                        let open = watching && watch.is_open();
+                        if runtime.app.status.widget.window_open != open {
+                            runtime.app.status.widget.window_open = open;
+                            runtime.app.changed(None, false);
+                        }
+                        if !watching {
+                            window_presence = None;
+                        }
+                    }
+                }
                 DISPLAYS => {
                     runtime.displays();
                     runtime.refresh();
@@ -433,6 +452,12 @@ pub fn run(options: Options) -> Result<()> {
 }
 
 impl Runtime {
+    fn widget_unavailable(&self) -> &str {
+        self.widget_start_error
+            .as_deref()
+            .unwrap_or("Install the Windows package to use Game Bar")
+    }
+
     fn event(&mut self, event: Event) {
         match event {
             Event::Tray(action) => self.tray_action(action),
@@ -478,11 +503,11 @@ impl Runtime {
                     self.app.broadcast(ServerMessage::CloseCancelled);
                 }
             },
-            Event::Widget(status) => {
+            Event::Widget(mut status) => {
+                status.widget.window_open = self.app.status.widget.window_open;
                 let semantic = self.app.status.widget != status.widget;
                 self.app.status.widget = status.widget.clone();
                 self.widget_status = status;
-                self.acknowledge_widget_blank();
                 if semantic || self.change.is_some() {
                     self.refresh();
                     self.app.changed(None, false);
@@ -597,6 +622,7 @@ impl Runtime {
     }
 
     fn refresh_presentation(&mut self) {
+        self.acknowledge_widget_blank();
         self.stop_animation_timer();
         if self.suspended || self.frozen {
             self.cancel_animation_frame();

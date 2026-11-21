@@ -108,6 +108,7 @@ pub enum Command {
         settings: Settings,
         expected_revision: u64,
     },
+    ReadStartup,
     SetStartup {
         enabled: bool,
     },
@@ -321,12 +322,37 @@ pub struct DisplayInfo {
 #[serde(deny_unknown_fields)]
 pub struct WidgetStatus {
     pub installed: bool,
+    #[serde(default)]
+    pub window_open: bool,
     pub connected: bool,
     pub pinned: bool,
     pub visible: bool,
     pub click_through: bool,
     pub positioned: bool,
     pub dpi: u32,
+}
+
+impl WidgetStatus {
+    pub fn is_open(&self) -> bool {
+        self.window_open || self.connected
+    }
+
+    /// Setup the user can finish before the engine prepares any pixels.
+    pub fn setup_hint(&self) -> Option<&'static str> {
+        if !self.installed {
+            Some("Install the Windows package to use Game Bar")
+        } else if !self.is_open() {
+            Some("Open the crosshair widget in Game Bar and pin it")
+        } else if !self.connected {
+            Some("Press Win+G to check the widget’s pin")
+        } else if !self.pinned {
+            Some("Click the pin in the widget’s title bar")
+        } else if !self.click_through {
+            Some("Enable click-through in the Game Bar toolbar")
+        } else {
+            None
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -403,6 +429,37 @@ pub fn read_frame<T: DeserializeOwned>(reader: &mut impl Read) -> io::Result<T> 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn game_bar_setup_follows_live_prerequisites_before_position_is_known() {
+        let mut widget = WidgetStatus::default();
+        assert_eq!(
+            widget.setup_hint(),
+            Some("Install the Windows package to use Game Bar")
+        );
+        widget.installed = true;
+        assert_eq!(
+            widget.setup_hint(),
+            Some("Open the crosshair widget in Game Bar and pin it")
+        );
+        widget.window_open = true;
+        assert_eq!(
+            widget.setup_hint(),
+            Some("Press Win+G to check the widget’s pin")
+        );
+        widget.connected = true;
+        assert_eq!(
+            widget.setup_hint(),
+            Some("Click the pin in the widget’s title bar")
+        );
+        widget.pinned = true;
+        assert_eq!(
+            widget.setup_hint(),
+            Some("Enable click-through in the Game Bar toolbar")
+        );
+        widget.click_through = true;
+        assert_eq!(widget.setup_hint(), None);
+    }
 
     #[test]
     fn engine_status_keeps_master_enabled_separate_from_effective_visibility() {

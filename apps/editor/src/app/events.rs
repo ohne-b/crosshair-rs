@@ -164,6 +164,13 @@ impl App {
                     }
                 }
                 self.state = state;
+                if self
+                    .output_ack_revision
+                    .is_some_and(|revision| self.state.revision >= revision)
+                {
+                    self.output_ack_revision = None;
+                    store.set_switching_output(false);
+                }
                 if let Some(id) = self.open_after_refresh.take() {
                     self.open_document(id)?;
                 }
@@ -244,8 +251,32 @@ impl App {
                 }
                 ServerMessage::Response(_) => {}
             },
-            Event::Engine(_, client::Event::Completed { tag, reply }) => {
-                if tag == "preview" {
+            Event::Engine(
+                _,
+                client::Event::Completed {
+                    tag,
+                    revision,
+                    reply,
+                },
+            ) => {
+                if tag == "output-mode" {
+                    // The acknowledgment can arrive before the snapshot that updates the selector.
+                    self.output_ack_revision = (self.state.revision < revision).then_some(revision);
+                    self.window()?
+                        .global::<Store>()
+                        .set_switching_output(self.output_ack_revision.is_some());
+                }
+                if tag == "read-startup" {
+                    let ui = self.window()?;
+                    let store = ui.global::<Store>();
+                    if let Reply::Status { status } = reply {
+                        accept_status(&mut self.status, status);
+                        store.set_startup_read(StartupRead::Ready);
+                        self.refresh_status();
+                    } else {
+                        store.set_startup_read(StartupRead::Unavailable);
+                    }
+                } else if tag == "preview" {
                     self.preview_sent = self.preview_inflight.take();
                     self.preview_scale = self.preview_inflight_scale;
                     self.send_document()?;
@@ -374,6 +405,18 @@ impl App {
                     conflict,
                 },
             ) => {
+                if tag == "read-startup" {
+                    self.window()?
+                        .global::<Store>()
+                        .set_startup_read(StartupRead::Unavailable);
+                }
+                if tag == "output-mode"
+                    || tag == "connection"
+                    || (tag == "refresh" && self.output_ack_revision.is_some())
+                {
+                    self.output_ack_revision = None;
+                    self.window()?.global::<Store>().set_switching_output(false);
+                }
                 if tag.starts_with("save-browse:") || tag == "connection" {
                     self.window()?.global::<Store>().set_browse_saving(false);
                 }
@@ -469,10 +512,19 @@ impl App {
                         let _ = self.send("cancel-quit", Command::CancelQuit);
                     }
                 }
-                self.error(message);
+                // Display setup already shows this guidance and updates it as the user pins the widget.
+                if tag != "output-mode" || self.status.widget.setup_hint() != Some(message.as_str())
+                {
+                    self.error(message);
+                }
                 self.refresh_document();
             }
             Event::Engine(_, client::Event::Disconnected(message)) => {
+                self.window()?
+                    .global::<Store>()
+                    .set_startup_read(StartupRead::Unavailable);
+                self.output_ack_revision = None;
+                self.window()?.global::<Store>().set_switching_output(false);
                 self.document.dirty = self.draft_needs_saving();
                 self.save_flushes.clear();
                 self.stop_playback();

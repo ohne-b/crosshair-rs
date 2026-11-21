@@ -2,7 +2,7 @@
 mod icon;
 
 fn main() {
-    icon::embed();
+    icon::embed("ENGINE");
     if std::env::var("TARGET").unwrap().contains("windows-msvc") {
         println!("cargo:rustc-link-arg=/MANIFEST:EMBED");
         println!(

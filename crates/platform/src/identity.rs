@@ -122,7 +122,12 @@ impl Identity {
     }
 }
 
-pub fn control_pipe_name(scope: &str) -> Result<String> {
+pub fn instance_scope(scope: &str) -> Result<String> {
+    let family = unsafe { package_name(GetCurrentProcess(), true)? };
+    qualified_scope(scope, family.as_deref())
+}
+
+fn qualified_scope(scope: &str, family: Option<&str>) -> Result<String> {
     ensure!(
         !scope.is_empty()
             && scope.len() <= 64
@@ -131,6 +136,14 @@ pub fn control_pipe_name(scope: &str) -> Result<String> {
                 .all(|c| c.is_ascii_alphanumeric() || c == b'-'),
         "Invalid IPC scope"
     );
+    Ok(match family {
+        Some(family) => format!("{scope}.{family}"),
+        None => scope.to_owned(),
+    })
+}
+
+pub fn control_pipe_name(scope: &str) -> Result<String> {
+    let scope = instance_scope(scope)?;
     let mut session = 0;
     unsafe {
         ProcessIdToSessionId(GetCurrentProcessId(), &mut session)?;
@@ -212,6 +225,17 @@ unsafe fn package_name(process: HANDLE, family: bool) -> Result<Option<String>> 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn installed_channels_and_source_builds_can_run_side_by_side() -> Result<()> {
+        let stable = qualified_scope("app", Some("Crosshair.Example_publisher"))?;
+        let preview = qualified_scope("app", Some("Crosshair.Example.Preview_publisher"))?;
+        assert_ne!(stable, preview);
+        assert_ne!(stable, qualified_scope("app", None)?);
+        assert_eq!(qualified_scope("app", None)?, "app");
+        assert!(qualified_scope("app.Crosshair.Example_publisher", None).is_err());
+        Ok(())
+    }
 
     #[test]
     fn rejects_other_session_package_and_executable() -> Result<()> {

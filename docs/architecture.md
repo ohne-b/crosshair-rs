@@ -704,10 +704,20 @@ with bounded backoff only while requested/pinned, without fabricated activity to
 defeat UWP lifecycle. Report disconnected/unpinned status. Editor close never
 closes the widget. Desktop mode remains usable without Game Bar.
 
+Setup tracks the widget window independently of its drawing connection. The
+widget holds a delete-on-close file in its package's temporary folder for the
+life of the window, including when Win+G hides it. Closing the final Game Bar
+view can suspend the widget instead of sending a window-close event. Both paths
+release the file and exit the widget process. The engine watches directory
+changes and checks the session-specific file's sharing lock. Only authenticated
+widget frames can establish pin, click-through and presentation readiness.
+
 Output changes use a bounded native-owner transition. A hidden preparation frame
 and a visible activation frame have different generations; acknowledgments must
 match both generation and actual bitmap state. Shell visibility alone is not an
-acknowledgment. Prepare the desktop bitmap while hidden before requesting a widget
+acknowledgment. A signaled handle to the last authenticated widget process also
+proves its window is gone when returning to Desktop. A disconnected pipe alone
+cannot establish that its pixels have cleared. Prepare the desktop bitmap while hidden before requesting a widget
 blank. Settings, all-data import and reset/recovery use the same boundary, and
 durable publication stays on the storage worker. Continue observing global input
 while work runs; changes made during the operation survive its publication.
@@ -779,10 +789,10 @@ newest results to its event loop.
 Desktop pipe: current-user logon-session ACL, remote rejection, authenticated
 peer identity. Names include user/session but are not the security boundary.
 Prevent first-instance squatting; verify expected packaged executable identity.
-Handshake verifies build/protocol before accepting commands. Control protocol v8
-includes profile action configuration in atomic SetBindings commands, capture
-tokens and independently ordered engine status. Connection epochs are
-checked when queued events reach the editor, so a retired connection cannot change
+Handshake verifies build/protocol before accepting commands. Control protocol v9
+includes an on-demand startup-state read, profile action configuration in atomic
+SetBindings commands, capture tokens and independently ordered engine status.
+Connection epochs are checked when queued events reach the editor, so a retired connection cannot change
 the current UI. Both executables must be rebuilt together.
 
 Length-prefixed UTF-8 JSON, 1 MiB control frames, incomplete-frame deadlines and
@@ -875,9 +885,11 @@ DisabledByUser. Activation uses stable app IDs, not versioned WindowsApps paths.
 When launched by the editor or Game Bar with a different application ID, the
 packaged engine activates its own `Engine` ID before opening storage or IPC so
 Windows can resolve its startup task.
-Settings/recovery publication captures the actual Windows startup state, verifies
-the requested state and compensates if reconciliation or durable publication
-fails. No WinRT startup wait runs on the input thread.
+Opening General settings reads the current Windows sign-in setting on the
+storage worker. Engine launch, editor connection and display changes leave the
+startup task alone. An explicit startup toggle, an import that changes startup,
+or recovery verifies the Windows setting and restores its previous value if
+reconciliation or durable publication fails.
 The settings switch uses queried Windows state, including changes made outside
 the app; an unknown state is shown as unavailable. A dedicated startup command
 always reconciles the requested Windows state, even when the saved preference
@@ -1044,7 +1056,9 @@ executables are package-root siblings.
 Taskbar logos use transparent target-size PNGs rendered from `assets/logo.svg`
 at 16, 24, 32, 48 and 256 pixels, including unplated light/dark variants. Packaging
 builds `resources.pri` with the Windows SDK so the shell resolves those variants.
-Installer checks verify the index, packaged files and transparent backgrounds.
+The editor, engine and Game Bar executables embed the same target-size artwork
+and identify their roles in their Windows file descriptions. Installer checks
+verify these resources, the package index and transparent backgrounds.
 
 `scripts/package-windows.ps1` validates a real build and bundles an offline
 `Microsoft.VCLibs.140.00` x64 **14.0.33519.0** dependency inside the setup EXE. The
@@ -1068,7 +1082,9 @@ metadata. `A.B.C-alpha.N`, `-beta.N` and `-rc.N` map to fourth components `N`,
 `20000+N` and `40000+N`, with `0 <= N < 20000`. Stable `A.B.C` maps to
 `A.B.C.65535`; each version component fits 16 bits. This preserves SemVer order.
 Release prereleases share the production identity; local development packages use
-`OhneB.crosshair-rs.Preview` with updates disabled. Like TDM, the updater consumes
+`OhneB.crosshair-rs.Preview` with updates disabled. The editor instance and engine
+control pipe use the package family so each installation opens its own editor and
+widget. Unpackaged development keeps its own control pipe. Like TDM, the updater consumes
 stable Latest by default, with optional prerelease discovery using versioned
 `latest.json` assets. Prereleases never advance Latest.
 `0.1.0-alpha.0` is the unreleased development baseline.

@@ -39,7 +39,7 @@ impl Runtime {
             }
             _ => {}
         }
-        if revision != self.app.state.revision && !matches!(pending.after, After::Commit) {
+        if revision != self.app.state.revision && !matches!(pending.after, After::Commit { .. }) {
             self.app.dirty();
         }
         if !matches!(pending.after, After::Preview { .. }) {
@@ -73,9 +73,9 @@ impl Runtime {
                         }
                     }
                     After::Restore => self.frozen = false,
-                    After::Commit => {
+                    After::Commit { reconcile_startup } => {
                         self.cancel_change(&format!("{error:#}"), false);
-                        if self.options.test_data.is_none()
+                        if reconcile_startup
                             && self
                                 .queue(
                                     Job::ReadStartup,
@@ -98,6 +98,9 @@ impl Runtime {
         match reply {
             WorkReply::Startup { enabled } => {
                 self.app.status.startup_enabled = Some(enabled);
+                return Ok(Some(Reply::Status {
+                    status: self.app.status(),
+                }));
             }
             WorkReply::Saved {
                 revision,
@@ -249,17 +252,15 @@ impl Runtime {
                 return Ok(None);
             }
             WorkReply::Committed { state } => {
-                self.finish_change(*state)?;
-                if self.options.test_data.is_none()
-                    && self
-                        .queue(
-                            Job::ReadStartup,
-                            Pending::internal(After::ReadStartup, self.app.state.revision),
-                        )
-                        .is_err()
-                {
-                    self.app.status.startup_enabled = None;
+                if matches!(
+                    pending.after,
+                    After::Commit {
+                        reconcile_startup: true
+                    }
+                ) {
+                    self.app.status.startup_enabled = Some(state.settings.launch_at_login);
                 }
+                self.finish_change(*state)?;
             }
             WorkReply::Stopped => self.stopped = true,
             WorkReply::Discarded { removed: _removed } => {}

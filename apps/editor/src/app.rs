@@ -12,7 +12,7 @@ mod prompts;
 mod view;
 
 use crate::{
-    AppWindow, Store,
+    AppWindow, StartupRead, Store,
     features::designer::{Document, Field},
     platform::{
         client::{self, Client, Options},
@@ -244,6 +244,7 @@ pub(crate) struct App {
     close_flush_pending: bool,
     recovery_shown: bool,
     connection_epoch: u64,
+    output_ack_revision: Option<u64>,
     install_requested: bool,
     shutdown_requested: Option<bool>,
     preview_pending: bool,
@@ -252,9 +253,9 @@ pub(crate) struct App {
 
 pub fn run() -> Result<()> {
     let options = Options::parse()?;
-    let scope = options.scope.clone();
-    let Some(_instance) = frame::Instance::acquire(&options.scope)
-        .context("Could not initialize the editor instance")?
+    let scope = crosshair_platform::identity::instance_scope(&options.scope)?;
+    let Some(_instance) =
+        frame::Instance::acquire(&scope).context("Could not initialize the editor instance")?
     else {
         return Ok(());
     };
@@ -346,6 +347,7 @@ pub fn run() -> Result<()> {
         close_flush_pending: false,
         recovery_shown: false,
         connection_epoch: 0,
+        output_ack_revision: None,
         install_requested: false,
         shutdown_requested: None,
         preview_pending: false,

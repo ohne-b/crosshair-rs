@@ -81,7 +81,7 @@ impl Server {
             thread::Builder::new()
                 .name("control listener".into())
                 .spawn(move || {
-                    let mut listener = match Listener::bind(&name, identity, false) {
+                    let mut listener = match Listener::bind(&name, identity) {
                         Ok(listener) => listener,
                         Err(error) => {
                             let _ = started.send(Err(error));

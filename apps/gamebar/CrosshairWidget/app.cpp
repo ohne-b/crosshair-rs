@@ -40,8 +40,8 @@ using namespace Microsoft::Gaming::XboxGameBar;
 namespace crosshair {
 struct App : ApplicationT<App> {
     App() {
-        Suspending([this](auto const&, auto const&) { if (pipe_) pipe_->stop(); blank(); });
-        Resuming([this](auto const&, auto const&) { if (widget_) update_state(); });
+        // Game Bar keeps an open widget active. Closing its last view can send only Suspending.
+        Suspending([this](auto const&, auto const&) { if (widget_) close_widget(); });
         UnhandledException([this](auto const&, UnhandledExceptionEventArgs const& event) {
             shutdown();
             OutputDebugStringW(event.Message().c_str());
@@ -77,13 +77,25 @@ struct App : ApplicationT<App> {
         widget_.MaxWindowSize({4096, 4096});
 
         auto weak = get_weak();
-        widget_.PinnedChanged([weak](auto const&, auto const&) { if (auto self = weak.get()) self->update_state(); });
-        widget_.VisibleChanged([weak](auto const&, auto const&) { if (auto self = weak.get()) self->update_state(); });
-        widget_.ClickThroughEnabledChanged([weak](auto const&, auto const&) { if (auto self = weak.get()) self->report(); });
-        widget_.RequestedOpacityChanged([weak](auto const&, auto const&) { if (auto self = weak.get()) { self->image_.Opacity(self->widget_.RequestedOpacity() / 100.0); self->report(); } });
-        widget_.WindowBoundsChanged([weak](auto const&, auto const&) { if (auto self = weak.get()) self->reposition(); });
+        // Game Bar can raise these events off the XAML thread.
+        auto on_ui = [weak, dispatcher = dispatcher_](auto action) {
+            return [weak, dispatcher, action](auto const&, auto const&) {
+                dispatcher.RunAsync(CoreDispatcherPriority::Normal, [weak, action] {
+                    if (auto self = weak.get(); self && self->widget_) action(self);
+                });
+            };
+        };
+        auto update = on_ui([](auto const& self) { self->update_state(); });
+        widget_.PinnedChanged(update);
+        widget_.VisibleChanged(update);
+        widget_.ClickThroughEnabledChanged(on_ui([](auto const& self) { self->report(); }));
+        widget_.RequestedOpacityChanged(on_ui([](auto const& self) {
+            self->image_.Opacity(self->widget_.RequestedOpacity());
+            self->report();
+        }));
+        widget_.WindowBoundsChanged(on_ui([](auto const& self) { self->reposition(); }));
         window_.SizeChanged([weak](auto const&, auto const&) { if (auto self = weak.get()) self->reposition(); });
-        window_.Closed([weak](auto const&, auto const&) { if (auto self = weak.get()) { self->shutdown(); self->Exit(); } });
+        window_.Closed([weak](auto const&, auto const&) { if (auto self = weak.get()) self->close_widget(); });
         display_ = DisplayInformation::GetForCurrentView();
         display_.DpiChanged([weak](auto const&, auto const&) { if (auto self = weak.get()) self->reposition(); });
 
@@ -117,6 +129,19 @@ struct App : ApplicationT<App> {
                 } catch (...) {}
             });
         window_.Activate();
+        // Hiding Game Bar stops the drawing pipe but leaves the widget open.
+        try {
+            auto folder = winrt::Windows::Storage::ApplicationData::Current().TemporaryFolder().Path();
+            std::wstring path = folder.c_str();
+            path += L"\\crosshair-widget-" + std::to_wstring(session) + L".open";
+            CREATEFILE2_EXTENDED_PARAMETERS params{sizeof(CREATEFILE2_EXTENDED_PARAMETERS)};
+            params.dwFileAttributes = FILE_ATTRIBUTE_TEMPORARY;
+            params.dwFileFlags = FILE_FLAG_DELETE_ON_CLOSE;
+            // A hard reboot can leave a stale, unlocked marker. A live owner denies deletion.
+            DeleteFileW(path.c_str());
+            window_marker_.attach(CreateFile2(path.c_str(), DELETE, 0, CREATE_NEW, &params));
+            if (!window_marker_) throw_last_error();
+        } catch (hresult_error const& error) { OutputDebugStringW(error.message().c_str()); }
         report(); update_state(); start_engine();
     }
 
@@ -144,7 +169,13 @@ private:
         report();
     }
 
+    void close_widget() {
+        shutdown();
+        Exit();
+    }
+
     void shutdown() {
+        window_marker_.close();
         if (pipe_) pipe_->stop();
         blank();
         widget_ = nullptr;
@@ -223,7 +254,7 @@ private:
                     std::lock_guard lock(pending_mutex_);
                     if (!valid_locked(*next)) continue;
                     image_.Source(bitmap);
-                    image_.Opacity(widget_.RequestedOpacity() / 100.0);
+                    image_.Opacity(widget_.RequestedOpacity());
                     current_ = h; status_.generation = h.generation; presentation_epoch_ = next->connection;
                 }
                 reposition();
@@ -302,6 +333,7 @@ private:
 
     Window window_{nullptr}; Frame frame_{nullptr}; Canvas canvas_{nullptr}; Image image_{nullptr};
     DisplayInformation display_{nullptr}; XboxGameBarWidget widget_{nullptr}; CoreDispatcher dispatcher_{nullptr};
+    winrt::file_handle window_marker_;
     std::unique_ptr<Pipe> pipe_;
     wire::Status status_{};
     std::optional<wire::Header> current_;
@@ -316,7 +348,8 @@ private:
 
 int __stdcall wWinMain(HINSTANCE, HINSTANCE, PWSTR, int) {
     try {
-        winrt::init_apartment(winrt::apartment_type::single_threaded);
+        // UWP XAML starts on an MTA and creates its own UI thread.
+        winrt::init_apartment(winrt::apartment_type::multi_threaded);
         Application::Start([](auto const&) { winrt::make<crosshair::App>(); });
         return 0;
     } catch (winrt::hresult_error const& error) {
