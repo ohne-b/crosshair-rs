@@ -316,7 +316,8 @@ private:
 
 int __stdcall wWinMain(HINSTANCE, HINSTANCE, PWSTR, int) {
     try {
-        winrt::init_apartment(winrt::apartment_type::single_threaded);
+        // UWP XAML starts on an MTA and creates its own UI thread.
+        winrt::init_apartment(winrt::apartment_type::multi_threaded);
         Application::Start([](auto const&) { winrt::make<crosshair::App>(); });
         return 0;
     } catch (winrt::hresult_error const& error) {
