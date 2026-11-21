@@ -24,7 +24,7 @@ fn window() -> AppWindow {
     ui
 }
 
-fn app(ui: &AppWindow) -> App {
+pub(super) fn app(ui: &AppWindow) -> App {
     App {
         ui: ui.as_weak(),
         client: Client::disconnected_for_test(),
@@ -46,6 +46,7 @@ fn app(ui: &AppWindow) -> App {
         thumbnails: BTreeMap::new(),
         palette: Vec::new(),
         browse: Vec::new(),
+        browse_save_feedback_timer: slint::Timer::default(),
         bounds: Vec::new(),
         inverses: BTreeMap::new(),
         anchors: BTreeMap::new(),

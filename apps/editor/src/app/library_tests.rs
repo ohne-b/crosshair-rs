@@ -229,14 +229,21 @@ fn header_crosshair_stays_centered_when_source_size_changes() -> Result<()> {
 
 #[test]
 fn library_tabs_sort_picker_and_browse_actions_are_independent() -> Result<()> {
-    struct Headless(Rc<MinimalSoftwareWindow>);
+    use std::{cell::Cell, time::Duration};
+
+    struct Headless(Rc<MinimalSoftwareWindow>, Rc<Cell<Duration>>);
     impl Platform for Headless {
         fn create_window_adapter(&self) -> Result<Rc<dyn WindowAdapter>, slint::PlatformError> {
             Ok(self.0.clone())
         }
+
+        fn duration_since_start(&self) -> Duration {
+            self.1.get()
+        }
     }
     let window = MinimalSoftwareWindow::new(RepaintBufferType::NewBuffer);
-    slint::platform::set_platform(Box::new(Headless(window.clone())))?;
+    let clock = Rc::new(Cell::new(Duration::ZERO));
+    slint::platform::set_platform(Box::new(Headless(window.clone(), clock.clone())))?;
     let ui = AppWindow::new()?;
     ui.window().set_size(slint::LogicalSize::new(1280.0, 800.0));
     let store = ui.global::<Store>();
@@ -375,6 +382,63 @@ fn library_tabs_sort_picker_and_browse_actions_are_independent() -> Result<()> {
         *events.borrow(),
         [("save-browse".into(), rows[0].id.to_string())]
     );
+    let mut app = super::gesture_tests::app(&ui);
+    let (client, commands) = Client::recording_for_test();
+    app.client = client;
+    app.browse = crate::features::browse::presets();
+    let id = rows[0].id.as_str();
+    let tag = format!("save-browse:{id}");
+    app.action("save-browse", id)?;
+    assert!(
+        matches!(&commands()[..], [Command::AddPreset { preset }] if preset.id.to_string() == id)
+    );
+    assert!(store.get_browse_saving());
+    assert!(store.get_browse_saved().is_empty());
+    app.event(Event::Engine(
+        0,
+        client::Event::Failed {
+            tag: tag.clone(),
+            message: "Save failed".into(),
+            conflict: false,
+        },
+    ))?;
+    assert!(!store.get_browse_saving());
+    assert!(store.get_browse_saved().is_empty());
+    store.set_error("".into());
+
+    app.action("save-browse", id)?;
+    app.event(Event::Engine(
+        0,
+        client::Event::Completed {
+            tag,
+            reply: Reply::Created { id: Id::new_v4() },
+        },
+    ))?;
+    assert_eq!(store.get_browse_saved(), id);
+    assert!(!store.get_browse_saving());
+    events.borrow_mut().clear();
+    click(&ui, 277.0, 213.0);
+    assert!(
+        events.borrow().is_empty(),
+        "The checkmark only confirms the save"
+    );
+
+    let position = slint::LogicalPosition::new(277.0, 213.0);
+    let button = slint::platform::PointerEventButton::Left;
+    ui.window()
+        .dispatch_event(WindowEvent::PointerPressed { position, button });
+    clock.set(Duration::from_millis(1500));
+    slint::platform::update_timers_and_animations();
+    assert!(store.get_browse_saved().is_empty());
+    ui.window()
+        .dispatch_event(WindowEvent::PointerReleased { position, button });
+    assert!(
+        events.borrow().is_empty(),
+        "A click that began on the checkmark must not save"
+    );
+
+    click(&ui, 277.0, 213.0);
+    assert_eq!(*events.borrow(), [("save-browse".into(), id.into())]);
     snapshot(&window, "browse.png")?;
     click(&ui, 220.0, 80.0);
     assert!(!store.get_browsing());

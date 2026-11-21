@@ -215,7 +215,7 @@ impl App {
             "library-tab" => {
                 store.set_browsing(value == "browse");
                 store.set_search("".into());
-                store.set_library_notice("".into());
+                store.set_browse_saved("".into());
                 store.set_dragged_preset("".into());
                 store.set_preset_drop_index(-1);
                 self.refresh_library();
@@ -226,19 +226,21 @@ impl App {
                     "A crosshair is already being saved"
                 );
                 let id: Id = value.parse()?;
+                if store.get_browse_saved() == value {
+                    return Ok(());
+                }
                 let preset = self
                     .browse
                     .iter()
                     .find(|p| p.id == id)
                     .context("Unknown built-in crosshair")?;
                 self.send(
-                    "save-browse",
+                    &format!("save-browse:{id}"),
                     Command::AddPreset {
                         preset: preset.clone(),
                     },
                 )?;
                 store.set_browse_saving(true);
-                store.set_library_notice("".into());
             }
             "search" => {
                 store.set_search(value.into());
