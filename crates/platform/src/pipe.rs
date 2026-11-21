@@ -35,8 +35,8 @@ use windows::{
                 PIPE_REJECT_REMOTE_CLIENTS, PIPE_TYPE_BYTE, PIPE_WAIT,
             },
             Threading::{
-                CreateEventW, INFINITE, ResetEvent, SetEvent, WaitForMultipleObjects,
-                WaitForSingleObject,
+                CreateEventW, INFINITE, OpenProcess, PROCESS_SYNCHRONIZE, ResetEvent, SetEvent,
+                WaitForMultipleObjects, WaitForSingleObject,
             },
         },
     },
@@ -137,6 +137,14 @@ impl Pipe {
             GetNamedPipeServerProcessId(self.raw(), &mut pid)?;
         }
         Identity::process(pid)
+    }
+
+    pub fn client_exit_handle(&self) -> Result<OwnedHandle> {
+        let mut pid = 0;
+        unsafe {
+            GetNamedPipeClientProcessId(self.raw(), &mut pid)?;
+            Ok(owned(OpenProcess(PROCESS_SYNCHRONIZE, false, pid)?))
+        }
     }
 
     pub fn raw(&self) -> HANDLE {

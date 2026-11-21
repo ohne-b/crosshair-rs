@@ -693,7 +693,9 @@ closes the widget. Desktop mode remains usable without Game Bar.
 Output changes use a bounded native-owner transition. A hidden preparation frame
 and a visible activation frame have different generations; acknowledgments must
 match both generation and actual bitmap state. Shell visibility alone is not an
-acknowledgment. Prepare the desktop bitmap while hidden before requesting a widget
+acknowledgment. A signaled handle to the last authenticated widget process also
+proves its window is gone when returning to Desktop. A disconnected pipe alone
+cannot establish that its pixels have cleared. Prepare the desktop bitmap while hidden before requesting a widget
 blank. Settings, all-data import and reset/recovery use the same boundary, and
 durable publication stays on the storage worker. Continue observing global input
 while work runs; changes made during the operation survive its publication.

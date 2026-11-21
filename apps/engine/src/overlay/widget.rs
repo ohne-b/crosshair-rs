@@ -1,4 +1,5 @@
 use std::{
+    os::windows::io::OwnedHandle,
     sync::{
         Arc, Condvar, Mutex,
         atomic::{AtomicBool, Ordering},
@@ -11,10 +12,28 @@ use std::{
 use anyhow::{Result, ensure};
 use crosshair_core::protocol::WidgetStatus;
 use crosshair_platform::{
-    identity::Identity,
+    identity::{Identity, raw},
     pipe::{Listener, Pipe, StopSignal},
 };
 use crosshair_renderer::Raster;
+use windows::Win32::{Foundation::WAIT_OBJECT_0, System::Threading::WaitForSingleObject};
+
+enum LastHost {
+    NeverConnected,
+    Observed(Option<OwnedHandle>),
+}
+
+impl LastHost {
+    fn gone(&self) -> bool {
+        match self {
+            Self::NeverConnected => true,
+            Self::Observed(Some(process)) => unsafe {
+                WaitForSingleObject(raw(process), 0) == WAIT_OBJECT_0
+            },
+            Self::Observed(None) => false,
+        }
+    }
+}
 
 #[derive(Clone)]
 struct Frame {
@@ -39,7 +58,7 @@ struct Shared {
     changed: Condvar,
     stopped: AtomicBool,
     connected: AtomicBool,
-    ever_connected: AtomicBool,
+    last_host: Mutex<LastHost>,
     pipe: Mutex<Option<Pipe>>,
 }
 
@@ -70,7 +89,7 @@ impl Widget {
             changed: Condvar::new(),
             stopped: AtomicBool::new(false),
             connected: AtomicBool::new(false),
-            ever_connected: AtomicBool::new(false),
+            last_host: Mutex::new(LastHost::NeverConnected),
             pipe: Mutex::new(None),
         });
         let (started, ready) = mpsc::sync_channel(1);
@@ -96,7 +115,8 @@ impl Widget {
                     };
                     *thread_shared.pipe.lock().unwrap() = Some(pipe.clone());
                     thread_shared.connected.store(true, Ordering::Release);
-                    thread_shared.ever_connected.store(true, Ordering::Release);
+                    *thread_shared.last_host.lock().unwrap() =
+                        LastHost::Observed(pipe.client_exit_handle().ok());
                     let reading = pipe.clone();
                     let callback = notify.clone();
                     let disconnected = Arc::new(AtomicBool::new(false));
@@ -237,8 +257,8 @@ impl Widget {
         }
     }
 
-    pub fn ever_connected(&self) -> bool {
-        self.shared.ever_connected.load(Ordering::Acquire)
+    pub fn host_gone(&self) -> bool {
+        self.shared.last_host.lock().unwrap().gone()
     }
 }
 
@@ -328,6 +348,35 @@ fn decode_status(bytes: &[u8; 64], session: u32) -> Result<Status> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn desktop_recovery_requires_proof_the_last_host_exited() -> Result<()> {
+        use std::os::windows::process::CommandExt;
+        use std::process::{Command, Stdio};
+
+        assert!(LastHost::NeverConnected.gone());
+        assert!(!LastHost::Observed(None).gone());
+        let current = unsafe {
+            use windows::Win32::System::Threading::{
+                GetCurrentProcessId, OpenProcess, PROCESS_SYNCHRONIZE,
+            };
+            crosshair_platform::identity::owned(OpenProcess(
+                PROCESS_SYNCHRONIZE,
+                false,
+                GetCurrentProcessId(),
+            )?)
+        };
+        assert!(!LastHost::Observed(Some(current)).gone());
+        let mut child = Command::new(std::env::current_exe()?)
+            .arg("--list")
+            .creation_flags(0x0800_0000)
+            .stdout(Stdio::null())
+            .spawn()?;
+        let process = std::os::windows::io::AsHandle::as_handle(&child).try_clone_to_owned()?;
+        child.wait()?;
+        assert!(LastHost::Observed(Some(process)).gone());
+        Ok(())
+    }
+
     #[test]
     fn frame_preserves_asymmetric_origin_and_negative_monitor_position() {
         let frame = Frame {

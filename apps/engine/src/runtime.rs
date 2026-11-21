@@ -491,7 +491,6 @@ impl Runtime {
                 let semantic = self.app.status.widget != status.widget;
                 self.app.status.widget = status.widget.clone();
                 self.widget_status = status;
-                self.acknowledge_widget_blank();
                 if semantic || self.change.is_some() {
                     self.refresh();
                     self.app.changed(None, false);
@@ -606,6 +605,7 @@ impl Runtime {
     }
 
     fn refresh_presentation(&mut self) {
+        self.acknowledge_widget_blank();
         self.stop_animation_timer();
         if self.suspended || self.frozen {
             self.cancel_animation_frame();
