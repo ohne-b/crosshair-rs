@@ -41,13 +41,11 @@ Var FailureCode
 Function .onInit
     StrCpy $FailureCode 1
     StrCpy $Mode "install"
-    StrCpy $DesktopShortcut 1
-    StrCpy $StartMenuShortcut 1
-    StrCpy $Startup 0
-    StrCpy $ApplyOptions 1
-    IfSilent 0 +4
     StrCpy $DesktopShortcut "keep"
     StrCpy $StartMenuShortcut "keep"
+    StrCpy $Startup 0
+    StrCpy $ApplyOptions 1
+    IfSilent 0 +2
     StrCpy $ApplyOptions 0
     ${GetParameters} $0
     ClearErrors
@@ -107,6 +105,27 @@ FunctionEnd
 
 Function OptionsPage
     !insertmacro MUI_HEADER_TEXT "Options" "Choose shortcuts and startup options."
+    ${If} $DesktopShortcut == "keep"
+    ${OrIf} $StartMenuShortcut == "keep"
+        InitPluginsDir
+        SetOutPath "$PLUGINSDIR"
+        File /oname=install.exe "${INSTALL_HELPER}"
+        SetOutPath "$WINDIR\System32"
+        nsExec::ExecToStack '"$PLUGINSDIR\install.exe" --shortcut-defaults'
+        Pop $0
+        Pop $1
+        ${If} $0 == 0
+        ${OrIf} $0 == 1
+        ${OrIf} $0 == 2
+        ${OrIf} $0 == 3
+            ${If} $DesktopShortcut == "keep"
+                IntOp $DesktopShortcut $0 & 1
+            ${EndIf}
+            ${If} $StartMenuShortcut == "keep"
+                IntOp $StartMenuShortcut $0 >> 1
+            ${EndIf}
+        ${EndIf}
+    ${EndIf}
     nsDialogs::Create 1018
     Pop $0
     ${If} $0 == error
@@ -114,10 +133,14 @@ Function OptionsPage
     ${EndIf}
     ${NSD_CreateCheckbox} 0 8u 100% 12u "Create a desktop shortcut"
     Pop $DesktopControl
-    ${NSD_SetState} $DesktopControl $DesktopShortcut
+    ${If} $DesktopShortcut != "keep"
+        ${NSD_SetState} $DesktopControl $DesktopShortcut
+    ${EndIf}
     ${NSD_CreateCheckbox} 0 30u 100% 12u "Create an additional Start menu shortcut"
     Pop $StartMenuControl
-    ${NSD_SetState} $StartMenuControl $StartMenuShortcut
+    ${If} $StartMenuShortcut != "keep"
+        ${NSD_SetState} $StartMenuControl $StartMenuShortcut
+    ${EndIf}
     ${NSD_CreateCheckbox} 0 52u 100% 12u "Enable launch at Windows sign-in"
     Pop $StartupControl
     ${NSD_SetState} $StartupControl $Startup
@@ -125,8 +148,16 @@ Function OptionsPage
 FunctionEnd
 
 Function OptionsLeave
-    ${NSD_GetState} $DesktopControl $DesktopShortcut
-    ${NSD_GetState} $StartMenuControl $StartMenuShortcut
+    ${NSD_GetState} $DesktopControl $0
+    ${If} $DesktopShortcut != "keep"
+    ${OrIf} $0 == 1
+        StrCpy $DesktopShortcut $0
+    ${EndIf}
+    ${NSD_GetState} $StartMenuControl $0
+    ${If} $StartMenuShortcut != "keep"
+    ${OrIf} $0 == 1
+        StrCpy $StartMenuShortcut $0
+    ${EndIf}
     ${NSD_GetState} $StartupControl $Startup
 FunctionEnd
 

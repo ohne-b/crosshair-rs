@@ -1,4 +1,5 @@
 #include <windows.h>
+#include <string_view>
 #include <shellapi.h>
 #include <shlobj.h>
 #include <shlwapi.h>
@@ -196,20 +197,45 @@ void enable_startup(Windows::ApplicationModel::Package const& package) {
     }
 }
 
-void shortcut(REFKNOWNFOLDERID folder, std::wstring const& name, std::wstring const& app, bool enabled) {
+fs::path shortcut_path(REFKNOWNFOLDERID folder, std::wstring const& name) {
     PWSTR raw{};
     check_hresult(SHGetKnownFolderPath(folder, 0, nullptr, &raw));
     fs::path path = fs::path(raw) / (name + L".lnk");
     CoTaskMemFree(raw);
+    return path;
+}
+
+bool owns_shortcut(fs::path const& path, std::wstring const& app) {
+    auto existing = create_instance<IShellLinkW>(CLSID_ShellLink);
+    if (FAILED(existing.as<IPersistFile>()->Load(path.c_str(), STGM_READ))) return false;
+    PROPVARIANT identity{};
+    auto status = existing.as<IPropertyStore>()->GetValue(PKEY_AppUserModel_ID, &identity);
+    auto owned = SUCCEEDED(status) && identity.vt == VT_LPWSTR && identity.pwszVal && app == identity.pwszVal;
+    PropVariantClear(&identity);
+    return owned;
+}
+
+std::wstring shortcut_name() {
+    return std::wstring_view(payload_name).ends_with(L".Preview") ? L"crosshair-rs Preview" : L"crosshair-rs";
+}
+
+int shortcut_defaults() {
+    PackageManager manager;
+    auto packages = manager.FindPackagesForUser(L"", payload_name, payload_publisher);
+    auto current = packages.First();
+    auto name = shortcut_name();
+    auto checked = [&](REFKNOWNFOLDERID folder) {
+        auto path = shortcut_path(folder, name);
+        if (!fs::exists(path)) return !current.HasCurrent();
+        return current.HasCurrent() && owns_shortcut(path, std::wstring(current.Current().Id().FamilyName()) + L"!Editor");
+    };
+    return (checked(FOLDERID_Desktop) ? 1 : 0) | (checked(FOLDERID_Programs) ? 2 : 0);
+}
+
+void shortcut(REFKNOWNFOLDERID folder, std::wstring const& name, std::wstring const& app, bool enabled) {
+    auto path = shortcut_path(folder, name);
     if (fs::exists(path)) {
-        auto existing = create_instance<IShellLinkW>(CLSID_ShellLink);
-        check_hresult(existing.as<IPersistFile>()->Load(path.c_str(), STGM_READ));
-        PROPVARIANT identity{};
-        auto status = existing.as<IPropertyStore>()->GetValue(PKEY_AppUserModel_ID, &identity);
-        auto owned = SUCCEEDED(status) && identity.vt == VT_LPWSTR && identity.pwszVal && app == identity.pwszVal;
-        PropVariantClear(&identity);
-        check_hresult(status);
-        if (!owned) {
+        if (!owns_shortcut(path, app)) {
             if (enabled) throw hresult_error(E_FAIL, L"A different shortcut already uses the crosshair-rs name.");
             return;
         }
@@ -249,6 +275,10 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int) {
         if (!argv) throw_last_error();
         std::vector<std::wstring> args(argv, argv + argc);
         LocalFree(argv);
+        if (args.size() == 2 && args[1] == L"--shortcut-defaults") {
+            quiet = true;
+            return shortcut_defaults();
+        }
         auto verify_only = args.size() == 2 && args[1] == L"--verify";
         quiet = verify_only || (args.size() > 1 && args[1].ends_with(L"-silent"));
         auto elevated = args.size() == 3 && (args[1] == L"--elevated" || args[1] == L"--elevated-silent");
@@ -277,7 +307,7 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int) {
             auto startup = option(args[4]);
             // An unchecked option must not disable an existing sign-in preference on upgrade.
             if (startup) enable_startup(package_info);
-            std::wstring name = package_info.Id().Name() == L"OhneB.crosshair-rs.Preview" ? L"crosshair-rs Preview" : L"crosshair-rs";
+            auto name = shortcut_name();
             if (args[2] != L"keep") shortcut(FOLDERID_Desktop, name, app, option(args[2]));
             if (args[3] != L"keep") shortcut(FOLDERID_Programs, name, app, option(args[3]));
             return 0;

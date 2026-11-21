@@ -44,6 +44,14 @@ $shortcutName = if ($identity.Name.EndsWith('.Preview')) { 'crosshair-rs Preview
 $shortcuts = @([Environment]::GetFolderPath('DesktopDirectory'), [Environment]::GetFolderPath('Programs')) | ForEach-Object { Join-Path $_ $shortcutName }
 foreach ($shortcut in $shortcuts) { if (Test-Path -LiteralPath $shortcut) { throw 'A shortcut already exists; refusing to replace it.' } }
 $setup = (Resolve-Path -LiteralPath (Join-Path $ArtifactDirectory $build.setup)).Path
+$helpers = @(Get-ChildItem -LiteralPath $ArtifactDirectory -Directory -Filter 'setup-*' | ForEach-Object { Join-Path $_.FullName 'install.exe' })
+if ($helpers.Count -ne 1) { throw 'Expected one native helper from the tested setup build.' }
+function Assert-ShortcutDefaults([int]$Expected) {
+    $process = Start-Process -FilePath $helpers[0] -ArgumentList '--shortcut-defaults' -WindowStyle Hidden -PassThru
+    try {
+        if (!$process.WaitForExit(30000) -or $process.ExitCode -ne $Expected) { throw "Unexpected shortcut defaults; expected $Expected." }
+    } finally { $process.Dispose() }
+}
 function Run-Setup([string]$Arguments) {
     $process = Start-Process -FilePath $setup -ArgumentList $Arguments -WindowStyle Hidden -PassThru
     try {
@@ -79,7 +87,9 @@ function Assert-Startup([string]$Arguments, [bool]$Enabled, [string]$StatePath) 
 $installed = $null
 $engineStarted = $false
 try {
+    Assert-ShortcutDefaults 3
     Run-Setup '/S /DESKTOP=1 /STARTMENU=1 /STARTUP=1'
+    Assert-ShortcutDefaults 3
     $installed = Get-AppxPackage -Name $identity.Name
     if (!$installed -or $installed.Version -ne $build.packageVersion -or $installed.Publisher -cne $identity.Publisher -or $installed.Status -ne 'Ok') { throw 'Windows did not register the expected package.' }
     $engineApp = $installed.PackageFamilyName + '!Engine'
@@ -163,6 +173,10 @@ try {
     } finally { $engine.Dispose() }
     Run-Setup '/S /DESKTOP=0 /STARTMENU=0'
     foreach ($shortcut in $shortcuts) { if (Test-Path -LiteralPath $shortcut) { throw 'Explicitly clearing a shortcut option did not remove its owned shortcut.' } }
+    Assert-ShortcutDefaults 0
+    Run-Setup '/S /DESKTOP=1'
+    Assert-ShortcutDefaults 1
+    Run-Setup '/S /DESKTOP=0'
     $unrelatedTarget = Join-Path $fixtureRoot 'unrelated.txt'
     Set-Content -LiteralPath $unrelatedTarget -Value 'Unrelated shortcut target'
     $links = New-Object -ComObject WScript.Shell
@@ -171,12 +185,40 @@ try {
         $link.TargetPath = $unrelatedTarget
         $link.Save()
     }
+    Assert-ShortcutDefaults 0
     $unrelatedHashes = @($shortcuts | ForEach-Object { (Get-FileHash -LiteralPath $_).Hash })
     Run-Setup '/S /DESKTOP=0 /STARTMENU=0'
     for ($index = 0; $index -lt $shortcuts.Count; $index++) {
         if ((Get-FileHash -LiteralPath $shortcuts[$index]).Hash -cne $unrelatedHashes[$index]) { throw 'Setup changed an unrelated shortcut with the same name.' }
     }
-    Write-Output 'Setup registration, stable shortcuts, silent-option preservation and startup reconciliation after a cold editor launch passed. Windows sign-in itself was not exercised.'
+    # Exercise the real upgrade installer with an older package identity version and synthetic settings.
+    $previousVersion = '0.0.0.1'
+    if ([version]$build.packageVersion -gt [version]$previousVersion) {
+        $layout = Join-Path $fixtureRoot 'previous-layout'
+        $previous = Join-Path $fixtureRoot 'previous.msix'
+        $makeappx = Get-WindowsSdkTool 'makeappx'
+        & $makeappx unpack /p (Join-Path $ArtifactDirectory $build.package) /d $layout | Out-Null
+        if ($LASTEXITCODE) { throw 'Could not unpack the upgrade fixture.' }
+        $manifestPath = Join-Path $layout 'AppxManifest.xml'
+        [xml]$manifest = Get-Content -Raw -LiteralPath $manifestPath
+        $manifest.Package.Identity.SetAttribute('Version', $previousVersion)
+        $manifest.Save($manifestPath)
+        & $makeappx pack /d $layout /p $previous | Out-Null
+        if ($LASTEXITCODE) { throw 'Could not pack the previous-version fixture.' }
+        Remove-AppxPackage -Package $installed.PackageFullName
+        Add-AppxPackage -AllowUnsigned -Path $previous
+        $old = Get-AppxPackage -Name $identity.Name
+        if ($old.Version -ne $previousVersion -or $old.PackageFamilyName -cne $installed.PackageFamilyName) { throw 'Wrong upgrade fixture registration.' }
+        New-Item -ItemType Directory -Force (Split-Path -Parent $statePath) | Out-Null
+        Copy-Item -LiteralPath $testStatePath -Destination $statePath
+        $stateHash = (Get-FileHash -LiteralPath $statePath).Hash
+        Run-Setup '/S'
+        $upgraded = Get-AppxPackage -Name $identity.Name
+        if ($upgraded.Version -ne $build.packageVersion -or $upgraded.Status -ne 'Ok' -or
+            (Get-FileHash -LiteralPath $statePath).Hash -cne $stateHash) { throw 'The in-place upgrade failed to retain the saved settings.' }
+        Write-Output 'The normal setup upgraded an older package in place and preserved the saved settings byte-for-byte.'
+    }
+    Write-Output 'Setup registration, shortcut defaults and ownership, silent-option preservation and startup reconciliation after a cold editor launch passed. Windows sign-in itself was not exercised.'
 } finally {
     if ($engineStarted) {
         try { Activate-Request '--ipc-scope deployment-qa --command "{\"type\":\"quit\",\"discard_unsaved\":false}"' | Out-Null } catch { Write-Warning 'The isolated engine did not acknowledge cleanup before package removal.' }
