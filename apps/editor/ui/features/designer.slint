@@ -223,6 +223,7 @@ export component Designer inherits Rectangle {
                 property <length> design-pixel: Store.zoom * canvas.screen-pixel;
                 property <length> origin-x: floor((self.absolute-position.x + self.width / 2) / canvas.screen-pixel + Store.pan-x) * canvas.screen-pixel - self.absolute-position.x;
                 property <length> origin-y: floor((self.absolute-position.y + self.height / 2) / canvas.screen-pixel + Store.pan-y) * canvas.screen-pixel - self.absolute-position.y;
+                property <color> center-line: Theme.high-contrast ? Theme.text : #505050;
                 property <int> pressed-button: 0;
                 property <bool> show-selection: Store.selection-bounds.active && !Store.drawing && !Store.animate;
                 property <bool> show-guides: self.show-selection && self.pressed-button == 1;
@@ -248,8 +249,8 @@ export component Designer inherits Rectangle {
                         height: 1phx; width: canvas.width; background: #FFFFFF0C;
                     }
                 }
-                Rectangle { x: canvas.origin-x; width: 1phx; height: canvas.height; background: #FFFFFF0A; }
-                Rectangle { y: canvas.origin-y; height: 1phx; width: canvas.width; background: #FFFFFF0A; }
+                Rectangle { x: canvas.origin-x; width: 1phx; height: canvas.height; background: canvas.center-line; }
+                Rectangle { y: canvas.origin-y; height: 1phx; width: canvas.width; background: canvas.center-line; }
                 for tile in Store.canvas-tiles: Image {
                     source: tile.bitmap;
                     x: canvas.origin-x + tile.x * canvas.design-pixel;

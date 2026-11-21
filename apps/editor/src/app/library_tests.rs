@@ -281,6 +281,44 @@ fn mark_canvas_origin(store: &Store<'_>) {
 }
 
 #[test]
+fn canvas_center_axes_stand_out_from_the_grid_at_one_physical_pixel() -> Result<()> {
+    let (ui, _) = pixel_test_window()?;
+    ui.window().set_size(slint::LogicalSize::new(1280.0, 800.0));
+    let store = ui.global::<Store>();
+    store.set_page(1);
+    store.set_document_open(true);
+    store.set_zoom(8.0);
+    mark_canvas_origin(&store);
+    ui.show()?;
+    for high_contrast in [false, true] {
+        if high_contrast {
+            let theme = ui.global::<crate::Theme>();
+            theme.set_high_contrast(true);
+            theme.set_preview(slint::Color::from_rgb_u8(255, 255, 255));
+            theme.set_text(slint::Color::from_rgb_u8(0, 0, 0));
+        }
+        let frame = ui.window().take_snapshot()?;
+        let pixels = frame.as_slice();
+        let stride = frame.width() as usize;
+        let origin = pixels
+            .iter()
+            .position(|p| (p.r, p.g, p.b) == (255, 0, 255))
+            .unwrap();
+        // Sample outside the marker, between two perpendicular grid lines.
+        for (axis, across) in [(origin + 19, stride), (origin + 19 * stride, 1)] {
+            for neighbor in [axis - across, axis + across, axis + 8 * across] {
+                assert!(pixels[axis].r.abs_diff(pixels[neighbor].r) >= 32);
+            }
+            if high_contrast {
+                assert_eq!(pixels[axis].r, 0);
+            }
+        }
+    }
+    ui.hide()?;
+    Ok(())
+}
+
+#[test]
 fn canvas_highlights_the_hovered_corner_and_keeps_it_during_resize() -> Result<()> {
     let (ui, window) = pixel_test_window()?;
     ui.window().set_size(slint::LogicalSize::new(1280.0, 800.0));
