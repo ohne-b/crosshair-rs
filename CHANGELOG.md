@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Fix Launch at sign-in when opening an existing installation from Start or Game Bar.
+
 ## [v0.1.0](https://github.com/ohne-b/crosshair-rs/releases/tag/v0.1.0) 2026-11-20
 
 - First stable release for Windows 11 x64. Use a desktop crosshair overlay or the bundled Xbox Game Bar widget. Closing the editor keeps the overlay running.

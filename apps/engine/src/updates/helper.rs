@@ -457,7 +457,7 @@ pub fn run_helper(arguments: &[String]) -> Result<()> {
             package::installed()?.is_some_and(|installed| installed.family == journal.family),
             "The registered application is unavailable; reopen it after Windows finishes deployment"
         );
-        activate(&journal.family)?;
+        crate::lifecycle::activate_engine(&journal.family, RESUME_ARGUMENT)?;
     }
     result
 }
@@ -580,17 +580,7 @@ fn deploy(path: &Path, hash: &str, user: &str) -> Result<()> {
     }
 }
 
-const RESUME_ARGUMENT: PCWSTR = windows::core::w!("--resume-update");
-
-fn activate(family: &str) -> Result<()> {
-    unsafe {
-        let manager: IApplicationActivationManager =
-            CoCreateInstance(&ApplicationActivationManager, None, CLSCTX_LOCAL_SERVER)?;
-        let app = wide(&format!("{family}!Engine"));
-        manager.ActivateApplication(PCWSTR(app.as_ptr()), RESUME_ARGUMENT, AO_NONE)?;
-        Ok(())
-    }
-}
+const RESUME_ARGUMENT: &str = "--resume-update";
 
 pub fn recover(data_root: &Path) -> Result<Option<Recovery>> {
     let root = data_root.join("updates");
@@ -890,8 +880,7 @@ mod tests {
 
     #[test]
     fn helper_activation_arguments_are_accepted_by_the_engine() {
-        let argument = unsafe { RESUME_ARGUMENT.to_string() }.unwrap();
-        let options = crate::lifecycle::Options::parse(&[argument]).unwrap();
+        let options = crate::lifecycle::Options::parse(&[RESUME_ARGUMENT.into()]).unwrap();
         assert_eq!(options.scope, "app");
         assert!(!options.startup && !options.restore_visibility && !options.no_input);
         assert!(options.command.is_none() && options.test_data.is_none());

@@ -858,6 +858,9 @@ dependency. Menus release their native handles when dismissed, including on erro
 
 One packaged StartupTask, off by default, starts only engine mode. Honor Windows
 DisabledByUser. Activation uses stable app IDs, not versioned WindowsApps paths.
+When launched by the editor or Game Bar with a different application ID, the
+packaged engine activates its own `Engine` ID before opening storage or IPC so
+Windows can resolve its startup task.
 Settings/recovery publication captures the actual Windows startup state, verifies
 the requested state and compensates if reconciliation or durable publication
 fails. No WinRT startup wait runs on the input thread.

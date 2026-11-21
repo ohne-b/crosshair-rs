@@ -87,7 +87,7 @@ try {
     foreach ($shortcut in $shortcuts) { if (!(Test-Path -LiteralPath $shortcut)) { throw 'A silent upgrade removed an omitted shortcut option.' } }
     Assert-Startup '' $false $statePath
     # A stale saved true value must still reconcile Windows when a resident engine handles the request.
-    $testData = Join-Path $fixtureRoot 'data'
+    $testData = Join-Path $fixtureRoot 'test data'
     New-Item -ItemType Directory -Path $testData | Out-Null
     $testStatePath = Join-Path $testData 'state.json'
     $state = Get-Content -LiteralPath $statePath -Raw | ConvertFrom-Json
@@ -97,7 +97,8 @@ try {
     $state.base_visible = $false
     [IO.File]::WriteAllText($testStatePath, ($state | ConvertTo-Json -Depth 100), [Text.UTF8Encoding]::new($false))
     $arguments = '--ipc-scope deployment-qa --test-data-dir "' + $testData + '" --no-input'
-    $enginePid = [PackageActivation]::Start($engineApp, $arguments)
+    # Start from the installed editor, as the Start menu does, to exercise a cold engine launch.
+    $editorPid = [PackageActivation]::Start(($installed.PackageFamilyName + '!Editor'), $arguments)
     $engineStarted = $true
     $pipeName = '\\.\pipe\LOCAL\crosshair-rs.control.v1.' + [Diagnostics.Process]::GetCurrentProcess().SessionId + '.deployment-qa'
     $deadline = [DateTime]::UtcNow.AddSeconds(15)
@@ -109,7 +110,24 @@ try {
     Assert-Startup $arguments $false $testStatePath
     $saved = Get-Content -LiteralPath $testStatePath -Raw | ConvertFrom-Json
     if ($saved.settings.show_on_launch -or $saved.settings.discord_presence -or $saved.base_visible -or $saved.revision -le $state.revision) { throw 'Startup reconciliation changed unrelated settings or did not commit.' }
-    if (!(Get-Process -Id $enginePid -ErrorAction SilentlyContinue)) { throw 'Configuring startup stopped the resident engine.' }
+    $residents = @(Get-CimInstance Win32_Process -Filter "Name = 'crosshair-engine.exe'" | Where-Object {
+        $_.ExecutablePath -ieq (Join-Path $installed.InstallLocation 'crosshair-engine.exe') -and
+        $_.CommandLine -like '*--ipc-scope deployment-qa*' -and $_.CommandLine -notlike '*--configure-startup*'
+    })
+    if ($residents.Count -ne 1) { throw 'Startup configuration must leave one isolated engine running.' }
+    $enginePid = $residents[0].ProcessId
+    $editor = Get-Process -Id $editorPid -ErrorAction SilentlyContinue
+    if ($editor) {
+        try {
+            $deadline = [DateTime]::UtcNow.AddSeconds(15)
+            while (!$editor.HasExited -and !$editor.CloseMainWindow()) {
+                if ([DateTime]::UtcNow -gt $deadline) { throw 'The isolated editor did not open its window.' }
+                Start-Sleep -Milliseconds 50
+                $editor.Refresh()
+            }
+            if (!$editor.WaitForExit(15000)) { throw 'The isolated editor did not close.' }
+        } finally { $editor.Dispose() }
+    }
     $quit = Activate-Request '--ipc-scope deployment-qa --command "{\"type\":\"quit\",\"discard_unsaved\":false}"'
     $response = $quit | ConvertFrom-Json
     if ($null -eq $response.result.PSObject.Properties['Ok']) { throw 'The isolated engine could not shut down.' }
@@ -144,7 +162,7 @@ try {
     for ($index = 0; $index -lt $shortcuts.Count; $index++) {
         if ((Get-FileHash -LiteralPath $shortcuts[$index]).Hash -cne $unrelatedHashes[$index]) { throw 'Setup changed an unrelated shortcut with the same name.' }
     }
-    Write-Output 'Setup registration, stable shortcuts, silent-option preservation, packaged startup enable/disable and resident-engine reconciliation passed. Windows sign-in itself was not exercised.'
+    Write-Output 'Setup registration, stable shortcuts, silent-option preservation and startup reconciliation after a cold editor launch passed. Windows sign-in itself was not exercised.'
 } finally {
     if ($engineStarted) {
         try { Activate-Request '--ipc-scope deployment-qa --command "{\"type\":\"quit\",\"discard_unsaved\":false}"' | Out-Null } catch { Write-Warning 'The isolated engine did not acknowledge cleanup before package removal.' }
