@@ -102,6 +102,12 @@ try {
         $item = $shell.NameSpace((Split-Path -Parent $shortcut)).ParseName((Split-Path -Leaf $shortcut))
         if ($item.ExtendedProperty('System.AppUserModel.ID') -cne ($installed.PackageFamilyName + '!Editor')) { throw 'Shortcut does not use the stable packaged app identity.' }
     }
+    $custom = (New-Object -ComObject WScript.Shell).CreateShortcut($shortcuts[0])
+    $custom.Description = 'Custom crosshair shortcut'
+    $custom.Save()
+    $customHash = (Get-FileHash -LiteralPath $shortcuts[0]).Hash
+    Run-Setup '/S /DESKTOP=1'
+    if ((Get-FileHash -LiteralPath $shortcuts[0]).Hash -cne $customHash) { throw 'An enabled shortcut lost its user customization.' }
     Run-Setup '/S'
     Run-Setup '/S /STARTUP=1'
     foreach ($shortcut in $shortcuts) { if (!(Test-Path -LiteralPath $shortcut)) { throw 'A silent upgrade removed an omitted shortcut option.' } }

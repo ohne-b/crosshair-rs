@@ -239,8 +239,10 @@ void shortcut(REFKNOWNFOLDERID folder, std::wstring const& name, std::wstring co
             if (enabled) throw hresult_error(E_FAIL, L"A different shortcut already uses the crosshair-rs name.");
             return;
         }
-        if (!enabled) { check_bool(DeleteFileW(path.c_str())); return; }
-    } else if (!enabled) {
+        if (!enabled) check_bool(DeleteFileW(path.c_str()));
+        return;
+    }
+    if (!enabled) {
         return;
     }
     PIDLIST_ABSOLUTE target{};
@@ -319,9 +321,10 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int) {
                 try { deploy(directory); return 0; }
                 catch (hresult_error const& error) {
                     if (quiet || error.code() != HRESULT_FROM_WIN32(ERROR_PACKAGES_IN_USE)) throw;
-                    if (MessageBoxW(nullptr,
-                        L"Save your edits, choose Quit from the crosshair-rs tray icon, then select Retry.",
-                        L"Close crosshair-rs to update", MB_RETRYCANCEL | MB_ICONINFORMATION) != IDRETRY)
+                    std::wstring message = L"Save your edits, choose Quit from the crosshair-rs tray icon, then select Retry.\n\n";
+                    message += error.message();
+                    if (MessageBoxW(nullptr, message.c_str(), L"Close crosshair-rs to update",
+                        MB_RETRYCANCEL | MB_ICONINFORMATION) != IDRETRY)
                         return static_cast<int>(HRESULT_FROM_WIN32(ERROR_CANCELLED));
                 }
             }
