@@ -9,10 +9,22 @@ use crosshair_platform::{
 use windows::{
     ApplicationModel::{StartupTask, StartupTaskState},
     Win32::{
-        Foundation::HWND,
-        UI::{Shell::ShellExecuteW, WindowsAndMessaging::SW_SHOWNORMAL},
+        Foundation::{APPMODEL_ERROR_NO_APPLICATION, HWND},
+        Storage::Packaging::Appx::{
+            APPLICATION_USER_MODEL_ID_MAX_LENGTH, GetCurrentApplicationUserModelId,
+        },
+        System::{
+            Com::{CLSCTX_LOCAL_SERVER, CoCreateInstance},
+            Environment::GetCommandLineW,
+        },
+        UI::{
+            Shell::{
+                AO_NONE, ApplicationActivationManager, IApplicationActivationManager, ShellExecuteW,
+            },
+            WindowsAndMessaging::SW_SHOWNORMAL,
+        },
     },
-    core::{PCWSTR, w},
+    core::{PCWSTR, PWSTR, w},
 };
 
 #[derive(Default)]
@@ -21,6 +33,7 @@ pub struct Options {
     pub test_data: Option<PathBuf>,
     pub no_input: bool,
     pub configure_startup: Option<bool>,
+    pub reactivated: bool,
     pub startup: bool,
     pub restore_visibility: bool,
     pub command: Option<RequestCommand>,
@@ -54,6 +67,7 @@ impl Options {
                     );
                 }
                 "--startup" => options.startup = true,
+                "--reactivated" => options.reactivated = true,
                 "--resume-update" => {} // Normal startup recovers the durable update journal.
                 "--restore-visibility" => options.restore_visibility = true,
                 "--command" => {
@@ -130,6 +144,61 @@ impl Options {
     }
 }
 
+pub fn activate_engine(family: &str, arguments: &str) -> Result<()> {
+    let app = wide(&format!("{family}!Engine"));
+    let arguments = wide(arguments);
+    unsafe {
+        let manager: IApplicationActivationManager =
+            CoCreateInstance(&ApplicationActivationManager, None, CLSCTX_LOCAL_SERVER)?;
+        manager.ActivateApplication(PCWSTR(app.as_ptr()), PCWSTR(arguments.as_ptr()), AO_NONE)?;
+    }
+    Ok(())
+}
+
+pub fn redirect_to_packaged_engine(identity: &Identity, reactivated: bool) -> Result<bool> {
+    if !startup_package(identity.package.as_deref()) {
+        return Ok(false);
+    }
+    let family = identity
+        .package_family
+        .as_deref()
+        .context("Missing package family")?;
+    let mut app = [0; APPLICATION_USER_MODEL_ID_MAX_LENGTH as usize + 1];
+    let mut length = app.len() as u32;
+    let status =
+        unsafe { GetCurrentApplicationUserModelId(&mut length, Some(PWSTR(app.as_mut_ptr()))) };
+    if status != APPMODEL_ERROR_NO_APPLICATION {
+        status.ok()?;
+        if unsafe { PCWSTR(app.as_ptr()).to_string()? }
+            .eq_ignore_ascii_case(&format!("{family}!Engine"))
+        {
+            return Ok(false);
+        }
+    }
+    // StartupTask belongs to Engine even when Editor or Game Bar launched this process.
+    ensure!(
+        !reactivated,
+        "Windows did not assign the packaged engine its application ID"
+    );
+    let command_line = unsafe { GetCommandLineW().to_string()? };
+    let arguments = format!("--reactivated {}", activation_arguments(&command_line));
+    activate_engine(family, &arguments).context("Could not activate the packaged engine")?;
+    Ok(true)
+}
+
+fn activation_arguments(command_line: &str) -> &str {
+    let mut quoted = false;
+    let start = command_line.find(|character| {
+        if character == '"' {
+            quoted = !quoted;
+        }
+        !quoted && matches!(character, ' ' | '\t')
+    });
+    start.map_or("", |start| {
+        command_line[start..].trim_start_matches([' ', '\t'])
+    })
+}
+
 fn with_startup_task<T>(operation: impl FnOnce(Option<StartupTask>) -> Result<T>) -> Result<T> {
     let identity = Identity::current()?;
     if !startup_package(identity.package.as_deref()) {
@@ -148,7 +217,6 @@ fn with_startup_task<T>(operation: impl FnOnce(Option<StartupTask>) -> Result<T>
         }
     }
     let _apartment = Apartment;
-    // The engine can inherit the Editor application ID; search the whole package.
     let tasks = StartupTask::GetForCurrentPackageAsync()?
         .join()
         .context("Windows could not read launch-at-sign-in settings")?;
@@ -329,6 +397,29 @@ pub fn open(target: &str, hwnd: HWND) -> Result<Reply> {
 
 #[cfg(test)]
 mod startup_tests {
+    #[test]
+    fn engine_activation_preserves_the_original_arguments() {
+        assert!(
+            super::Options::parse(&["--reactivated".into()])
+                .unwrap()
+                .reactivated
+        );
+        assert_eq!(
+            super::activation_arguments(r#""C:\Program Files\crosshair-engine.exe""#),
+            ""
+        );
+        assert_eq!(
+            super::activation_arguments("crosshair-engine.exe\t--startup"),
+            "--startup"
+        );
+        assert_eq!(
+            super::activation_arguments(
+                r#""C:\Program Files\crosshair-engine.exe" --ipc-scope qa --test-data-dir "C:\Test Data\Fixture" --no-input"#
+            ),
+            r#"--ipc-scope qa --test-data-dir "C:\Test Data\Fixture" --no-input"#,
+        );
+    }
+
     #[test]
     fn installer_startup_options_are_explicit_and_do_not_accept_another_command() {
         let parse = |values: &[&str]| {

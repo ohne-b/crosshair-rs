@@ -167,9 +167,14 @@ pub fn run(options: Options) -> Result<()> {
     }
     unsafe {
         CoInitializeEx(None, COINIT_MULTITHREADED).ok()?;
-        SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2)?;
     }
     let _com = Com;
+    if lifecycle::redirect_to_packaged_engine(&identity, options.reactivated)? {
+        return Ok(());
+    }
+    unsafe {
+        SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2)?;
+    }
     let root = options
         .test_data
         .clone()
