@@ -885,9 +885,11 @@ DisabledByUser. Activation uses stable app IDs, not versioned WindowsApps paths.
 When launched by the editor or Game Bar with a different application ID, the
 packaged engine activates its own `Engine` ID before opening storage or IPC so
 Windows can resolve its startup task.
-Opening General settings reads the current Windows sign-in setting on the
-storage worker. Engine launch, editor connection and display changes leave the
-startup task alone. An explicit startup toggle, an import that changes startup,
+Opening General settings reads the current Windows sign-in setting on demand.
+The storage worker runs each Windows startup request in a short-lived copy of
+the engine, so Windows can release Runtime Broker while the overlay stays open.
+Engine launch, editor connection and display changes leave the startup task
+alone. An explicit startup toggle, an import that changes startup,
 or recovery verifies the Windows setting and restores its previous value if
 reconciliation or durable publication fails.
 The settings switch uses queried Windows state, including changes made outside

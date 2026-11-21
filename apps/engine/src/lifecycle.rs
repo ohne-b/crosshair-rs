@@ -199,11 +199,16 @@ fn activation_arguments(command_line: &str) -> &str {
     })
 }
 
-fn with_startup_task<T>(operation: impl FnOnce(Option<StartupTask>) -> Result<T>) -> Result<T> {
-    let identity = Identity::current()?;
-    if !startup_package(identity.package.as_deref()) {
-        return operation(None);
-    }
+pub fn run_startup_helper(arguments: &[String]) -> Result<bool> {
+    let enabled = match arguments {
+        [] => None,
+        [value] => Some(value.parse::<bool>().context("Expected true or false")?),
+        _ => bail!("Unexpected Windows startup arguments"),
+    };
+    ensure!(
+        startup_package(Identity::current()?.package.as_deref()),
+        "Launch at sign-in is available in the installed app. Open crosshair-rs from Start."
+    );
     use windows::Win32::System::Com::{COINIT_MULTITHREADED, CoInitializeEx, CoUninitialize};
     unsafe {
         CoInitializeEx(None, COINIT_MULTITHREADED).ok()?;
@@ -220,66 +225,79 @@ fn with_startup_task<T>(operation: impl FnOnce(Option<StartupTask>) -> Result<T>
     let tasks = StartupTask::GetForCurrentPackageAsync()?
         .join()
         .context("Windows could not read launch-at-sign-in settings")?;
-    let mut task = None;
-    for candidate in tasks {
-        if candidate.TaskId()? == "CrosshairEngineStartup" {
-            task = Some(candidate);
-            break;
+    for task in tasks {
+        if task.TaskId()? != "CrosshairEngineStartup" {
+            continue;
         }
+        let was_enabled = startup_enabled(task.State()?);
+        if let Some(enabled) = enabled
+            && was_enabled != enabled
+            && let Err(error) = set_startup(&task, enabled)
+        {
+            if !task
+                .State()
+                .is_ok_and(|state| startup_enabled(state) == was_enabled)
+                && let Err(rollback) = set_startup(&task, was_enabled)
+            {
+                return Err(error.context(format!(
+                    "Windows startup could not be restored after this failure: {rollback:#}"
+                )));
+            }
+            return Err(error);
+        }
+        return Ok(was_enabled);
     }
-    operation(task)
+    ensure!(
+        enabled != Some(true),
+        "The installed Windows startup task is missing. Reinstall crosshair-rs with its setup."
+    );
+    Ok(false)
+}
+
+// The child releases the broker on exit and returns the previous setting for rollback.
+fn request_startup(enabled: Option<bool>) -> Result<bool> {
+    if !startup_package(Identity::current()?.package.as_deref()) {
+        ensure!(
+            enabled != Some(true),
+            "Launch at sign-in is available in the installed app. Open crosshair-rs from Start."
+        );
+        return Ok(false);
+    }
+    let mut child = Command::new(std::env::current_exe()?);
+    child.arg("--windows-startup");
+    if let Some(enabled) = enabled {
+        child.arg(enabled.to_string());
+    }
+    let result = child
+        .creation_flags(windows::Win32::System::Threading::CREATE_NO_WINDOW.0)
+        .output()
+        .context("Could not start the Windows sign-in helper")?;
+    ensure!(
+        result.status.success(),
+        "Windows sign-in request failed: {}",
+        String::from_utf8_lossy(&result.stderr).trim()
+    );
+    std::str::from_utf8(&result.stdout)?
+        .trim()
+        .parse()
+        .context("Invalid Windows sign-in response")
 }
 
 pub fn read_startup() -> Result<bool> {
-    with_startup_task(|task| task.map_or(Ok(false), |task| Ok(startup_enabled(task.State()?))))
+    request_startup(None)
 }
 
 pub fn with_startup<T>(enabled: bool, operation: impl FnOnce() -> Result<T>) -> Result<T> {
-    if !startup_package(Identity::current()?.package.as_deref()) {
-        ensure!(
-            !enabled,
-            "Launch at sign-in is available in the installed app. Open crosshair-rs from Start."
-        );
-        return operation();
-    }
-    with_startup_task(|task| {
-        let Some(task) = task else {
-            ensure!(
-                !enabled,
-                "The installed Windows startup task is missing. Reinstall crosshair-rs with its setup."
-            );
-            return operation();
-        };
-        let was_enabled = startup_enabled(task.State()?);
+    let was_enabled = request_startup(Some(enabled))?;
+    operation().map_err(|error| {
         if enabled != was_enabled
-            && let Err(error) = set_startup(&task, enabled)
+            && let Err(rollback) = request_startup(Some(was_enabled))
         {
-            if task
-                .State()
-                .is_ok_and(|state| startup_enabled(state) == was_enabled)
-            {
-                return Err(error);
-            }
-            return match set_startup(&task, was_enabled) {
-                Ok(()) => Err(error),
-                Err(rollback) => Err(error.context(format!(
-                    "Windows startup could not be restored after this failure: {rollback:#}"
-                ))),
-            };
+            return error.context(format!(
+                "Windows startup could not be restored after this failure: {rollback:#}"
+            ));
         }
-        match operation() {
-            Ok(value) => Ok(value),
-            Err(error) => {
-                if enabled != was_enabled
-                    && let Err(rollback) = set_startup(&task, was_enabled)
-                {
-                    return Err(error.context(format!(
-                        "Windows startup could not be restored after this failure: {rollback:#}"
-                    )));
-                }
-                Err(error)
-            }
-        }
+        error
     })
 }
 

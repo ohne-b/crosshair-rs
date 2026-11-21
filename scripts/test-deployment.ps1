@@ -314,6 +314,11 @@ try {
     $status = (Activate-Request $startupRead | ConvertFrom-Json).result.Ok.status
     if ($status.startup_enabled -isnot [bool]) { throw 'The installed app did not return the Windows sign-in setting.' }
     Write-Output "Package Runtime Broker instances before launch: $beforeLaunch, on Desktop: $onDesktop, after reading sign-in: $(Get-BrokerCount)."
+    $deadline = [DateTime]::UtcNow.AddMinutes(2)
+    while (Get-BrokerCount) {
+        if ([DateTime]::UtcNow -gt $deadline) { throw 'Runtime Broker stayed attached to the idle overlay after the sign-in request completed.' }
+        Start-Sleep -Milliseconds 500
+    }
     Stop-TestEngine $enginePid
     $engineStarted = $false
     Write-Output 'Setup registration, shortcut defaults and ownership, silent-option preservation and startup reconciliation after a cold editor launch passed. Windows sign-in itself was not exercised.'

@@ -36,6 +36,13 @@ fn main() -> anyhow::Result<()> {
         }
         if arguments
             .first()
+            .is_some_and(|arg| arg == "--windows-startup")
+        {
+            println!("{}", lifecycle::run_startup_helper(&arguments[1..])?);
+            return Ok(());
+        }
+        if arguments
+            .first()
             .is_some_and(|argument| argument == "--overlay-probe")
         {
             return probe::run(&arguments[1..]);
