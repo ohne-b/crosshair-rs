@@ -78,6 +78,7 @@ export global Store {
     changed canvas-view => { self.viewport-changed(); }
     in-out property <[CanvasTile]> canvas-tiles;
     in-out property <SelectionBounds> selection-bounds;
+    in-out property <bool> moving-layer;
     public pure function canvas-handle-at(w: length, h: length, angle: angle, dx: length, dy: length) -> CanvasHandle {
         let x = dx * cos(angle) + dy * sin(angle);
         let y = dy * cos(angle) - dx * sin(angle);

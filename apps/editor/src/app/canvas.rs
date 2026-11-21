@@ -159,6 +159,7 @@ impl App {
         self.cancel_capture()?;
         let ui = self.window()?;
         let store = ui.global::<Store>();
+        store.set_moving_layer(false);
         if store.get_drawing() {
             let layer = self
                 .document
@@ -372,7 +373,10 @@ impl App {
             }
             self.document.draft = Some(changed);
             self.document.dirty = true;
-            self.window()?.global::<Store>().set_dirty(true);
+            let ui = self.window()?;
+            let store = ui.global::<Store>();
+            store.set_dirty(true);
+            store.set_moving_layer(matches!(self.drag, Some(Drag::Move { .. })));
             self.render();
         }
 

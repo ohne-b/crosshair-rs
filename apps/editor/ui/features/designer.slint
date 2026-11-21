@@ -226,7 +226,7 @@ export component Designer inherits Rectangle {
                 property <color> center-line: Theme.high-contrast ? Theme.text : #505050;
                 property <int> pressed-button: 0;
                 property <bool> show-selection: Store.selection-bounds.active && !Store.drawing && !Store.animate;
-                property <bool> show-guides: self.show-selection && self.pressed-button == 1;
+                property <bool> show-guides: self.show-selection && self.pressed-button == 1 && Store.moving-layer;
                 property <CanvasHandle> pointed-handle: self.show-selection && mouse.enabled && mouse.has-hover ?
                     Store.canvas-handle-at(box.w, box.h, box.angle, mouse.mouse-x - box.cx, mouse.mouse-y - box.cy) : {};
                 property <CanvasHandle> pressed-handle;

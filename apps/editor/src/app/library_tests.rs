@@ -319,6 +319,69 @@ fn canvas_center_axes_stand_out_from_the_grid_at_one_physical_pixel() -> Result<
 }
 
 #[test]
+fn canvas_alignment_dots_only_appear_during_layer_moves() -> Result<()> {
+    let (ui, _) = pixel_test_window()?;
+    ui.window().set_size(slint::LogicalSize::new(1280.0, 800.0));
+    let store = ui.global::<Store>();
+    store.set_page(1);
+    store.set_zoom(8.0);
+    let mut app = super::gesture_tests::app(&ui);
+    let mut preset = app.state.presets[0].clone();
+    let layer = &mut preset.layers[0];
+    layer.content = Content::Rectangle(Rectangle {
+        width: 16.0,
+        height: 16.0,
+        ..Default::default()
+    });
+    let mut renderer = crosshair_renderer::Renderer::new()?;
+    app.bounds = vec![(layer.id, renderer.canvas_layer_bounds(layer)?)];
+    app.anchors.insert(layer.id, renderer.anchor_point(layer)?);
+    app.document.open(preset)?;
+    app.refresh_document();
+    let app = RefCell::new(app);
+    store.on_canvas_event(move |kind, x, y, button, shift| {
+        app.borrow_mut()
+            .canvas_event(kind, Point { x, y }, button, shift)
+            .unwrap();
+    });
+    mark_canvas_origin(&store);
+    ui.show()?;
+    let frame = ui.window().take_snapshot()?;
+    let stride = frame.width() as usize;
+    let origin = frame
+        .as_slice()
+        .iter()
+        .position(|p| (p.r, p.g, p.b) == (255, 0, 255))
+        .unwrap();
+    let pointer = |kind, dx, dy| {
+        super::gesture_tests::pointer(
+            &ui,
+            kind,
+            (origin % stride) as f32 + dx,
+            (origin / stride) as f32 + dy,
+        )
+    };
+    let has_dots = || -> Result<bool> {
+        let frame = ui.window().take_snapshot()?;
+        Ok((125..137).any(|i| {
+            let p = frame.as_slice()[origin + i];
+            (p.r, p.g, p.b) == (234, 179, 8)
+        }))
+    };
+    for (dx, dy, moving) in [(64.0, 64.0, false), (0.0, -85.0, false), (0.0, 0.0, true)] {
+        pointer(1, dx, dy);
+        pointer(0, dx, dy);
+        assert!(!has_dots()?);
+        pointer(1, dx + 16.0, dy);
+        assert_eq!(has_dots()?, moving);
+        pointer(2, dx + 16.0, dy);
+        assert!(!has_dots()?);
+    }
+    ui.hide()?;
+    Ok(())
+}
+
+#[test]
 fn canvas_highlights_the_hovered_corner_and_keeps_it_during_resize() -> Result<()> {
     let (ui, window) = pixel_test_window()?;
     ui.window().set_size(slint::LogicalSize::new(1280.0, 800.0));

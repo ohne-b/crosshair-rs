@@ -191,6 +191,11 @@ impl App {
     }
 
     pub(super) fn finish_edit(&mut self) -> Result<()> {
+        if self.drag.is_none()
+            && let Some(ui) = self.ui.upgrade()
+        {
+            ui.global::<Store>().set_moving_layer(false);
+        }
         if !self.group_open {
             if self.finish_group && !self.preview_pending {
                 self.document.finish_gesture();

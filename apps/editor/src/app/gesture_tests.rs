@@ -118,7 +118,7 @@ fn startup_toggle_uses_windows_state_and_always_requests_reconciliation() -> Res
     Ok(())
 }
 
-fn pointer(ui: &AppWindow, kind: i32, x: f32, y: f32) {
+pub(super) fn pointer(ui: &AppWindow, kind: i32, x: f32, y: f32) {
     let position = slint::LogicalPosition::new(x, y);
     let button = slint::platform::PointerEventButton::Left;
     ui.window().dispatch_event(match kind {
