@@ -1,0 +1,26 @@
+1 ICON "app.ico"
+
+1 VERSIONINFO
+FILETYPE 1
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904B0"
+        BEGIN
+            VALUE "ProductName", "crosshair-rs"
+#if defined(EDITOR)
+            VALUE "FileDescription", "crosshair-rs Editor"
+#elif defined(ENGINE)
+            VALUE "FileDescription", "crosshair-rs Engine"
+#elif defined(GAMEBAR)
+            VALUE "FileDescription", "crosshair-rs Game Bar"
+#else
+#error Missing process role
+#endif
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x0409, 1200
+    END
+END

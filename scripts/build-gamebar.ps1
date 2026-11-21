@@ -44,7 +44,9 @@ Push-Location $output
 try {
     $appSource = Resolve-Path -LiteralPath (Join-Path $source 'app.cpp') -Relative
     $pipeSource = Resolve-Path -LiteralPath (Join-Path $source 'pipe.cpp') -Relative
-    & cl.exe @compilerArgs $appSource $pipeSource '/Fe:crosshair-gamebar.exe' /link /APPCONTAINER /SUBSYSTEM:WINDOWS /MANIFESTUAC:NO '/PDBALTPATH:%_PDB%' windowsapp.lib advapi32.lib user32.lib
+    & (Get-WindowsSdkTool 'rc') /nologo /i (Join-Path $repoRoot 'assets') /d GAMEBAR /fo process.res (Join-Path $repoRoot 'packaging/windows/process.rc')
+    if ($LASTEXITCODE -ne 0) { throw 'Game Bar process resource compilation failed.' }
+    & cl.exe @compilerArgs $appSource $pipeSource '/Fe:crosshair-gamebar.exe' /link process.res /APPCONTAINER /SUBSYSTEM:WINDOWS /MANIFESTUAC:NO '/PDBALTPATH:%_PDB%' windowsapp.lib advapi32.lib user32.lib
     if ($LASTEXITCODE -ne 0) { throw 'Game Bar host compilation failed.' }
     if ($Test) {
         & cl.exe /nologo /std:c++20 /EHsc /MT /W4 /O2 (Join-Path $repoRoot 'apps/gamebar/tests/wire.cpp') '/Fe:widget-wire-tests.exe'

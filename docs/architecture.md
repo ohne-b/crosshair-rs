@@ -1031,7 +1031,9 @@ executables are package-root siblings.
 Taskbar logos use transparent target-size PNGs rendered from `assets/logo.svg`
 at 16, 24, 32, 48 and 256 pixels, including unplated light/dark variants. Packaging
 builds `resources.pri` with the Windows SDK so the shell resolves those variants.
-Installer checks verify the index, packaged files and transparent backgrounds.
+The editor, engine and Game Bar executables embed the same target-size artwork
+and identify their roles in their Windows file descriptions. Installer checks
+verify these resources, the package index and transparent backgrounds.
 
 `scripts/package-windows.ps1` validates a real build and bundles an offline
 `Microsoft.VCLibs.140.00` x64 **14.0.33519.0** dependency inside the setup EXE. The

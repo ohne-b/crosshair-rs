@@ -107,6 +107,8 @@ if (!$ReleaseCandidate) {
     foreach ($node in $manifest.SelectNodes("//*[@DisplayName='crosshair-rs']")) {
         $node.SetAttribute('DisplayName', 'crosshair-rs Preview')
     }
+    $widgetVisuals = $manifest.SelectSingleNode("//*[local-name()='Application' and @Id='Widget']/*[local-name()='VisualElements']")
+    $widgetVisuals.SetAttribute('DisplayName', 'crosshair-rs Preview Game Bar')
 }
 $sdkReadme = Get-Content -LiteralPath (Join-Path $repoRoot 'target/gamebar/deps/microsoft.gaming.xboxgamebar.7.3.2607010/readme.txt') -Raw
 $proxyXml = [regex]::Match($sdkReadme, '(?s)<Extension Category="windows\.activatableClass\.proxyStub">.*?</Extension>').Value
