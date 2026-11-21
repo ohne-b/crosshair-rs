@@ -137,20 +137,27 @@ mod tests {
             }
         };
         std::fs::remove_file(&marker)?;
-        let lease = File::options()
-            .write(true)
-            .create_new(true)
-            .share_mode(0)
-            .custom_flags(FILE_FLAG_DELETE_ON_CLOSE.0)
-            .open(&marker)?;
+        let open_widget = || {
+            File::options()
+                .write(true)
+                .create_new(true)
+                .share_mode(0)
+                .custom_flags(FILE_FLAG_DELETE_ON_CLOSE.0)
+                .open(&marker)
+        };
+        let lease = open_widget()?;
         assert!(next_state()?);
-        // An engine starting while the widget is suspended can discover the existing window.
+        // An engine starting while the widget is hidden can discover the existing window.
         let after_restart = WindowPresence::watch(folder.path().into(), session, hwnd)?;
         assert!(after_restart.is_open());
         drop(after_restart);
         drop(lease);
         assert!(!next_state()?);
         assert!(!marker.exists());
+        let reopened = open_widget()?;
+        assert!(next_state()?);
+        drop(reopened);
+        assert!(!next_state()?);
         drop(watch);
         unsafe {
             DestroyWindow(hwnd)?;

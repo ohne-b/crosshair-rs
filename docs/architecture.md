@@ -692,9 +692,11 @@ closes the widget. Desktop mode remains usable without Game Bar.
 
 Setup tracks the widget window independently of its drawing connection. The
 widget holds a delete-on-close file in its package's temporary folder for the
-life of the window, including suspension. The engine watches directory changes
-and checks the session-specific file's sharing lock. Only authenticated widget
-frames can establish pin, click-through and presentation readiness.
+life of the window, including when Win+G hides it. Closing the final Game Bar
+view can suspend the widget instead of sending a window-close event. Both paths
+release the file and exit the widget process. The engine watches directory
+changes and checks the session-specific file's sharing lock. Only authenticated
+widget frames can establish pin, click-through and presentation readiness.
 
 Output changes use a bounded native-owner transition. A hidden preparation frame
 and a visible activation frame have different generations; acknowledgments must

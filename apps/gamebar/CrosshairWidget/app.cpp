@@ -40,8 +40,8 @@ using namespace Microsoft::Gaming::XboxGameBar;
 namespace crosshair {
 struct App : ApplicationT<App> {
     App() {
-        Suspending([this](auto const&, auto const&) { if (pipe_) pipe_->stop(); blank(); });
-        Resuming([this](auto const&, auto const&) { if (widget_) update_state(); });
+        // Game Bar keeps an open widget active. Closing its last view can send only Suspending.
+        Suspending([this](auto const&, auto const&) { if (widget_) close_widget(); });
         UnhandledException([this](auto const&, UnhandledExceptionEventArgs const& event) {
             shutdown();
             OutputDebugStringW(event.Message().c_str());
@@ -95,7 +95,7 @@ struct App : ApplicationT<App> {
         }));
         widget_.WindowBoundsChanged(on_ui([](auto const& self) { self->reposition(); }));
         window_.SizeChanged([weak](auto const&, auto const&) { if (auto self = weak.get()) self->reposition(); });
-        window_.Closed([weak](auto const&, auto const&) { if (auto self = weak.get()) { self->shutdown(); self->Exit(); } });
+        window_.Closed([weak](auto const&, auto const&) { if (auto self = weak.get()) self->close_widget(); });
         display_ = DisplayInformation::GetForCurrentView();
         display_.DpiChanged([weak](auto const&, auto const&) { if (auto self = weak.get()) self->reposition(); });
 
@@ -129,7 +129,7 @@ struct App : ApplicationT<App> {
                 } catch (...) {}
             });
         window_.Activate();
-        // A hidden or suspended widget still owns its window after the drawing pipe stops.
+        // Hiding Game Bar stops the drawing pipe but leaves the widget open.
         try {
             auto folder = winrt::Windows::Storage::ApplicationData::Current().TemporaryFolder().Path();
             std::wstring path = folder.c_str();
@@ -167,6 +167,11 @@ private:
         if (widget_.Visible() || widget_.Pinned()) pipe_->start();
         else { pipe_->stop(); blank(); }
         report();
+    }
+
+    void close_widget() {
+        shutdown();
+        Exit();
     }
 
     void shutdown() {
