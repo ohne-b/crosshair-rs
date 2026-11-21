@@ -1,5 +1,4 @@
 #include <windows.h>
-#include <appmodel.h>
 #include <string_view>
 #include <shellapi.h>
 #include <shlobj.h>
@@ -206,7 +205,7 @@ fs::path shortcut_path(REFKNOWNFOLDERID folder, std::wstring const& name) {
     return path;
 }
 
-bool owns_shortcut(fs::path const& path, std::wstring const& app, bool registered = true) {
+bool owns_shortcut(fs::path const& path, std::wstring const& app) {
     com_ptr<IShellItem2> item;
     if (FAILED(SHCreateItemFromParsingName(path.c_str(), nullptr, IID_PPV_ARGS(item.put())))) return false;
     for (auto const& key : {PKEY_AppUserModel_ID, PKEY_Link_TargetParsingPath}) {
@@ -215,7 +214,6 @@ bool owns_shortcut(fs::path const& path, std::wstring const& app, bool registere
         auto matches = SUCCEEDED(status) && value && app == value;
         CoTaskMemFree(value);
         if (!matches) return false;
-        if (!registered) break; // The target can be resolved only after the package is installed.
     }
     return true;
 }
@@ -231,14 +229,8 @@ int shortcut_defaults() {
     auto name = shortcut_name();
     auto path = shortcut_path(FOLDERID_Desktop, name);
     if (!fs::exists(path)) return !current.HasCurrent();
-    std::wstring package_name(payload_name), publisher(payload_publisher);
-    PACKAGE_ID id{};
-    id.name = package_name.data();
-    id.publisher = publisher.data();
-    wchar_t family[PACKAGE_FAMILY_NAME_MAX_LENGTH + 1]{};
-    UINT32 length = ARRAYSIZE(family);
-    check_win32(PackageFamilyNameFromId(&id, &length, family));
-    return owns_shortcut(path, std::wstring(family) + L"!Editor", current.HasCurrent());
+    if (!current.HasCurrent()) return 2; // Leave an existing link alone until Windows can resolve its target.
+    return owns_shortcut(path, std::wstring(current.Current().Id().FamilyName()) + L"!Editor");
 }
 
 fs::path shortcut_icon(Windows::ApplicationModel::Package const& package) {
@@ -253,34 +245,20 @@ fs::path shortcut_icon(Windows::ApplicationModel::Package const& package) {
 }
 
 void shortcut(REFKNOWNFOLDERID folder, std::wstring const& name, std::wstring const& app,
-              std::wstring_view choice, Windows::ApplicationModel::Package const& package) {
+              bool enabled, Windows::ApplicationModel::Package const& package) {
     auto path = shortcut_path(folder, name);
     if (fs::exists(path)) {
         if (!owns_shortcut(path, app)) {
-            if (choice == L"1") throw hresult_error(E_FAIL, L"A different shortcut already uses the crosshair-rs name.");
+            if (enabled) throw hresult_error(E_FAIL, L"A different shortcut already uses the crosshair-rs name.");
             return;
         }
-        if (choice == L"0") {
+        if (!enabled) {
             check_bool(DeleteFileW(path.c_str()));
             SHChangeNotify(SHCNE_DELETE, SHCNF_PATHW, path.c_str(), nullptr);
-            return;
         }
-        auto link = create_instance<IShellLinkW>(CLSID_ShellLink);
-        auto file = link.as<IPersistFile>();
-        check_hresult(file->Load(path.c_str(), STGM_READ));
-        std::array<wchar_t, 32768> location{};
-        int index{};
-        check_hresult(link->GetIconLocation(location.data(), static_cast<int>(location.size()), &index));
-        auto icon = shortcut_icon(package);
-        if (index != 0 || (location[0] && _wcsicmp(location.data(), icon.c_str()) != 0)) return;
-        if (!location[0]) {
-            check_hresult(link->SetIconLocation(icon.c_str(), 0));
-            check_hresult(file->Save(path.c_str(), TRUE));
-        }
-        SHChangeNotify(SHCNE_UPDATEITEM, SHCNF_PATHW, path.c_str(), nullptr);
         return;
     }
-    if (choice != L"1") {
+    if (!enabled) {
         return;
     }
     PIDLIST_ABSOLUTE target{};
@@ -350,8 +328,8 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int) {
             // An unchecked option must not disable an existing sign-in preference on upgrade.
             if (startup) enable_startup(package_info);
             auto name = shortcut_name();
-            shortcut(FOLDERID_Desktop, name, app, args[2], package_info);
-            shortcut(FOLDERID_Programs, name, app, args[3], package_info);
+            if (args[2] != L"keep") shortcut(FOLDERID_Desktop, name, app, option(args[2]), package_info);
+            if (args[3] != L"keep") shortcut(FOLDERID_Programs, name, app, option(args[3]), package_info);
             return 0;
         }
         if (elevated && args[2] != user_sid())

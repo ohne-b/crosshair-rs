@@ -186,6 +186,11 @@ Section "Install"
         Goto failed
     ${EndIf}
     ${If} $Mode == "install"
+        ${If} $DesktopShortcut == "keep"
+        ${AndIf} $StartMenuShortcut == "keep"
+        ${AndIf} $Startup == 0
+            Goto success
+        ${EndIf}
         StrCpy $0 "--options"
         IfSilent 0 +2
         StrCpy $0 "--options-silent"
@@ -201,6 +206,7 @@ Section "Install"
             Goto failed
         ${EndIf}
     ${EndIf}
+success:
     SetErrorLevel 0
     Goto done
 failed:

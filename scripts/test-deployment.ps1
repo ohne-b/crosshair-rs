@@ -163,28 +163,14 @@ try {
     if ($links.CreateShortcut($shortcuts[0]).IconLocation -ine ($icon + ',0')) { throw 'Desktop shortcut has no explicit crosshair icon.' }
     Run-Setup '/S /STARTMENU=1'
     if (!(Test-Path -LiteralPath $shortcuts[1])) { throw 'An explicit legacy Start shortcut request failed.' }
-    # Earlier setups left the icon field empty in both links.
-    foreach ($shortcut in $shortcuts) {
-        $old = $links.CreateShortcut($shortcut)
-        $old.IconLocation = ',0'
-        $old.Save()
-    }
-    Run-Setup '/S'
-    foreach ($shortcut in $shortcuts) {
-        if ($links.CreateShortcut($shortcut).IconLocation -ine ($icon + ',0')) { throw 'A silent upgrade did not repair an existing shortcut icon.' }
-    }
     Run-Setup '/S /STARTMENU=0'
     if (Test-Path -LiteralPath $shortcuts[1]) { throw 'Explicitly clearing the legacy Start link failed.' }
-    $custom = (New-Object -ComObject WScript.Shell).CreateShortcut($shortcuts[0])
+    $custom = $links.CreateShortcut($shortcuts[0])
     $custom.Description = 'Custom crosshair shortcut'
+    $custom.IconLocation = ',0'
     $custom.Save()
     $customHash = (Get-FileHash -LiteralPath $shortcuts[0]).Hash
-    $ownedDesktop = Join-Path $fixtureRoot 'desktop.lnk'
-    Copy-Item -LiteralPath $shortcuts[0] -Destination $ownedDesktop
-    # Package uninstall can remove the cached artwork while the desktop link survives.
-    Remove-Item -LiteralPath $icon
     Run-Setup '/S /DESKTOP=1'
-    if ((Get-FileHash -LiteralPath $icon).Hash -cne (Get-FileHash -LiteralPath $packedIcon).Hash) { throw 'Reinstall did not restore the shortcut artwork.' }
     if ((Get-FileHash -LiteralPath $shortcuts[0]).Hash -cne $customHash) { throw 'An enabled shortcut lost its user customization.' }
     Run-Setup '/S'
     Run-Setup '/S /STARTUP=1'
@@ -295,8 +281,6 @@ try {
         & $makeappx pack /d $layout /p $previous | Out-Null
         if ($LASTEXITCODE) { throw 'Could not pack the previous-version fixture.' }
         Remove-AppxPackage -Package $installed.PackageFullName
-        Copy-Item -LiteralPath $ownedDesktop -Destination $shortcuts[0] -Force
-        Assert-ShortcutDefaults 1
         Add-AppxPackage -AllowUnsigned -Path $previous
         $old = Get-AppxPackage -Name $identity.Name
         if ($old.Version -ne $previousVersion -or $old.PackageFamilyName -cne $installed.PackageFamilyName) { throw 'Wrong upgrade fixture registration.' }

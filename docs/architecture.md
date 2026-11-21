@@ -995,9 +995,8 @@ VCLibs runtime meeting the minimum version, supplying the bundled dependency onl
 when needed. This avoids redeploying a shared runtime used by other running apps.
 Windows provides the editor's Start entry. The optional desktop link targets the
 packaged editor and uses a copy of its icon in the package's per-user LocalState
-so version changes keep the icon path valid. Setup and in-app upgrades repair
-unbranded desktop and legacy Start links whose app ID and target match. Custom
-icons are preserved. Silent setup changes shortcut choices only when explicitly
+so version changes keep the icon path valid. Setup assigns the icon when
+creating the link. Silent setup changes shortcut choices only when explicitly
 requested. An unchecked sign-in option preserves the existing preference.
 Initial installation trusts the setup obtained from the project's GitHub release;
 it does not claim Windows code signing or a self-authenticating executable.
