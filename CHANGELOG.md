@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## [v0.2.0-rc.2](https://github.com/ohne-b/crosshair-rs/releases/tag/v0.2.0-rc.2) 2026-11-21
+
+- fix: Give new desktop shortcuts the crosshair icon. Setup now uses the Start menu entry that Windows creates automatically. ([#34](https://github.com/ohne-b/crosshair-rs/pull/34))
+- fix: Show the crosshair icon on the Windows taskbar and in the app switcher. ([#34](https://github.com/ohne-b/crosshair-rs/pull/34))
+- fix: Name the overlay’s Task Manager group `crosshair-rs` while keeping separate names for the engine and editor processes. ([#34](https://github.com/ohne-b/crosshair-rs/pull/34))
+- fix: Let Windows close Runtime Broker after reading or changing the launch-at-sign-in setting, even while the overlay keeps running. ([#34](https://github.com/ohne-b/crosshair-rs/pull/34))
+
 ## [v0.2.0-rc.1](https://github.com/ohne-b/crosshair-rs/releases/tag/v0.2.0-rc.1) 2026-11-21
 
 - feat: Drag corner handles to resize shapes, crosshair gaps and dots. Sliders give finer control over small values, and the resize cursors follow rotated handles. ([#32](https://github.com/ohne-b/crosshair-rs/pull/32))
