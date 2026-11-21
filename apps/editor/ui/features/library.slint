@@ -8,7 +8,6 @@ export component Library inherits Rectangle {
     background: Theme.canvas; border-top-left-radius: 12px;
     property <int> columns: clamp(floor((root.width - (Store.browsing ? 40px : 220px)) / 210px), 2, 20);
     changed columns => { Store.action("library-columns", root.columns); }
-    Timer { interval: 3s; running: Store.library-notice != ""; triggered => { Store.library-notice = ""; } }
     VerticalLayout { spacing: 0px;
         Rectangle { height: 48px; background: Theme.panel; border-top-left-radius: 12px;
             Divider { y: parent.height - 1px; }
@@ -36,7 +35,7 @@ export component Library inherits Rectangle {
         Rectangle { height: 68px;
             HorizontalLayout { padding-left: 20px; padding-right: 20px; padding-top: 18px; padding-bottom: 18px; spacing: 12px;
                 EditField { text: Store.search; placeholder: "Search crosshairs"; horizontal-stretch: 1; edited(value) => { Store.action("search", value); } }
-                if Store.library-notice != "": Text { text: Store.library-notice; color: Theme.muted; font-size: 12px * Theme.text-scale; vertical-alignment: center; }
+                if Store.browse-saved != "": Text { text: "Added to Saved"; color: Theme.muted; font-size: 12px * Theme.text-scale; vertical-alignment: center; }
                 if !Store.browsing: Text { text: "Sort"; color: Theme.muted; font-size: 11px * Theme.text-scale; vertical-alignment: center; }
                 if !Store.browsing: DropDown {
                     compact: true; horizontal-stretch: 0;
@@ -75,6 +74,7 @@ export component Library inherits Rectangle {
             for preset[column-index] in group.items: card := Rectangle {
                 property <int> index: row-index * root.columns + column-index;
                 property <length> stride: (parent.width - 12px) / root.columns;
+                property <bool> saved: Store.browsing && Store.browse-saved == preset.id;
                 x: column-index * self.stride;
                 width: (parent.width - 12px) / root.columns - 12px; height: 170px;
                 background: card-focus.has-focus || card-touch.has-hover ? Theme.raised : Theme.field; border-radius: 12px; border-width: (preset.selected || (!Store.browsing && Store.preset-drop-index == self.index)) ? 1px : 0px; border-color: Theme.orange;
@@ -82,7 +82,7 @@ export component Library inherits Rectangle {
                 accessible-action-default => { if Store.interactive && (!Store.browsing || (!Store.browse-saving && Store.connected)) { Store.action(Store.browsing ? "equip-browse" : "select-preset", preset.id); } }
                 card-touch := TouchArea {
                         enabled: Store.interactive;
-                        property <bool> show-actions: self.has-hover || card-focus.has-focus || name.has-focus || favorite.has-focus || trash.has-focus;
+                        property <bool> show-actions: self.has-hover || card-focus.has-focus || name.has-focus || favorite.has-focus || card-action.has-focus;
                         property <bool> dragging: false;
                         property <length> start-x;
                         property <length> start-y;
@@ -117,11 +117,19 @@ export component Library inherits Rectangle {
                         label: preset.favorite ? "Remove favorite" : "Favorite"; quiet: true;
                         clicked => { Store.action("favorite", preset.id); }
                     }
-                    trash := ActionButton {
-                        x: parent.width - 38px; y: 6px; width: 32px; opacity: card-touch.show-actions ? 1 : 0;
+                    card-action := ActionButton {
+                        x: parent.width - 38px; y: 6px; width: 32px; opacity: card.saved || card-touch.show-actions ? 1 : 0;
                         enabled: Store.connected && Store.interactive && (!Store.browsing || !Store.browse-saving);
-                        icon: Store.browsing ? @image-url("../../../../assets/icons/bookmark.svg") : @image-url("../../../../assets/icons/trash.svg"); label: (Store.browsing ? "Save " : "Delete ") + preset.name; quiet: true;
-                        clicked => { Store.action(Store.browsing ? "save-browse" : "delete-preset", preset.id); }
+                        accessible-enabled: self.enabled && !card.saved;
+                        icon: card.saved ? @image-url("../../../../assets/icons/check.svg") : Store.browsing ? @image-url("../../../../assets/icons/bookmark.svg") : @image-url("../../../../assets/icons/trash.svg");
+                        label: card.saved ? preset.name + " added to Saved" : (Store.browsing ? "Save " : "Delete ") + preset.name;
+                        accent-icon: card.saved; quiet: true;
+                        clicked => { if !card.saved { Store.action(Store.browsing ? "save-browse" : "delete-preset", preset.id); } }
+                    }
+                    TouchArea {
+                        x: card-action.x; y: card-action.y; width: card-action.width; height: card-action.height;
+                        // Consume the release even if the checkmark expires mid-click.
+                        enabled: card.saved || self.pressed;
                     }
                     name := RenameField {
                         x: 20px; y: 128px; width: parent.width - 40px;

@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Show a checkmark after adding a Browse crosshair to Saved, then restore the bookmark so it can be saved again.
 - Fix Launch at sign-in when opening an existing installation from Start or Game Bar.
 
 ## [v0.1.0](https://github.com/ohne-b/crosshair-rs/releases/tag/v0.1.0) 2026-11-20
