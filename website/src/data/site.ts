@@ -4,6 +4,7 @@ export const site = {
   description:
     'Create a custom crosshair, save presets and switch them with a shortcut. Download crosshair-rs for Windows 11.',
   repository: 'https://github.com/ohne-b/crosshair-rs',
+  discord: 'https://discord.gg/fX5yC8CduV',
   download: 'https://github.com/ohne-b/crosshair-rs/releases',
   guide:
     'https://github.com/ohne-b/crosshair-rs/blob/main/docs/installation.md',
