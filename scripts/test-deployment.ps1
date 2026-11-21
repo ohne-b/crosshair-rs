@@ -217,6 +217,12 @@ try {
     Assert-Startup $arguments $true $testStatePath
     $startup = (Activate-Request $startupRead | ConvertFrom-Json).result.Ok.status.startup_enabled
     if ($startup -ne $true) { throw 'The on-demand read did not observe the enabled Windows startup task.' }
+    $savedHash = (Get-FileHash -LiteralPath $testStatePath).Hash
+    $lockedState = [IO.File]::Open($testStatePath, 'Open', 'Read', 'Read')
+    try { $failure = Activate-Request ($arguments + ' --configure-startup false') } finally { $lockedState.Dispose() }
+    if (!$failure.Contains('Settings could not be saved')) { throw "Expected the locked settings file to prevent the save: $failure" }
+    $startup = (Activate-Request $startupRead | ConvertFrom-Json).result.Ok.status.startup_enabled
+    if ($startup -ne $true -or (Get-FileHash -LiteralPath $testStatePath).Hash -cne $savedHash) { throw 'A failed settings save changed Windows startup or the saved settings.' }
     Assert-Startup $arguments $false $testStatePath
     $saved = Get-Content -LiteralPath $testStatePath -Raw | ConvertFrom-Json
     if ($saved.settings.show_on_launch -or $saved.settings.discord_presence -or $saved.base_visible -or $saved.revision -le $state.revision) { throw 'Startup reconciliation changed unrelated settings or did not commit.' }
