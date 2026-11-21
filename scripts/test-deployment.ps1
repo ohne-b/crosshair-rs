@@ -135,9 +135,9 @@ function Stop-TestEngine([int]$EngineId) {
 $installed = $null
 $engineStarted = $false
 try {
-    Assert-ShortcutDefaults 3
-    Run-Setup '/S /DESKTOP=1 /STARTMENU=1 /STARTUP=1'
-    Assert-ShortcutDefaults 3
+    Assert-ShortcutDefaults 1
+    Run-Setup '/S /DESKTOP=1 /STARTUP=1'
+    Assert-ShortcutDefaults 1
     $installed = Get-AppxPackage -Name $identity.Name
     if (!$installed -or $installed.Version -ne $build.packageVersion -or $installed.Publisher -cne $identity.Publisher -or $installed.Status -ne 'Ok') { throw 'Windows did not register the expected package.' }
     $engineApp = $installed.PackageFamilyName + '!Engine'
@@ -145,11 +145,36 @@ try {
     if (!(Get-Content -LiteralPath $statePath -Raw | ConvertFrom-Json).settings.launch_at_login) { throw 'The installer startup option was not saved.' }
     if (Get-ChildItem -LiteralPath (Split-Path -Parent $statePath) -Filter 'startup-*.txt') { throw 'Setup left its startup reply behind.' }
     $shell = New-Object -ComObject Shell.Application
+    $editorApp = $installed.PackageFamilyName + '!Editor'
+    $item = $shell.NameSpace((Split-Path -Parent $shortcuts[0])).ParseName($shortcutName)
+    if (!$item -or $item.ExtendedProperty('System.AppUserModel.ID') -cne $editorApp) { throw 'Desktop shortcut does not use the stable packaged app identity.' }
+    if (Test-Path -LiteralPath $shortcuts[1]) { throw 'Setup created a second Start menu entry.' }
+    $deadline = [DateTime]::UtcNow.AddSeconds(15)
+    do {
+        $entry = $shell.NameSpace('shell:AppsFolder').ParseName($editorApp)
+        if ($entry -and $entry.ExtendedProperty('System.Tile.SmallLogoPath') -ceq 'Assets\Square44x44Logo.png') { break }
+        if ([DateTime]::UtcNow -ge $deadline) { throw 'The editor app ID did not resolve to its packaged tile logo.' }
+        Start-Sleep -Milliseconds 100
+    } while ($true)
+    $icon = Join-Path (Split-Path -Parent $statePath) 'Shell/crosshair.ico'
+    $packedIcon = Join-Path $installed.InstallLocation 'Assets/app.ico'
+    if ((Get-FileHash -LiteralPath $icon).Hash -cne (Get-FileHash -LiteralPath $packedIcon).Hash) { throw 'Shortcut icon differs from the installed artwork.' }
+    $links = New-Object -ComObject WScript.Shell
+    if ($links.CreateShortcut($shortcuts[0]).IconLocation -ine ($icon + ',0')) { throw 'Desktop shortcut has no explicit crosshair icon.' }
+    Run-Setup '/S /STARTMENU=1'
+    if (!(Test-Path -LiteralPath $shortcuts[1])) { throw 'An explicit legacy Start shortcut request failed.' }
+    # Earlier setups left the icon field empty in both links.
     foreach ($shortcut in $shortcuts) {
-        if (!(Test-Path -LiteralPath $shortcut)) { throw 'An enabled installer shortcut is missing.' }
-        $item = $shell.NameSpace((Split-Path -Parent $shortcut)).ParseName((Split-Path -Leaf $shortcut))
-        if ($item.ExtendedProperty('System.AppUserModel.ID') -cne ($installed.PackageFamilyName + '!Editor')) { throw 'Shortcut does not use the stable packaged app identity.' }
+        $old = $links.CreateShortcut($shortcut)
+        $old.IconLocation = ',0'
+        $old.Save()
     }
+    Run-Setup '/S'
+    foreach ($shortcut in $shortcuts) {
+        if ($links.CreateShortcut($shortcut).IconLocation -ine ($icon + ',0')) { throw 'A silent upgrade did not repair an existing shortcut icon.' }
+    }
+    Run-Setup '/S /STARTMENU=0'
+    if (Test-Path -LiteralPath $shortcuts[1]) { throw 'Explicitly clearing the legacy Start link failed.' }
     $custom = (New-Object -ComObject WScript.Shell).CreateShortcut($shortcuts[0])
     $custom.Description = 'Custom crosshair shortcut'
     $custom.Save()
@@ -158,7 +183,7 @@ try {
     if ((Get-FileHash -LiteralPath $shortcuts[0]).Hash -cne $customHash) { throw 'An enabled shortcut lost its user customization.' }
     Run-Setup '/S'
     Run-Setup '/S /STARTUP=1'
-    foreach ($shortcut in $shortcuts) { if (!(Test-Path -LiteralPath $shortcut)) { throw 'A silent upgrade removed an omitted shortcut option.' } }
+    if ((Get-FileHash -LiteralPath $shortcuts[0]).Hash -cne $customHash) { throw 'A silent upgrade changed the existing desktop shortcut.' }
     Assert-Startup '' $false $statePath
     # A stale saved true value must still reconcile Windows when a resident engine handles the request.
     $testData = Join-Path $fixtureRoot 'test data'

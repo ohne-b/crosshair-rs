@@ -34,9 +34,7 @@ Var DesktopShortcut
 Var StartMenuShortcut
 Var Startup
 Var DesktopControl
-Var StartMenuControl
 Var StartupControl
-Var ApplyOptions
 Var FailureCode
 Function .onInit
     StrCpy $FailureCode 1
@@ -44,37 +42,32 @@ Function .onInit
     StrCpy $DesktopShortcut "keep"
     StrCpy $StartMenuShortcut "keep"
     StrCpy $Startup 0
-    StrCpy $ApplyOptions 1
-    IfSilent 0 +2
-    StrCpy $ApplyOptions 0
     ${GetParameters} $0
     ClearErrors
     ${GetOptions} $0 "/DESKTOP=" $1
     ${IfNot} ${Errors}
         StrCpy $DesktopShortcut $1
-        StrCpy $ApplyOptions 1
     ${EndIf}
     ClearErrors
     ${GetOptions} $0 "/STARTMENU=" $1
     ${IfNot} ${Errors}
+        ; Keep explicit legacy switches working. Interactive setup uses the packaged Start entry.
         StrCpy $StartMenuShortcut $1
-        StrCpy $ApplyOptions 1
+        ${If} $1 != 0
+        ${AndIf} $1 != 1
+        ${AndIf} $1 != "keep"
+            SetErrorLevel 1
+            Quit
+        ${EndIf}
     ${EndIf}
     ClearErrors
     ${GetOptions} $0 "/STARTUP=" $1
     ${IfNot} ${Errors}
         StrCpy $Startup $1
-        StrCpy $ApplyOptions 1
     ${EndIf}
     ${If} $DesktopShortcut != 0
     ${AndIf} $DesktopShortcut != 1
     ${AndIf} $DesktopShortcut != "keep"
-        SetErrorLevel 1
-        Quit
-    ${EndIf}
-    ${If} $StartMenuShortcut != 0
-    ${AndIf} $StartMenuShortcut != 1
-    ${AndIf} $StartMenuShortcut != "keep"
         SetErrorLevel 1
         Quit
     ${EndIf}
@@ -106,7 +99,6 @@ FunctionEnd
 Function OptionsPage
     !insertmacro MUI_HEADER_TEXT "Options" "Choose shortcuts and startup options."
     ${If} $DesktopShortcut == "keep"
-    ${OrIf} $StartMenuShortcut == "keep"
         InitPluginsDir
         SetOutPath "$PLUGINSDIR"
         File /oname=install.exe "${INSTALL_HELPER}"
@@ -116,14 +108,7 @@ Function OptionsPage
         Pop $1
         ${If} $0 == 0
         ${OrIf} $0 == 1
-        ${OrIf} $0 == 2
-        ${OrIf} $0 == 3
-            ${If} $DesktopShortcut == "keep"
-                IntOp $DesktopShortcut $0 & 1
-            ${EndIf}
-            ${If} $StartMenuShortcut == "keep"
-                IntOp $StartMenuShortcut $0 >> 1
-            ${EndIf}
+            StrCpy $DesktopShortcut $0
         ${EndIf}
     ${EndIf}
     nsDialogs::Create 1018
@@ -136,12 +121,7 @@ Function OptionsPage
     ${If} $DesktopShortcut != "keep"
         ${NSD_SetState} $DesktopControl $DesktopShortcut
     ${EndIf}
-    ${NSD_CreateCheckbox} 0 30u 100% 12u "Create an additional Start menu shortcut"
-    Pop $StartMenuControl
-    ${If} $StartMenuShortcut != "keep"
-        ${NSD_SetState} $StartMenuControl $StartMenuShortcut
-    ${EndIf}
-    ${NSD_CreateCheckbox} 0 52u 100% 12u "Enable launch at Windows sign-in"
+    ${NSD_CreateCheckbox} 0 30u 100% 12u "Enable launch at Windows sign-in"
     Pop $StartupControl
     ${NSD_SetState} $StartupControl $Startup
     nsDialogs::Show
@@ -152,11 +132,6 @@ Function OptionsLeave
     ${If} $DesktopShortcut != "keep"
     ${OrIf} $0 == 1
         StrCpy $DesktopShortcut $0
-    ${EndIf}
-    ${NSD_GetState} $StartMenuControl $0
-    ${If} $StartMenuShortcut != "keep"
-    ${OrIf} $0 == 1
-        StrCpy $StartMenuShortcut $0
     ${EndIf}
     ${NSD_GetState} $StartupControl $Startup
 FunctionEnd
@@ -211,7 +186,6 @@ Section "Install"
         Goto failed
     ${EndIf}
     ${If} $Mode == "install"
-    ${AndIf} $ApplyOptions == 1
         StrCpy $0 "--options"
         IfSilent 0 +2
         StrCpy $0 "--options-silent"
