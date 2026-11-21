@@ -7,7 +7,7 @@ export struct BindingRow { direction: string, id: string, name: string, action: 
 export struct CanvasViewport { left: float, top: float, right: float, bottom: float, scale: float }
 export struct CanvasTile { x: float, y: float, width: float, height: float, bitmap: image }
 export struct SelectionBounds { x: float, y: float, width: float, height: float, rotation: float, active: bool }
-export struct CanvasHandle { sx: float, sy: float, rotate: bool, descending: bool }
+export struct CanvasHandle { sx: float, sy: float, rotate: bool, cursor: MouseCursor }
 
 export global Store {
     in-out property <bool> keyboard-navigation: false;
@@ -89,10 +89,13 @@ export global Store {
         if ex < -min(7px, w / 4) || ex > 7px || ey < -min(7px, h / 4) || ey > 7px { return {}; }
         let sx = x < 0px ? -1 : 1;
         let sy = y < 0px ? -1 : 1;
-        // Opposite corners use the same screen diagonal, including at quarter turns.
-        let vx = w * cos(angle) - sx * sy * h * sin(angle);
-        let vy = w * sin(angle) + sx * sy * h * cos(angle);
-        return { sx: sx, sy: sy, descending: (vx < 0px) == (vy < 0px) };
+        // A corner bisector rotates with the box. Opposite arrows share a half-turn.
+        let direction = angle + (sx == sy ? 45deg : -45deg);
+        let half-turn = direction - floor(direction / 180deg) * 180deg;
+        let cursor = half-turn < 22.5deg || half-turn >= 157.5deg ? MouseCursor.ew-resize :
+            half-turn < 67.5deg ? MouseCursor.nwse-resize :
+            half-turn < 112.5deg ? MouseCursor.ns-resize : MouseCursor.nesw-resize;
+        return { sx: sx, sy: sy, cursor: cursor };
     }
     in-out property <float> zoom: 8;
     in-out property <float> pan-x;

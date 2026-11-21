@@ -383,6 +383,10 @@ fn canvas_alignment_dots_only_appear_during_layer_moves() -> Result<()> {
 
 #[test]
 fn canvas_highlights_the_hovered_corner_and_keeps_it_during_resize() -> Result<()> {
+    use slint::private_unstable_api::re_exports::{
+        BuiltInMouseCursor::{EwResize, NeswResize, NsResize, NwseResize},
+        MouseCursorInner::BuiltIn,
+    };
     let (ui, window) = pixel_test_window()?;
     ui.window().set_size(slint::LogicalSize::new(1280.0, 800.0));
     let store = ui.global::<Store>();
@@ -431,11 +435,37 @@ fn canvas_highlights_the_hovered_corner_and_keeps_it_during_resize() -> Result<(
     for (i, &(dx, dy)) in corners.iter().enumerate() {
         move_to(dx, dy);
         check(Some(i))?;
-        let hit = store.invoke_canvas_handle_at(192.0, 128.0, 0.0, dx as f32, dy as f32);
-        assert_eq!(hit.descending, dx.signum() == dy.signum());
-        let rotated = store.invoke_canvas_handle_at(192.0, 128.0, 90.0, -dy as f32, dx as f32);
-        assert_eq!((hit.sx, hit.sy), (rotated.sx, rotated.sy));
-        assert_ne!(rotated.descending, hit.descending);
+        for (angle, same_sign, opposite_sign) in [
+            (0.0_f32, NwseResize, NeswResize),
+            (22.0, NwseResize, NeswResize),
+            (23.0, NsResize, EwResize),
+            (45.0, NsResize, EwResize),
+            (68.0, NeswResize, NwseResize),
+            (90.0, NeswResize, NwseResize),
+            (-45.0, EwResize, NsResize),
+            (225.0, NsResize, EwResize),
+        ] {
+            let (sin, cos) = angle.to_radians().sin_cos();
+            let (x, y) = (dx as f32, dy as f32);
+            let hit = store.invoke_canvas_handle_at(
+                192.0,
+                128.0,
+                angle,
+                x * cos - y * sin,
+                x * sin + y * cos,
+            );
+            assert_eq!((hit.sx, hit.sy), (x.signum(), y.signum()));
+            let expected = if dx.signum() == dy.signum() {
+                same_sign
+            } else {
+                opposite_sign
+            };
+            assert_eq!(
+                hit.cursor,
+                BuiltIn(expected),
+                "corner {i} at {angle} degrees"
+            );
+        }
     }
     let position = move_to(96, 64);
     let button = slint::platform::PointerEventButton::Left;

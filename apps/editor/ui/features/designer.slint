@@ -328,7 +328,7 @@ export component Designer inherits Rectangle {
                 mouse := TouchArea {
                     enabled: Store.interactive;
                     mouse-cursor: canvas.pressed-button == 3 ? grabbing : Store.drawing ? crosshair :
-                        canvas.show-selection && canvas.active-handle.sx != 0 ? (canvas.active-handle.descending ? nwse-resize : nesw-resize) : default;
+                        canvas.show-selection ? canvas.active-handle.cursor : default;
                     function send-event(kind: int, shift: bool) {
                         let pan = canvas.pressed-button == 3;
                         Store.canvas-event(kind, pan ? self.mouse-x / canvas.screen-pixel : (self.mouse-x - canvas.origin-x) / canvas.design-pixel,
