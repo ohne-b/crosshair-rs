@@ -649,6 +649,12 @@ impl App {
             "export-profile" => self.export(ExportKind::Profile {
                 profile: value.parse()?,
             })?,
+            "read-startup" => {
+                if !store.get_reading_startup() {
+                    self.send("read-startup", Command::ReadStartup)?;
+                    store.set_reading_startup(true);
+                }
+            }
             "startup" => self.send(
                 "startup",
                 Command::SetStartup {

@@ -62,7 +62,7 @@ pub enum Job {
     CommitState {
         state: Box<AppState>,
         restore: bool,
-        startup_changed: bool,
+        reconcile_startup: bool,
     },
     ValidatePreset {
         state: Box<AppState>,
@@ -266,7 +266,7 @@ fn run(store: &mut Store, renderer: &mut Option<Renderer>, job: Job) -> Result<W
         Job::CommitState {
             state,
             restore,
-            startup_changed,
+            reconcile_startup,
         } => {
             let publish = || {
                 if restore {
@@ -275,7 +275,7 @@ fn run(store: &mut Store, renderer: &mut Option<Renderer>, job: Job) -> Result<W
                     store.save(&state)
                 }
             };
-            if startup_changed || restore {
+            if reconcile_startup {
                 crate::lifecycle::with_startup(state.settings.launch_at_login, publish)?;
             } else {
                 publish()?;

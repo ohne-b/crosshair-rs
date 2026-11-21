@@ -775,10 +775,10 @@ newest results to its event loop.
 Desktop pipe: current-user logon-session ACL, remote rejection, authenticated
 peer identity. Names include user/session but are not the security boundary.
 Prevent first-instance squatting; verify expected packaged executable identity.
-Handshake verifies build/protocol before accepting commands. Control protocol v8
-includes profile action configuration in atomic SetBindings commands, capture
-tokens and independently ordered engine status. Connection epochs are
-checked when queued events reach the editor, so a retired connection cannot change
+Handshake verifies build/protocol before accepting commands. Control protocol v9
+includes an on-demand startup-state read, profile action configuration in atomic
+SetBindings commands, capture tokens and independently ordered engine status.
+Connection epochs are checked when queued events reach the editor, so a retired connection cannot change
 the current UI. Both executables must be rebuilt together.
 
 Length-prefixed UTF-8 JSON, 1 MiB control frames, incomplete-frame deadlines and
@@ -871,9 +871,11 @@ DisabledByUser. Activation uses stable app IDs, not versioned WindowsApps paths.
 When launched by the editor or Game Bar with a different application ID, the
 packaged engine activates its own `Engine` ID before opening storage or IPC so
 Windows can resolve its startup task.
-Settings/recovery publication captures the actual Windows startup state, verifies
-the requested state and compensates if reconciliation or durable publication
-fails. No WinRT startup wait runs on the input thread.
+Opening General settings reads the current Windows sign-in setting on the
+storage worker. Engine launch, editor connection and display changes leave the
+startup task alone. An explicit startup toggle, an import that changes startup,
+or recovery verifies the Windows setting and restores its previous value if
+reconciliation or durable publication fails.
 The settings switch uses queried Windows state, including changes made outside
 the app; an unknown state is shown as unavailable. A dedicated startup command
 always reconciles the requested Windows state, even when the saved preference

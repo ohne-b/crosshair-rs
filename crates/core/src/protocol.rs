@@ -108,6 +108,7 @@ pub enum Command {
         settings: Settings,
         expected_revision: u64,
     },
+    ReadStartup,
     SetStartup {
         enabled: bool,
     },

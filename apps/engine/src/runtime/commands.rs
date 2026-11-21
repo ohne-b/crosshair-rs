@@ -19,7 +19,7 @@ pub(super) enum After {
     Staged,
     Save(SaveNext),
     Restore,
-    Commit,
+    Commit { reconcile_startup: bool },
     Ignore,
     Shutdown,
 }
@@ -55,7 +55,7 @@ impl Pending {
                 | After::State
                 | After::Staged
                 | After::Restore
-                | After::Commit
+                | After::Commit { .. }
         )
     }
 }
@@ -158,6 +158,7 @@ impl Runtime {
                     command,
                     Command::Subscribe
                         | Command::Snapshot
+                        | Command::ReadStartup
                         | Command::ReadSnapshot { .. }
                         | Command::RecoverBackup
                         | Command::ResetSettings
@@ -230,16 +231,6 @@ impl Runtime {
                     return Err(HistoryError::Editing.into());
                 }
                 let reply = self.app.command(owner, Command::Subscribe)?;
-                if self.options.test_data.is_none()
-                    && self
-                        .queue(
-                            Job::ReadStartup,
-                            Pending::internal(After::ReadStartup, self.app.state.revision),
-                        )
-                        .is_err()
-                {
-                    self.app.status.startup_enabled = None;
-                }
                 if self.change.is_none()
                     && self.app.state.settings.check_updates
                     && self.options.test_data.is_none()
@@ -446,6 +437,12 @@ impl Runtime {
                     format!("ms-gamebar://launch/activate/{family}_Widget_CrosshairOverlay");
                 return Ok(Some(lifecycle::open(&target, self.window.0)?));
             }
+            Command::ReadStartup => {
+                pending.after = After::ReadStartup;
+                pending.structure = false;
+                self.queue(Job::ReadStartup, pending)?;
+                return Ok(None);
+            }
             Command::SetStartup { enabled } => {
                 let mut candidate = self.app.state.clone();
                 candidate.settings.launch_at_login = enabled;
@@ -576,6 +573,7 @@ fn read_only(command: &Command) -> bool {
         command,
         Command::Subscribe
             | Command::Snapshot
+            | Command::ReadStartup
             | Command::ReadSnapshot { .. }
             | Command::GetPreset { .. }
             | Command::ReadAsset { .. }

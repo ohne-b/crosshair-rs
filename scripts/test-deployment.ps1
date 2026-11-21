@@ -26,6 +26,15 @@ public static class PackageActivation {
     }
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     public static extern bool WaitNamedPipe(string name, uint timeout);
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
+    static extern int GetPackageFamilyName(IntPtr process, ref uint length, System.Text.StringBuilder family);
+    public static bool HasPackage(System.Diagnostics.Process process, string expected) {
+        uint length = 128;
+        var family = new System.Text.StringBuilder((int)length);
+        try { return GetPackageFamilyName(process.Handle, ref length, family) == 0 && family.ToString() == expected; }
+        catch (System.InvalidOperationException) { return false; }
+        catch (System.ComponentModel.Win32Exception) { return false; }
+    }
     [DllImport("userenv.dll", CharSet = CharSet.Unicode)]
     private static extern int DeriveAppContainerSidFromAppContainerName(string family, out IntPtr sid);
     [DllImport("advapi32.dll")]
@@ -94,6 +103,29 @@ function Assert-WidgetWindow([bool]$Open) {
     } while ([DateTime]::UtcNow -lt $deadline)
     throw "The installed engine did not report window_open=$Open with the widget pipe disconnected."
 }
+function Get-BrokerCount {
+    $brokers = @(Get-Process -Name RuntimeBroker -ErrorAction SilentlyContinue | Where-Object {
+        $_.SessionId -eq $session -and [PackageActivation]::HasPackage($_, $installed.PackageFamilyName)
+    })
+    $brokers.Count
+}
+function Wait-ControlPipe {
+    $deadline = [DateTime]::UtcNow.AddSeconds(15)
+    while (![PackageActivation]::WaitNamedPipe($pipeName, 100)) {
+        if ([DateTime]::UtcNow -gt $deadline) { throw 'The isolated engine did not open its IPC endpoint.' }
+        Start-Sleep -Milliseconds 50
+    }
+}
+function Stop-TestEngine([int]$EngineId) {
+    $quit = Activate-Request '--ipc-scope deployment-qa --command "{\"type\":\"quit\",\"discard_unsaved\":false}"'
+    $response = $quit | ConvertFrom-Json
+    if ($null -eq $response.result.PSObject.Properties['Ok']) { throw 'The isolated engine could not shut down.' }
+    $resident = Get-Process -Id $EngineId -ErrorAction SilentlyContinue
+    if ($resident) {
+        try { if (!$resident.WaitForExit(15000)) { throw 'The isolated engine did not exit after acknowledging Quit.' } }
+        finally { $resident.Dispose() }
+    }
+}
 $installed = $null
 $engineStarted = $false
 try {
@@ -137,16 +169,18 @@ try {
     $editorPid = [PackageActivation]::Start(($installed.PackageFamilyName + '!Editor'), $arguments)
     $engineStarted = $true
     $pipeName = '\\.\pipe\LOCAL\crosshair-rs.control.v1.' + [Diagnostics.Process]::GetCurrentProcess().SessionId + '.deployment-qa.' + $installed.PackageFamilyName
-    $deadline = [DateTime]::UtcNow.AddSeconds(15)
-    while (![PackageActivation]::WaitNamedPipe($pipeName, 100)) {
-        if ([DateTime]::UtcNow -gt $deadline) { throw 'The isolated engine did not open its IPC endpoint.' }
-        Start-Sleep -Milliseconds 50
-    }
+    Wait-ControlPipe
     $session = [Diagnostics.Process]::GetCurrentProcess().SessionId
     $sid = [PackageActivation]::WidgetSid($installed.PackageFamilyName)
     $widgetPipe = "\\.\pipe\Sessions\$session\AppContainerNamedObjects\$sid\crosshair-rs.widget.v1.$session"
     if (![PackageActivation]::WaitNamedPipe($widgetPipe, 1000)) { throw 'The installed engine could not open its Game Bar widget connection.' }
+    # Windows startup is disabled even though the synthetic settings say enabled.
+    $startupRead = '--ipc-scope deployment-qa --command "{\"type\":\"read_startup\"}"'
+    $startup = (Activate-Request $startupRead | ConvertFrom-Json).result.Ok.status.startup_enabled
+    if ($startup -isnot [bool] -or $startup) { throw 'The on-demand read did not report the actual disabled Windows startup task.' }
     Assert-Startup $arguments $true $testStatePath
+    $startup = (Activate-Request $startupRead | ConvertFrom-Json).result.Ok.status.startup_enabled
+    if ($startup -ne $true) { throw 'The on-demand read did not observe the enabled Windows startup task.' }
     Assert-Startup $arguments $false $testStatePath
     $saved = Get-Content -LiteralPath $testStatePath -Raw | ConvertFrom-Json
     if ($saved.settings.show_on_launch -or $saved.settings.discord_presence -or $saved.base_visible -or $saved.revision -le $state.revision) { throw 'Startup reconciliation changed unrelated settings or did not commit.' }
@@ -172,14 +206,7 @@ try {
     $marker = [IO.FileStream]::new($markerPath, 'CreateNew', 'Write', 'None', 4096, [IO.FileOptions]::DeleteOnClose)
     try { Assert-WidgetWindow $true } finally { $marker.Dispose() }
     Assert-WidgetWindow $false
-    $quit = Activate-Request '--ipc-scope deployment-qa --command "{\"type\":\"quit\",\"discard_unsaved\":false}"'
-    $response = $quit | ConvertFrom-Json
-    if ($null -eq $response.result.PSObject.Properties['Ok']) { throw 'The isolated engine could not shut down.' }
-    $resident = Get-Process -Id $enginePid -ErrorAction SilentlyContinue
-    if ($resident) {
-        try { if (!$resident.WaitForExit(15000)) { throw 'The isolated engine did not exit after acknowledging Quit.' } }
-        finally { $resident.Dispose() }
-    }
+    Stop-TestEngine $enginePid
     $engineStarted = $false
     $start = [Diagnostics.ProcessStartInfo]::new((Join-Path $installed.InstallLocation 'crosshair-engine.exe'), '--build-info')
     $start.UseShellExecute = $false
@@ -238,6 +265,19 @@ try {
             (Get-FileHash -LiteralPath $statePath).Hash -cne $stateHash) { throw 'The in-place upgrade failed to retain the saved settings.' }
         Write-Output 'The normal setup upgraded an older package in place and preserved the saved settings byte-for-byte.'
     }
+    # Exercise the ordinary packaged startup path using the disposable runner's own package storage.
+    $beforeLaunch = Get-BrokerCount
+    $enginePid = [PackageActivation]::Start($engineApp, '--ipc-scope deployment-qa')
+    $engineStarted = $true
+    Wait-ControlPipe
+    $status = (Activate-Request '--ipc-scope deployment-qa --command "{\"type\":\"subscribe\"}"' | ConvertFrom-Json).result.Ok.status
+    if (!$status.PSObject.Properties['startup_enabled'] -or $null -ne $status.startup_enabled) { throw 'Desktop launch read Windows startup settings before they were requested.' }
+    $onDesktop = Get-BrokerCount
+    $status = (Activate-Request $startupRead | ConvertFrom-Json).result.Ok.status
+    if ($status.startup_enabled -isnot [bool]) { throw 'The installed app did not return the Windows sign-in setting.' }
+    Write-Output "Package Runtime Broker instances before launch: $beforeLaunch, on Desktop: $onDesktop, after reading sign-in: $(Get-BrokerCount)."
+    Stop-TestEngine $enginePid
+    $engineStarted = $false
     Write-Output 'Setup registration, shortcut defaults and ownership, silent-option preservation and startup reconciliation after a cold editor launch passed. Windows sign-in itself was not exercised.'
 } finally {
     if ($engineStarted) {

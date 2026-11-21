@@ -91,20 +91,70 @@ pub(super) fn app(ui: &AppWindow) -> App {
 }
 
 #[test]
+fn launch_at_sign_in_is_read_only_when_general_settings_are_visible() -> Result<()> {
+    let ui = window();
+    let store = ui.global::<Store>();
+    let reads = Rc::new(std::cell::Cell::new(0));
+    let observed = reads.clone();
+    store.on_action(move |action, _| {
+        if action == "read-startup" {
+            observed.set(observed.get() + 1);
+        }
+    });
+    let assert_reads = |expected| {
+        slint::platform::update_timers_and_animations();
+        assert_eq!(reads.get(), expected);
+    };
+    store.set_connected(true);
+    assert_reads(0);
+    store.set_page(3);
+    assert_reads(0);
+    store.set_settings_category(1);
+    assert_reads(1);
+    store.set_startup(true);
+    assert_reads(1);
+    store.set_connected(false);
+    assert_reads(1);
+    store.set_connected(true);
+    assert_reads(2);
+    store.set_page(0);
+    assert_reads(2);
+    store.set_page(3);
+    assert_reads(3);
+    ui.hide()?;
+    Ok(())
+}
+
+#[test]
 fn startup_toggle_uses_windows_state_and_always_requests_reconciliation() -> Result<()> {
     let ui = window();
     let mut app = app(&ui);
     let (client, commands) = Client::recording_for_test();
     app.client = client;
     app.state.settings.launch_at_login = true;
-    app.status.startup_enabled = Some(false);
-    app.refresh_status();
+    app.action("read-startup", "")?;
+    app.action("read-startup", "")?;
+    assert!(ui.global::<Store>().get_reading_startup());
+    app.event(Event::Engine(
+        0,
+        client::Event::Completed {
+            tag: "read-startup".into(),
+            revision: app.state.revision,
+            reply: Reply::Status {
+                status: EngineStatus {
+                    startup_enabled: Some(false),
+                    ..Default::default()
+                },
+            },
+        },
+    ))?;
+    assert!(!ui.global::<Store>().get_reading_startup());
     assert!(!ui.global::<Store>().get_startup());
     assert!(ui.global::<Store>().get_startup_known());
     app.action("startup", "true")?;
     assert!(matches!(
         &commands()[..],
-        [Command::SetStartup { enabled: true }]
+        [Command::ReadStartup, Command::SetStartup { enabled: true }]
     ));
     app.status.startup_enabled = Some(true);
     app.refresh_status();

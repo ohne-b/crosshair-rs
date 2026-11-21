@@ -101,8 +101,8 @@ export component Settings inherits Rectangle {
                         SectionTitle { text: "STARTUP"; }
                         Group {
                             Setting { label: "Launch at sign-in";
-                                if Store.startup-known: Switch { checked: Store.startup; label: "Launch engine at sign-in"; toggled => { Store.action("startup", Store.startup ? "false" : "true"); } }
-                                if !Store.startup-known: Text { text: "Unavailable"; color: Theme.muted; font-size: 12px * Theme.text-scale; vertical-alignment: center; }
+                                if Store.startup-known && !Store.reading-startup: Switch { checked: Store.startup; label: "Launch engine at sign-in"; toggled => { Store.action("startup", Store.startup ? "false" : "true"); } }
+                                if !Store.startup-known || Store.reading-startup: Text { text: Store.reading-startup ? "Checking…" : "Unavailable"; color: Theme.muted; font-size: 12px * Theme.text-scale; vertical-alignment: center; }
                             }
                             Setting { label: "Show crosshair on launch"; last: true; Switch { checked: Store.show-on-launch; label: "Show crosshair on launch"; toggled => { Store.action("show-on-launch", Store.show-on-launch ? "false" : "true"); } } }
                         }

@@ -265,7 +265,14 @@ impl App {
                         .global::<Store>()
                         .set_switching_output(self.output_ack_revision.is_some());
                 }
-                if tag == "preview" {
+                if tag == "read-startup" {
+                    self.window()?.global::<Store>().set_reading_startup(false);
+                    if let Reply::Status { status } = reply
+                        && accept_status(&mut self.status, status)
+                    {
+                        self.refresh_status();
+                    }
+                } else if tag == "preview" {
                     self.preview_sent = self.preview_inflight.take();
                     self.preview_scale = self.preview_inflight_scale;
                     self.send_document()?;
@@ -393,6 +400,9 @@ impl App {
                     conflict,
                 },
             ) => {
+                if tag == "read-startup" {
+                    self.window()?.global::<Store>().set_reading_startup(false);
+                }
                 if tag == "output-mode"
                     || tag == "connection"
                     || (tag == "refresh" && self.output_ack_revision.is_some())
@@ -495,6 +505,7 @@ impl App {
                 self.refresh_document();
             }
             Event::Engine(_, client::Event::Disconnected(message)) => {
+                self.window()?.global::<Store>().set_reading_startup(false);
                 self.output_ack_revision = None;
                 self.window()?.global::<Store>().set_switching_output(false);
                 self.stop_playback();

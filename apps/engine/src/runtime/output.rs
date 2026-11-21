@@ -295,7 +295,9 @@ impl Runtime {
 
     fn persist_change(&mut self, change: &mut Change) -> Result<()> {
         let mut context = change.context.clone();
-        context.after = After::Commit;
+        let reconcile_startup = matches!(change.kind, ChangeKind::Startup | ChangeKind::Restore)
+            || change.candidate.settings.launch_at_login != change.before.settings.launch_at_login;
+        context.after = After::Commit { reconcile_startup };
         change.candidate.revision = change.candidate.revision.max(
             self.app
                 .state
@@ -307,9 +309,7 @@ impl Runtime {
             Job::CommitState {
                 state: Box::new(change.candidate.clone()),
                 restore: change.kind == ChangeKind::Restore,
-                startup_changed: change.kind == ChangeKind::Startup
-                    || change.candidate.settings.launch_at_login
-                        != change.before.settings.launch_at_login,
+                reconcile_startup,
             },
             context,
         )?;

@@ -26,6 +26,8 @@ export component AppWindow inherits Window {
     property <int> modal-kind: Store.modal-kind;
     property <bool> menu-open: menu.is-open;
     property <bool> help-open: help.is-open;
+    property <bool> startup-visible: Store.connected && !Store.read-only && Store.page == 3 && Store.settings-category == 1;
+    changed startup-visible => { if root.startup-visible { Store.action("read-startup", ""); } }
     changed modal-kind => {
         if root.modal-kind == 3 { menu.show(); } else { menu.close(); }
         if root.modal-kind == 5 { help.show(); } else { help.close(); }

@@ -184,12 +184,6 @@ pub fn run(options: Options) -> Result<()> {
     let store = Store::open(&root)?;
     let root = store.root().to_path_buf();
     let mut app = App::open(&store, options.restore_visibility || recovery.is_some())?;
-    if options.test_data.is_none() {
-        match lifecycle::read_startup() {
-            Ok(enabled) => app.status.startup_enabled = Some(enabled),
-            Err(error) => eprintln!("Windows startup status could not be read: {error:#}"),
-        }
-    }
     if let Some(recovery) = &recovery {
         app.state.base_visible = recovery.restart.visible;
     }
