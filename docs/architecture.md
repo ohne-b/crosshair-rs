@@ -246,7 +246,8 @@ only that layer, never lower layers. These use the same common effect order.
 
 A compact color row contains swatch, hex and opacity; its anchored popup provides
 HSV controls and a palette. Numeric fields support horizontal dragging, direct
-entry, stepping and keyboard input without inspector sliders. Invalid/nonfinite
+entry, stepping and keyboard input without inspector sliders. Pixel-size fields
+give small values more horizontal drag distance per step. Invalid/nonfinite
 values keep the last valid result; intermediate text never clamps prematurely.
 Zero-size components produce empty output predictably. The Image tool opens a
 compact import picker; imported images use the existing bounded asset pipeline.

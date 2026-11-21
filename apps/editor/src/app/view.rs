@@ -529,6 +529,22 @@ impl App {
                                 1.0
                             };
                             row.numeric = field.value.parse().unwrap_or_default();
+                            row.pixel_size = row.step == 1.0
+                                && matches!(
+                                    field.key.rsplit('/').next(),
+                                    Some(
+                                        "length"
+                                            | "thickness"
+                                            | "gap"
+                                            | "diameter"
+                                            | "radius"
+                                            | "depth"
+                                            | "width"
+                                            | "height"
+                                            | "size"
+                                            | "blur"
+                                    )
+                                );
                         }
                         FieldKind::Toggle => {
                             row.kind = 3;

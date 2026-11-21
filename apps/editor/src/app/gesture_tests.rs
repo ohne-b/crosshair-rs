@@ -1223,17 +1223,18 @@ fn keyboard_edits_wait_for_a_scaled_strokes_preview_and_keep_separate_history() 
 fn numeric_drag_commits_release_position_and_escape_restores_the_start() -> Result<()> {
     let ui = window();
     let store = ui.global::<Store>();
+    let mut app = app(&ui);
+    app.document.open(Preset::new("Drag test"))?;
+    app.refresh_document();
+    let properties = store.get_fields();
+    let mut length = properties
+        .iter()
+        .flat_map(|group| [group.first, group.second])
+        .find(|field| field.key == "/content/properties/length")
+        .unwrap();
+    length.numeric = 1.0;
     let fields = Rc::new(slint::VecModel::from(vec![FieldGroup {
-        first: FieldRow {
-            selection: "test".into(),
-            key: "/length".into(),
-            label: "Length".into(),
-            kind: 2,
-            numeric: 10.0,
-            maximum: 1000.0,
-            step: 1.0,
-            ..Default::default()
-        },
+        first: length,
         ..Default::default()
     }]));
     store.set_fields(fields.clone().into());
@@ -1249,20 +1250,26 @@ fn numeric_drag_commits_release_position_and_escape_restores_the_start() -> Resu
         }
     });
     pointer(&ui, 0, 1120.0, 182.0);
-    pointer(&ui, 1, 1126.0, 182.0);
-    assert_eq!(events.borrow().last(), Some(&(16.0, 1)));
-    pointer(&ui, 2, 1129.0, 182.0);
-    assert_eq!(events.borrow().last(), Some(&(19.0, 2)));
+    pointer(&ui, 1, 1124.0, 182.0);
+    pointer(&ui, 2, 1124.0, 182.0);
+    assert!(events.borrow().is_empty(), "A small drag should keep 1 px");
     pointer(&ui, 0, 1120.0, 182.0);
-    pointer(&ui, 1, 1125.0, 182.0);
-    assert_eq!(events.borrow().last(), Some(&(24.0, 1)));
+    pointer(&ui, 1, 1132.0, 182.0);
+    pointer(&ui, 1, 1142.0, 182.0);
+    pointer(&ui, 2, 1153.0, 182.0);
+    assert_eq!(&*events.borrow(), &[(2.0, 1), (3.0, 1), (4.0, 2)]);
+    pointer(&ui, 0, 1120.0, 182.0);
+    pointer(&ui, 1, 1240.0, 182.0);
+    assert_eq!(events.borrow().last(), Some(&(26.0, 1)));
+    pointer(&ui, 1, 1087.0, 182.0);
+    assert_eq!(events.borrow().last(), Some(&(1.0, 1)));
     let escape: SharedString = Key::Escape.into();
     ui.window().dispatch_event(WindowEvent::KeyPressed {
         text: escape.clone(),
     });
     ui.window()
         .dispatch_event(WindowEvent::KeyReleased { text: escape });
-    assert_eq!(events.borrow().last(), Some(&(19.0, 4)));
+    assert_eq!(events.borrow().last(), Some(&(4.0, 4)));
     events.borrow_mut().clear();
     pointer(&ui, 1, 1130.0, 182.0);
     pointer(&ui, 2, 1130.0, 182.0);

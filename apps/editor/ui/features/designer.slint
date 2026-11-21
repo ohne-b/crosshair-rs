@@ -46,7 +46,7 @@ component PropertyRow inherits Rectangle {
             if root.field.kind == 2: NumericField {
                 identity: root.field.selection + root.field.key; enabled: root.editable; horizontal-stretch: 1;
                 label: root.field.label; minimum: root.field.minimum; maximum: root.field.maximum; value: root.field.numeric;
-                step: root.field.step;
+                step: root.field.step; pixel-size: root.field.pixel-size;
                 icon: root.field.label == "Rotation" || root.field.label == "Sweep" ? @image-url("../../../../assets/icons/refresh.svg")
                     : root.field.label == "Blur" || root.field.label == "Line blur" || root.field.label == "Dot blur" || root.field.label == "Outline blur" ? @image-url("../../../../assets/icons/circle.svg")
                     : root.field.label == "Opacity" ? @image-url("../../../../assets/icons/eye.svg")
@@ -431,7 +431,7 @@ export component Designer inherits Rectangle {
                         if Store.drawing && !Store.animate: VerticalLayout { spacing: 6px;
                             Text { text: "Brush"; color: Theme.text; font-weight: 600; height: 24px; }
                             HorizontalLayout { spacing: 6px;
-                            NumericField { width: 72px; value: Store.brush-size; minimum: 1; maximum: 256; step: 1; icon: @image-url("../../../../assets/icons/pencil.svg"); label: "Brush size"; changed(value, phase) => { Store.action("brush-size", "" + value); } }
+                            NumericField { width: 72px; value: Store.brush-size; minimum: 1; maximum: 256; step: 1; pixel-size: true; icon: @image-url("../../../../assets/icons/pencil.svg"); label: "Brush size"; changed(value, phase) => { Store.action("brush-size", "" + value); } }
                             ColorField { horizontal-stretch: 1; value: Store.brush-swatch; hex: Store.brush-color; label: "Brush color";
                                 window-width: root.width + root.absolute-position.x; window-height: root.height + root.absolute-position.y;
                                 changed(value, phase) => { Store.property-color("", "@brush", value, phase); }
