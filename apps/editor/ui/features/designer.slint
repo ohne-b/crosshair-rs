@@ -169,11 +169,24 @@ export component Designer inherits Rectangle {
                 RenameField { background: Theme.preview; value: Store.document-name; label: "Crosshair name"; width: 208px; enabled: Store.interactive; committed(value) => { Store.action("rename-document", value); } finished => { canvas-keys.focus(); } }
                 ActionButton { text: "File"; width: 64px; align-left: true; quiet: true; clicked => { file-menu.show(); }
                     Image { x: 43px; y: (parent.height - 14px) / 2; width: 14px; height: 14px; source: @image-url("../../../../assets/icons/chevron-down.svg"); colorize: Theme.muted; }
-                    file-menu := PopupWindow { y: parent.height + 4px; width: 200px; height: 198px; close-policy: close-on-click-outside; forward-focus: file-keys;
+                    file-menu := PopupWindow { y: parent.height + 4px; width: max(200px, file-items.preferred-width); height: file-items.preferred-height; close-policy: close-on-click-outside; forward-focus: file-keys;
                         file-keys := FocusScope { key-pressed(event) => { if event.text == Key.Escape { file-menu.close(); return accept; } return reject; }
                         Rectangle { background: Theme.panel; border-radius: 10px; border-width: 1px; border-color: Theme.border;
-                            VerticalLayout { padding: 8px; spacing: 2px;
-                                for item[index] in ["New", "Open", "Import", "Duplicate", "Export crosshair"]: ActionButton { text: item; align-left: true; quiet: true; clicked => { file-menu.close(); if index == 1 { open-picker.show(); } else { Store.action(["new-preset", "", "import", "duplicate-preset", "export-draft"][index], index >= 3 ? Store.document-id : ""); } } }
+                            file-items := VerticalLayout { padding: 8px; spacing: 2px;
+                                for item in [
+                                    { title: "New", icon: @image-url("../../../../assets/icons/plus.svg"), action: "new-preset", argument: "" },
+                                    { title: "Open", icon: @image-url("../../../../assets/icons/bookmark.svg"), action: "open", argument: "" },
+                                    { title: "Import", icon: @image-url("../../../../assets/icons/download.svg"), action: "import", argument: "" },
+                                    { title: "Duplicate", icon: @image-url("../../../../assets/icons/copy.svg"), action: "duplicate-preset", argument: Store.document-id },
+                                    { title: "Export crosshair", icon: @image-url("../../../../assets/icons/file-export.svg"), action: "export-draft", argument: Store.document-id },
+                                ]: ActionButton {
+                                    text: item.title; icon: item.icon; align-left: true; quiet: true;
+                                    clicked => {
+                                        file-menu.close();
+                                        if item.action == "open" { open-picker.show(); }
+                                        else { Store.action(item.action, item.argument); }
+                                    }
+                                }
                             }
                         }
                         }

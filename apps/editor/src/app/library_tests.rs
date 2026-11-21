@@ -167,6 +167,65 @@ fn pixel_test_window() -> Result<(AppWindow, Rc<MinimalSoftwareWindow>)> {
 }
 
 #[test]
+fn file_menu_fits_its_five_icon_rows_at_both_text_sizes() -> Result<()> {
+    let (ui, _window) = pixel_test_window()?;
+    ui.window().set_size(slint::LogicalSize::new(1280.0, 800.0));
+    let store = ui.global::<Store>();
+    store.set_page(1);
+    store.set_document_open(true);
+    store.set_document_id("draft".into());
+    let events = Rc::new(RefCell::new(Vec::new()));
+    let recorded = events.clone();
+    store.on_action(move |action, argument| recorded.borrow_mut().push((action, argument)));
+    ui.show()?;
+    for (scale, row_height) in [(1.0, 32), (2.0, 40)] {
+        ui.global::<crate::Theme>().set_text_scale(scale);
+        let before = ui.window().take_snapshot()?;
+        click(&ui, 315.0, 70.0);
+        let menu = ui.window().take_snapshot()?;
+        let left = store.get_menu_x().round() as usize;
+        let top = store.get_menu_y().round() as usize;
+        let stride = menu.width() as usize;
+        if scale == 2.0 {
+            let extended_row = (top + 10) * stride + left + 220;
+            assert_ne!(
+                menu.as_slice()[extended_row],
+                before.as_slice()[extended_row]
+            );
+        }
+        for i in 0..5 {
+            let center = top + 8 + i * (row_height + 2) + row_height / 2;
+            assert!(
+                (center - 9..center + 9)
+                    .flat_map(|y| &menu.as_slice()[y * stride + left + 18..y * stride + left + 36])
+                    .filter(|pixel| pixel.r > 90)
+                    .count()
+                    >= 12,
+                "Missing icon in row {i}"
+            );
+        }
+        let bottom = top + 16 + 5 * row_height + 4 * 2;
+        let outside = bottom * stride + left + 160;
+        assert_ne!(
+            menu.as_slice()[outside - 2 * stride],
+            before.as_slice()[outside - 2 * stride]
+        );
+        assert_eq!(menu.as_slice()[outside], before.as_slice()[outside]);
+        click(
+            &ui,
+            (left + 55) as f32,
+            (bottom - 8 - row_height / 2) as f32,
+        );
+        assert_eq!(
+            events.borrow_mut().pop(),
+            Some(("export-draft".into(), "draft".into()))
+        );
+    }
+    ui.hide()?;
+    Ok(())
+}
+
+#[test]
 fn canvas_zoom_counts_physical_pixels_across_windows_display_scales() -> Result<()> {
     let (ui, window) = pixel_test_window()?;
     let store = ui.global::<Store>();
