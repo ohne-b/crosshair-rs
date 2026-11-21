@@ -1,6 +1,7 @@
 use super::*;
 use crate::{PresetGroup, PresetRow};
 use slint::platform::{Key, Platform, WindowAdapter, WindowEvent, software_renderer::*};
+use std::{cell::Cell, time::Duration};
 
 fn click(ui: &AppWindow, x: f32, y: f32) {
     let position = slint::LogicalPosition::new(x, y);
@@ -45,10 +46,7 @@ fn snapshot(window: &MinimalSoftwareWindow, name: &str) -> Result<()> {
     Ok(())
 }
 
-#[test]
-fn settings_tooltip_has_a_uniform_fill_inside_its_corners() -> Result<()> {
-    use std::{cell::Cell, time::Duration};
-
+fn timed_test_window(clock: Rc<Cell<Duration>>) -> Result<(AppWindow, Rc<MinimalSoftwareWindow>)> {
     struct Headless(Rc<MinimalSoftwareWindow>, Rc<Cell<Duration>>);
     impl Platform for Headless {
         fn create_window_adapter(&self) -> Result<Rc<dyn WindowAdapter>, slint::PlatformError> {
@@ -59,10 +57,16 @@ fn settings_tooltip_has_a_uniform_fill_inside_its_corners() -> Result<()> {
         }
     }
     let window = MinimalSoftwareWindow::new(RepaintBufferType::NewBuffer);
-    let clock = Rc::new(Cell::new(Duration::ZERO));
-    slint::platform::set_platform(Box::new(Headless(window.clone(), clock.clone())))?;
+    slint::platform::set_platform(Box::new(Headless(window.clone(), clock)))?;
     let ui = AppWindow::new()?;
     ui.window().set_size(slint::LogicalSize::new(1280.0, 800.0));
+    Ok((ui, window))
+}
+
+#[test]
+fn settings_tooltip_has_a_uniform_fill_inside_its_corners() -> Result<()> {
+    let clock = Rc::new(Cell::default());
+    let (ui, window) = timed_test_window(clock.clone())?;
     ui.global::<Store>().set_connected(true);
     ui.show()?;
     ui.window().dispatch_event(WindowEvent::PointerMoved {
@@ -101,6 +105,68 @@ fn settings_tooltip_has_a_uniform_fill_inside_its_corners() -> Result<()> {
         (top + 5..bottom - 4)
             .any(|y| (left + 6..right - 5).any(|x| contrast.as_slice()[y * stride + x].r < 64))
     );
+    ui.hide()?;
+    Ok(())
+}
+
+#[test]
+fn sidebar_update_link_opens_updates_and_shows_the_offered_version() -> Result<()> {
+    let clock = Rc::new(Cell::default());
+    let (ui, _) = timed_test_window(clock.clone())?;
+    let store = ui.global::<Store>();
+    let app = RefCell::new(super::gesture_tests::app(&ui));
+    store.on_action(move |action, value| app.borrow_mut().action(&action, &value).unwrap());
+    ui.show()?;
+    for (phase, version, connected, visible) in [
+        (0, "", true, false),
+        (1, "0.2.0", true, false),
+        (2, "", true, false),
+        (3, "0.2.0", true, true),
+        (4, "0.2.0", true, true),
+        (5, "0.2.0", true, true),
+        (6, "0.2.0", true, false),
+        (7, "", true, false),
+        (7, "0.2.0", true, true),
+        (3, "0.2.0", false, false),
+    ] {
+        store.set_page(0);
+        store.set_settings_category(1);
+        store.set_connected(connected);
+        store.set_update_phase(phase);
+        store.set_update_version(version.into());
+        click(&ui, 28.0, 637.0); // The footer row immediately above Settings.
+        assert_eq!(
+            (store.get_page(), store.get_settings_category()),
+            if visible { (3, 3) } else { (0, 1) }
+        );
+    }
+    store.set_connected(true);
+    store.set_update_phase(3);
+    let tooltip_right_edge = |version: &str| -> Result<usize> {
+        let hover = |x, y| {
+            ui.window().dispatch_event(WindowEvent::PointerMoved {
+                position: slint::LogicalPosition::new(x, y),
+            })
+        };
+        hover(400.0, 600.0);
+        store.set_update_version(version.into());
+        hover(28.0, 637.0);
+        let before = ui.window().take_snapshot()?;
+        clock.set(clock.get() + Duration::from_secs(1));
+        slint::platform::update_timers_and_animations();
+        let after = ui.window().take_snapshot()?;
+        let stride = after.width() as usize;
+        (50..350)
+            .rfind(|&x| {
+                (638..705).any(|y| {
+                    let at = y * stride + x;
+                    before.as_slice()[at] != after.as_slice()[at]
+                })
+            })
+            .context("No update tooltip above Settings")
+    };
+    let stable = tooltip_right_edge("0.2.0")?;
+    assert!(tooltip_right_edge("0.2.0-rc.12")? > stable);
     ui.hide()?;
     Ok(())
 }
@@ -613,23 +679,8 @@ fn header_crosshair_stays_centered_when_source_size_changes() -> Result<()> {
 
 #[test]
 fn library_tabs_sort_picker_and_browse_actions_are_independent() -> Result<()> {
-    use std::{cell::Cell, time::Duration};
-
-    struct Headless(Rc<MinimalSoftwareWindow>, Rc<Cell<Duration>>);
-    impl Platform for Headless {
-        fn create_window_adapter(&self) -> Result<Rc<dyn WindowAdapter>, slint::PlatformError> {
-            Ok(self.0.clone())
-        }
-
-        fn duration_since_start(&self) -> Duration {
-            self.1.get()
-        }
-    }
-    let window = MinimalSoftwareWindow::new(RepaintBufferType::NewBuffer);
-    let clock = Rc::new(Cell::new(Duration::ZERO));
-    slint::platform::set_platform(Box::new(Headless(window.clone(), clock.clone())))?;
-    let ui = AppWindow::new()?;
-    ui.window().set_size(slint::LogicalSize::new(1280.0, 800.0));
+    let clock = Rc::new(Cell::default());
+    let (ui, window) = timed_test_window(clock.clone())?;
     let store = ui.global::<Store>();
     store.set_connected(true);
     store.on_commit_focused_input(slint::platform::update_timers_and_animations);

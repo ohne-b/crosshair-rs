@@ -910,7 +910,8 @@ Headless engine never periodically contacts GitHub. No automatic download/instal
 Use TDM's compact rhythm, 6 px bar and tabular values, no wizard/card stack.
 Keep bytes and percentages outside the bar. Unknown totals show bytes only.
 Cancel removes partial data and returns Available.
-A dot on Settings may indicate update availability. Keep updater actions in Settings.
+A circled down arrow above Settings opens the Updates category when an update is
+available. Its tooltip shows the release tag. Downloads and installation start in Settings.
 
 ### Manifest and authenticity
 
