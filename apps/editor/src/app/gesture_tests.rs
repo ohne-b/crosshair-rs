@@ -506,11 +506,30 @@ fn game_bar_setup_keeps_desktop_selected_and_allows_retry() -> Result<()> {
     ))?;
     assert!(!store.get_switching_output());
     assert!(store.get_error().is_empty());
+    assert!(!store.get_widget_connected());
+    store.set_page(3);
+    store.set_connected(true);
+    let closed = ui.window().take_snapshot()?;
     app.status.widget.connected = true;
+    app.refresh_status();
+    assert!(store.get_widget_connected() && !store.get_widget_pinned());
+    assert!(!store.get_widget_ready());
+    let open = ui.window().take_snapshot()?;
+    let orange = slint::Rgba8Pixel::new(249, 115, 22, 255);
+    let grey = slint::Rgba8Pixel::new(41, 41, 41, 255);
+    assert!(
+        closed
+            .as_slice()
+            .iter()
+            .zip(open.as_slice())
+            .any(|(before, after)| *before == orange && *after == grey),
+        "Opening the widget should change the primary button to a neutral button"
+    );
     app.status.widget.pinned = true;
     app.status.widget.click_through = true;
     app.refresh_status();
     assert!(store.get_widget_ready());
+    assert!(store.get_widget_pinned());
     app.action("output-mode", "1")?;
     assert!(matches!(&commands()[..], [Command::SetSettings { .. }]));
     let revision = app.state.revision + 1;

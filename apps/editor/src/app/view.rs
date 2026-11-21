@@ -341,6 +341,8 @@ impl App {
         );
         let widget = &self.status.widget;
         store.set_widget_installed(widget.installed);
+        store.set_widget_connected(widget.connected);
+        store.set_widget_pinned(widget.pinned);
         let hint = widget.setup_hint();
         store.set_widget_ready(hint.is_none());
         let widget_status = hint.unwrap_or_else(|| {

@@ -335,9 +335,9 @@ impl WidgetStatus {
         if !self.installed {
             Some("Install the Windows package to use Game Bar")
         } else if !self.connected {
-            Some("Open the crosshair widget in Game Bar")
+            Some("Open the crosshair widget in Game Bar and pin it")
         } else if !self.pinned {
-            Some("Pin the crosshair widget in Game Bar")
+            Some("Click the pin in the widget’s title bar")
         } else if !self.click_through {
             Some("Enable click-through in the Game Bar toolbar")
         } else {
@@ -431,12 +431,12 @@ mod tests {
         widget.installed = true;
         assert_eq!(
             widget.setup_hint(),
-            Some("Open the crosshair widget in Game Bar")
+            Some("Open the crosshair widget in Game Bar and pin it")
         );
         widget.connected = true;
         assert_eq!(
             widget.setup_hint(),
-            Some("Pin the crosshair widget in Game Bar")
+            Some("Click the pin in the widget’s title bar")
         );
         widget.pinned = true;
         assert_eq!(
