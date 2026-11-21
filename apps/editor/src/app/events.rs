@@ -335,11 +335,21 @@ impl App {
                         self.image_ready = Some((id, width, height));
                         self.client.refresh();
                     }
-                } else if tag == "save-browse" {
+                } else if let Some(id) = tag.strip_prefix("save-browse:") {
                     let ui = self.window()?;
                     let store = ui.global::<Store>();
                     store.set_browse_saving(false);
-                    store.set_library_notice("Added to Saved".into());
+                    store.set_browse_saved(id.into());
+                    let weak = ui.as_weak();
+                    self.browse_save_feedback_timer.start(
+                        slint::TimerMode::SingleShot,
+                        std::time::Duration::from_millis(1500),
+                        move || {
+                            if let Some(ui) = weak.upgrade() {
+                                ui.global::<Store>().set_browse_saved("".into());
+                            }
+                        },
+                    );
                     self.client.refresh();
                 } else if tag == "new-preset" || tag == "duplicate-open" {
                     if let Reply::Created { id } = reply {
@@ -362,7 +372,7 @@ impl App {
                     conflict,
                 },
             ) => {
-                if tag == "save-browse" || tag == "connection" {
+                if tag.starts_with("save-browse:") || tag == "connection" {
                     self.window()?.global::<Store>().set_browse_saving(false);
                 }
                 if let Some(id) = tag.strip_prefix("new-shortcut:") {
