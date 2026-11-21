@@ -633,6 +633,11 @@ than blurring a one-pixel line. Use identical rounding on both outputs.
 Apply this alignment to rectangular contours after all layer and output transforms,
 based on their final pixel spans. Preserve fractional spans and positions with
 coverage antialiasing; do not infer alignment from scale factors alone.
+Opposing rectangular arms share a pixel axis with their center dot. When stroke
+width and gap have different parity, mirroring the arms can change the painted
+span by one pixel. If snapping would close a positive gap or clip a dot, render
+the centered vector geometry with antialiased edges. Saved dimensions and native
+output bounds stay intact.
 
 ### Animation playback
 

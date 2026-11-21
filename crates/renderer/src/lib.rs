@@ -1,5 +1,6 @@
 //! Deterministic premultiplied raster output shared by every application surface.
 
+mod alignment;
 mod assets;
 mod canvas;
 mod composite;

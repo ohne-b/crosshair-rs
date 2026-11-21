@@ -90,6 +90,131 @@ fn default_crosshair_has_exact_pixel_geometry_and_no_center_fill() {
 }
 
 #[test]
+fn opposite_arms_and_center_hole_share_a_pixel_axis_while_resizing() -> anyhow::Result<()> {
+    let mut renderer = Renderer::new()?;
+    for (thickness, offset) in [(5.0, 0.0), (1.0, 0.0), (2.0, 0.0), (5.0, 0.5), (2.0, 0.5)] {
+        for gap in [1.0, 0.0, 0.5, 2.0, 2.5] {
+            let mut doc = preset(Content::Crosshair(Crosshair {
+                thickness,
+                gap,
+                length: 10.0,
+                ..Default::default()
+            }));
+            doc.layers[0].transform.x = offset;
+            doc.layers[0].transform.y = offset;
+            let native = renderer.render(&doc, 1.0, &no_assets)?;
+            let bounds = renderer.canvas_layer_bounds(&doc.layers[0])?.painted;
+            let center = bounds.center().x.floor() as i32;
+            assert_eq!(
+                pixel(&native, center, center)[3],
+                if gap == 0.0 { 255 } else { 0 },
+                "thickness {thickness} offset {offset} gap {gap} bounds {bounds:?}"
+            );
+            if thickness == 5.0 && gap == 1.0 && offset == 0.0 {
+                assert_eq!((native.width, native.height), (22, 22));
+                assert_eq!((bounds.width(), bounds.height()), (21.0, 21.0));
+                assert_eq!(pixel(&native, 0, 0)[3], 0);
+                for (x, y) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
+                    assert_eq!(pixel(&native, x, y)[3], 255);
+                }
+            }
+            let frame = renderer.render_canvas(
+                &doc,
+                CanvasView {
+                    scale: 8.0,
+                    visible: bounds,
+                },
+                &no_assets,
+                || false,
+            )?;
+            for (raster, zoom) in [(native.as_ref(), 1), (&frame.tiles[0], 8)] {
+                let twice_center = (bounds.left + bounds.right) * zoom as f32;
+                let mirror = |p| twice_center as i32 - 1 - p;
+                let tip = (bounds.right * zoom as f32) as i32 - 1;
+                let start = (bounds.left * zoom as f32) as i32;
+                let coverage: i32 = (start..=tip)
+                    .map(|y| i32::from(pixel(raster, tip - zoom, y)[3]))
+                    .sum();
+                assert!((coverage - thickness as i32 * zoom * 255).abs() <= 1);
+                for y in start..=tip {
+                    for x in start..=tip {
+                        let p = pixel(raster, x, y);
+                        for other in [pixel(raster, mirror(x), y), pixel(raster, x, mirror(y))] {
+                            // Opposite half-covered edges can round to alpha 127 and 128.
+                            assert!(
+                                p.iter().zip(other).all(|(a, b)| a.abs_diff(b) <= 1),
+                                "width {thickness}, gap {gap}, zoom {zoom}, x {x}, y {y}"
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+#[test]
+fn fractional_arm_tips_fit_the_native_crop_and_keep_one_pixel_stems() -> anyhow::Result<()> {
+    let mut renderer = Renderer::new()?;
+    for gap in [4.0, 4.25, 4.75] {
+        let doc = preset(Content::Crosshair(Crosshair {
+            thickness: 1.0,
+            length: 9.75,
+            gap,
+            ..Default::default()
+        }));
+        let raster = renderer.render(&doc, 1.0, &no_assets)?;
+        for x in [-8, 8] {
+            assert_eq!(pixel(&raster, x, 0)[3], 255);
+            assert_eq!(pixel(&raster, x, -1)[3], 0);
+            assert_eq!(pixel(&raster, x, 1)[3], 0);
+        }
+        for x in raster.origin[0]..raster.origin[0] + raster.width as i32 {
+            assert_eq!(pixel(&raster, x, 0), pixel(&raster, -x, 0));
+        }
+    }
+    Ok(())
+}
+
+#[test]
+fn center_dot_tracks_the_arms_and_large_dots_keep_their_full_extent() -> anyhow::Result<()> {
+    let mut renderer = Renderer::new()?;
+    for shape in [DotShape::Square, DotShape::Circle] {
+        for diameter in [3.0, 32.0] {
+            let doc = preset(Content::Crosshair(Crosshair {
+                thickness: 5.0,
+                length: 8.0,
+                gap: 4.0,
+                dot: Dot {
+                    enabled: true,
+                    diameter,
+                    shape,
+                    color: Color::rgba(255, 255, 255, 255),
+                    ..Default::default()
+                },
+                ..Default::default()
+            }));
+            let raster = renderer.render(&doc, 1.0, &no_assets)?;
+            let bounds = renderer.canvas_layer_bounds(&doc.layers[0])?.painted;
+            let expected_center = if diameter == 3.0 { 0.5 } else { 0.0 };
+            assert_eq!(bounds.center().x, expected_center);
+            assert_eq!(bounds.center().y, expected_center);
+            let mirror = |p| (expected_center * 2.0) as i32 - 1 - p;
+            for y in raster.origin[1]..raster.origin[1] + raster.height as i32 {
+                for x in raster.origin[0]..raster.origin[0] + raster.width as i32 {
+                    let p = pixel(&raster, x, y);
+                    for sample in [pixel(&raster, mirror(x), y), pixel(&raster, x, mirror(y))] {
+                        assert!(p.iter().zip(sample).all(|(a, b)| a.abs_diff(b) <= 16));
+                    }
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+#[test]
 fn canvas_magnifies_whole_design_pixels_and_antialiases_vector_edges() -> anyhow::Result<()> {
     let mut renderer = Renderer::new()?;
     let view = CanvasView {

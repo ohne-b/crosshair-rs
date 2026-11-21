@@ -52,9 +52,8 @@ impl CanvasView {
 
 impl Renderer {
     pub fn canvas_layer_bounds(&mut self, layer: &crosshair_core::Layer) -> Result<CanvasBounds> {
-        let mut prepared = super::geometry::prepare_layer(layer, 1.0, &mut self.text, false)?;
+        let prepared = super::geometry::prepare_layer(layer, 1.0, &mut self.text, false)?;
         let geometry = prepared.bounds;
-        prepared.align_canvas_paths();
         let painted = if prepared.is_empty() {
             geometry
         } else {

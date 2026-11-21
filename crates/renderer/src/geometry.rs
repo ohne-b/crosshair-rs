@@ -128,23 +128,7 @@ pub(crate) struct PreparedLayer {
 }
 
 impl PreparedLayer {
-    pub(super) fn align_canvas_paths(&mut self) {
-        for element in self.groups.iter_mut().flat_map(|group| &mut group.elements) {
-            if let Element::Path {
-                path, antialias, ..
-            } = element
-                && !*antialias
-            {
-                if let Some(aligned) = crate::composite::align_rectangles(path) {
-                    *path = aligned;
-                }
-                *antialias = true;
-            }
-        }
-    }
-
     pub(super) fn magnify(&mut self, scale: f32) -> Result<()> {
-        self.align_canvas_paths();
         if scale == 1.0 {
             return Ok(());
         }
@@ -229,6 +213,13 @@ pub(crate) fn prepare_layer(
             .map(|e| e.transform(transform))
             .collect::<Result<_>>()?;
     }
+    let center = match &layer.content {
+        Content::Crosshair(c) if !transformed[0].elements.is_empty() => {
+            crate::alignment::crosshair_axes(c, layer.transform.rotation, transform, effect_scale)
+        }
+        _ => None,
+    };
+    crate::alignment::align_paths(&mut transformed, center, &effects, bounds)?;
     Ok(PreparedLayer {
         groups: transformed,
         effects,
