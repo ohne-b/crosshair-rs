@@ -191,7 +191,7 @@ Duplicate, Move up/down, Bring to front, Send to back, Delete. Locked layers sta
 selectable from the list but immutable. Multi-selection transforms/duplication
 do not require a nested group model.
 
-Canvas: middle-button pan, pointer-anchored zoom, Fit and 100%. The dark background
+Canvas: middle-button pan and pointer-anchored scroll zoom. The dark background
 is fixed and the design-pixel grid appears automatically from 800% zoom.
 Panning uses screen-space deltas independent of the changing design transform.
 At 100% zoom one design pixel occupies one physical display pixel, independent

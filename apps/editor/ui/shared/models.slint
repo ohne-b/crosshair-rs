@@ -76,10 +76,6 @@ export global Store {
     callback viewport-changed();
     changed canvas-view => { self.viewport-changed(); }
     in-out property <[CanvasTile]> canvas-tiles;
-    in-out property <float> preview-x;
-    in-out property <float> preview-y;
-    in-out property <float> preview-width;
-    in-out property <float> preview-height;
     in-out property <SelectionBounds> selection-bounds;
     in-out property <float> zoom: 8;
     in-out property <float> pan-x;

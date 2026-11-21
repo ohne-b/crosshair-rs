@@ -58,10 +58,6 @@ impl App {
             })
             .collect::<Vec<_>>();
         store.set_canvas_tiles(Rc::new(slint::VecModel::from(tiles)).into());
-        store.set_preview_x(frame.bounds.left);
-        store.set_preview_y(frame.bounds.top);
-        store.set_preview_width(frame.bounds.width());
-        store.set_preview_height(frame.bounds.height());
         self.canvas_coverage = Some((frame.view, frame.painted));
         Ok(())
     }

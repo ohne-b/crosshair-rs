@@ -402,12 +402,6 @@ export component Designer inherits Rectangle {
                         ActionButton { icon: @image-url("../../../../assets/icons/pencil.svg"); label: "Draw / erase"; selected: Store.drawing; quiet: true; clicked => { Store.action("draw", ""); } }
                     }
                 }
-                HorizontalLayout {
-                    x: 12px; y: parent.height - 38px; width: parent.width - 24px; height: 30px; spacing: 4px;
-                    Rectangle { horizontal-stretch: 1; }
-                    ActionButton { text: "Fit"; quiet: true; clicked => { Store.action("zoom-fit", (canvas.width / canvas.screen-pixel) + "," + (canvas.height / canvas.screen-pixel)); } }
-                    ActionButton { text: round(Store.zoom * 100) + "%"; label: "Reset zoom to 100%"; quiet: true; clicked => { Store.action("zoom-reset", ""); } }
-                }
             }
             Rectangle { width: 1px; background: Theme.border; }
             Rectangle {

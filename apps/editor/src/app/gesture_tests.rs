@@ -167,7 +167,12 @@ fn test_frame(view: CanvasView, x: f32, y: f32) -> CanvasFrame {
         bounds,
         painted: bounds,
         scale: 1.0,
-        tiles: Vec::new(),
+        tiles: vec![crosshair_renderer::Raster {
+            width: 1,
+            height: 1,
+            origin: [x as i32, y as i32],
+            pixels: vec![255; 4],
+        }],
     }
 }
 
@@ -423,19 +428,33 @@ fn preview_frames_never_edit_the_document_and_stale_bitmaps_are_ignored() -> Res
         id: preset.id,
         result: Ok(test_frame(view, 7.0, 9.0)),
     }))?;
-    assert_eq!(ui.global::<Store>().get_preview_x(), 7.0);
+    assert_eq!(
+        ui.global::<Store>()
+            .get_canvas_tiles()
+            .row_data(0)
+            .unwrap()
+            .x,
+        7.0
+    );
     assert_eq!(app.document.draft.as_ref(), Some(&preset));
     assert!(!app.document.dirty);
     assert!(!app.document.can_undo());
     assert!(commands().is_empty());
     app.stop_playback();
-    ui.global::<Store>().set_preview_x(42.0);
+    app.show_canvas_frame(test_frame(view, 42.0, 9.0))?;
     app.event(Event::Preview(preview::Event::Bitmap {
         generation,
         id: preset.id,
         result: Ok(test_frame(view, 7.0, 9.0)),
     }))?;
-    assert_eq!(ui.global::<Store>().get_preview_x(), 42.0);
+    assert_eq!(
+        ui.global::<Store>()
+            .get_canvas_tiles()
+            .row_data(0)
+            .unwrap()
+            .x,
+        42.0
+    );
     app.preview_input("movement-up")?;
     assert!(
         !app.playing,
@@ -905,7 +924,14 @@ fn selection_and_focus_changes_preserve_a_pending_design_frame() -> Result<()> {
         id: doc.id,
         result: Ok(test_frame(app.canvas_view(), 7.0, 9.0)),
     }))?;
-    assert_eq!(ui.global::<Store>().get_preview_x(), 7.0);
+    assert_eq!(
+        ui.global::<Store>()
+            .get_canvas_tiles()
+            .row_data(0)
+            .unwrap()
+            .x,
+        7.0
+    );
     assert_eq!(app.document.draft.as_ref(), Some(&doc));
     Ok(())
 }
