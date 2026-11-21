@@ -16,11 +16,11 @@ BEGIN
             VALUE "FileVersion", AS_STRING(APP_VERSION)
             VALUE "ProductVersion", AS_STRING(APP_VERSION)
 #if defined(EDITOR)
-            VALUE "FileDescription", "crosshair-rs Editor"
+            VALUE "FileDescription", "crosshair-editor"
 #elif defined(ENGINE)
-            VALUE "FileDescription", "crosshair-rs Engine"
+            VALUE "FileDescription", "crosshair-engine"
 #elif defined(GAMEBAR)
-            VALUE "FileDescription", "crosshair-rs Game Bar"
+            VALUE "FileDescription", "crosshair-gamebar"
 #else
 #error Missing process role
 #endif

@@ -72,7 +72,7 @@ try {
         $widgetVisuals = $manifest.SelectSingleNode("//*[local-name()='Application' and @Id='Widget']/*[local-name()='VisualElements']")
         $displayName = if ($manifest.Package.Identity.Name.EndsWith('.Preview')) { 'crosshair-rs Preview' } else { 'crosshair-rs' }
         if ($visuals.DisplayName -cne $displayName -or $widget.DisplayName -cne $displayName) { throw 'Editor and Game Bar must identify their installed channel.' }
-        if ($widgetVisuals.DisplayName -cne "$displayName Game Bar") { throw 'The widget process must identify its role and channel.' }
+        if ($widgetVisuals.DisplayName -cne 'crosshair-gamebar') { throw 'The widget process must be named crosshair-gamebar.' }
         if ($visuals.BackgroundColor -ne 'transparent') { throw 'Editor icon background must be transparent.' }
         $pri = Join-Path $directory 'resources.pri'
         $entry = $archive.GetEntry('resources.pri')
@@ -84,12 +84,12 @@ try {
         [xml]$index = Get-Content -LiteralPath $dump -Raw
         # A single-byte encoding lets us compare embedded PNG payloads without changing any bytes.
         $bytes = [Text.Encoding]::GetEncoding(28591)
-        $executables = foreach ($role in @('Editor', 'Engine', 'Game Bar')) {
-            $fileName = 'crosshair-' + $role.Replace(' ', '').ToLowerInvariant() + '.exe'
+        $executables = foreach ($processName in @('crosshair-editor', 'crosshair-engine', 'crosshair-gamebar')) {
+            $fileName = "$processName.exe"
             $path = Join-Path $directory $fileName
             [IO.Compression.ZipFileExtensions]::ExtractToFile($archive.GetEntry($fileName), $path)
             $info = [Diagnostics.FileVersionInfo]::GetVersionInfo($path)
-            if ($info.FileDescription -cne "crosshair-rs $role" -or $info.FileVersion -cne $build.version) { throw "Incorrect process description or version on $fileName." }
+            if ($info.FileDescription -cne $processName -or $info.FileVersion -cne $build.version) { throw "Incorrect process description or version on $fileName." }
             $bytes.GetString([IO.File]::ReadAllBytes($path))
         }
         foreach ($size in @(16, 24, 32, 48, 256)) {

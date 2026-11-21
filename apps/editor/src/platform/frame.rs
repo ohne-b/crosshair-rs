@@ -66,19 +66,15 @@ unsafe extern "system" fn focus_existing(hwnd: HWND, scope: LPARAM) -> BOOL {
         if GetPropW(hwnd, PCWSTR(scope.0 as *const u16)).is_invalid() {
             return true.into();
         }
-        let mut title = [0u16; 128];
-        let length = GetWindowTextW(hwnd, &mut title);
-        if String::from_utf16_lossy(&title[..length.max(0) as usize]) == "crosshair-rs" {
-            let mut pid = 0;
-            GetWindowThreadProcessId(hwnd, Some(&mut pid));
-            if let (Ok(current), Ok(peer)) = (Identity::current(), Identity::process(pid))
-                && current
-                    .verify_peer(&peer, &["crosshair-editor.exe"])
-                    .is_ok()
-            {
-                focus(hwnd);
-                return false.into();
-            }
+        let mut pid = 0;
+        GetWindowThreadProcessId(hwnd, Some(&mut pid));
+        if let (Ok(current), Ok(peer)) = (Identity::current(), Identity::process(pid))
+            && current
+                .verify_peer(&peer, &["crosshair-editor.exe"])
+                .is_ok()
+        {
+            focus(hwnd);
+            return false.into();
         }
         true.into()
     }
