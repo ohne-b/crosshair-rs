@@ -244,6 +244,9 @@ impl App {
                 ServerMessage::Response(_) => {}
             },
             Event::Engine(_, client::Event::Completed { tag, reply }) => {
+                if tag == "output-mode" {
+                    self.window()?.global::<Store>().set_switching_output(false);
+                }
                 if tag == "preview" {
                     self.preview_sent = self.preview_inflight.take();
                     self.preview_scale = self.preview_inflight_scale;
@@ -362,6 +365,9 @@ impl App {
                     conflict,
                 },
             ) => {
+                if tag == "output-mode" || tag == "connection" {
+                    self.window()?.global::<Store>().set_switching_output(false);
+                }
                 if tag == "save-browse" || tag == "connection" {
                     self.window()?.global::<Store>().set_browse_saving(false);
                 }
@@ -453,6 +459,7 @@ impl App {
                 self.refresh_document();
             }
             Event::Engine(_, client::Event::Disconnected(message)) => {
+                self.window()?.global::<Store>().set_switching_output(false);
                 self.stop_playback();
                 self.pending_aim = None;
                 self.capture_profile = None;

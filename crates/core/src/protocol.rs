@@ -329,6 +329,23 @@ pub struct WidgetStatus {
     pub dpi: u32,
 }
 
+impl WidgetStatus {
+    /// Setup the user can finish before the engine prepares any pixels.
+    pub fn setup_hint(&self) -> Option<&'static str> {
+        if !self.installed {
+            Some("Install the Windows package to use Game Bar")
+        } else if !self.connected {
+            Some("Open the crosshair widget in Game Bar")
+        } else if !self.pinned {
+            Some("Pin the crosshair widget in Game Bar")
+        } else if !self.click_through {
+            Some("Enable click-through in the Game Bar toolbar")
+        } else {
+            None
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum UpdatePhase {
@@ -403,6 +420,32 @@ pub fn read_frame<T: DeserializeOwned>(reader: &mut impl Read) -> io::Result<T> 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn game_bar_setup_follows_live_prerequisites_before_position_is_known() {
+        let mut widget = WidgetStatus::default();
+        assert_eq!(
+            widget.setup_hint(),
+            Some("Install the Windows package to use Game Bar")
+        );
+        widget.installed = true;
+        assert_eq!(
+            widget.setup_hint(),
+            Some("Open the crosshair widget in Game Bar")
+        );
+        widget.connected = true;
+        assert_eq!(
+            widget.setup_hint(),
+            Some("Pin the crosshair widget in Game Bar")
+        );
+        widget.pinned = true;
+        assert_eq!(
+            widget.setup_hint(),
+            Some("Enable click-through in the Game Bar toolbar")
+        );
+        widget.click_through = true;
+        assert_eq!(widget.setup_hint(), None);
+    }
 
     #[test]
     fn engine_status_keeps_master_enabled_separate_from_effective_visibility() {

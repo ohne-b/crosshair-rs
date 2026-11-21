@@ -98,6 +98,9 @@ impl Runtime {
             && candidate.settings.output_mode != self.app.state.settings.output_mode
         {
             ensure!(self.widget.is_some(), "{}", self.widget_unavailable());
+            if let Some(hint) = self.app.status.widget.setup_hint() {
+                anyhow::bail!(hint);
+            }
         }
         self.app.reset_input();
         self.sync_animation();
@@ -513,7 +516,13 @@ impl Runtime {
             }
             return;
         }
-        self.cancel_change("The output did not become ready. Pin the widget, enable click-through and check its placement, then retry", true);
+        let message = match change.candidate.settings.output_mode {
+            OutputMode::Desktop => "Reopen the Game Bar widget so it can clear its crosshair before switching to Desktop",
+            OutputMode::GameBar => self.app.status.widget.setup_hint().unwrap_or(
+                "Game Bar could not present the crosshair. Check the widget's position on the selected monitor and its opacity",
+            ),
+        };
+        self.cancel_change(message, true);
         self.refresh();
     }
 

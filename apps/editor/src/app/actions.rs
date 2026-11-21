@@ -649,8 +649,27 @@ impl App {
                     enabled: value.parse()?,
                 },
             )?,
-            "output-mode"
-            | "monitor"
+            "output-mode" => {
+                let mode = match value {
+                    "0" => OutputMode::Desktop,
+                    "1" => OutputMode::GameBar,
+                    _ => bail!("Choose Desktop or Game Bar"),
+                };
+                store.set_gamebar_setup(mode == OutputMode::GameBar);
+                if self.state.settings.output_mode != mode && !store.get_switching_output() {
+                    let mut settings = self.state.settings.clone();
+                    settings.output_mode = mode;
+                    self.send(
+                        "output-mode",
+                        Command::SetSettings {
+                            settings,
+                            expected_revision: self.state.revision,
+                        },
+                    )?;
+                    store.set_switching_output(true);
+                }
+            }
+            "monitor"
             | "show-on-launch"
             | "check-updates-setting"
             | "allow-prereleases"
@@ -658,13 +677,6 @@ impl App {
             | "discord-style" => {
                 let mut settings = self.state.settings.clone();
                 match action {
-                    "output-mode" => {
-                        settings.output_mode = if value == "1" {
-                            OutputMode::GameBar
-                        } else {
-                            OutputMode::Desktop
-                        }
-                    }
                     "monitor" => {
                         settings.monitor = value
                             .parse::<usize>()?

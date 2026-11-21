@@ -340,22 +340,19 @@ impl App {
                 .unwrap_or(0) as i32,
         );
         let widget = &self.status.widget;
-        store.set_widget_status(
-            if !widget.installed {
-                "Not installed"
-            } else if !widget.connected {
-                "Not connected"
-            } else if !widget.pinned {
-                "Connected · not pinned"
-            } else if !widget.click_through {
-                "Pinned · enable click-through"
-            } else if !widget.positioned {
-                "Pinned · position required"
+        store.set_widget_installed(widget.installed);
+        let widget_status = widget.setup_hint().unwrap_or_else(|| {
+            if self.state.settings.output_mode == OutputMode::Desktop {
+                "Ready to switch to Game Bar"
+            } else if !widget.visible {
+                "Pinned ? hidden by Game Bar"
+            } else if self.status.visible && !widget.positioned {
+                "Pinned ? check widget position"
             } else {
-                "Pinned · connected"
+                "Pinned ? connected"
             }
-            .into(),
-        );
+        });
+        store.set_widget_status(widget_status.into());
         store.set_update_phase(match self.status.update.phase {
             UpdatePhase::Idle => 0,
             UpdatePhase::Checking => 1,

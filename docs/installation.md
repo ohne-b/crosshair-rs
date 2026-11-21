@@ -24,13 +24,13 @@ For a source build, see [Contributing](CONTRIBUTING.md#development).
 
 ## Fullscreen with Game Bar
 
-1. Open the installed **crosshair-rs** app. Press **Win+G** and select **crosshair-rs**
-   from **Widgets**. Its window should open even while the editor is in Desktop mode.
-2. Pin the widget, enable click-through, and position it on your target display.
-   Press **Win+G** to dismiss Game Bar.
-3. In crosshair-rs, choose **Game Bar** in **Settings > Display > Display mode**.
-   With the crosshair visible, check that it stays on screen and the status reads
-   **Pinned · connected** before trying fullscreen.
+1. In **Settings > Display**, choose **Game Bar**. If the widget needs setup,
+   Desktop stays active and the editor shows the next step.
+2. Click **Open widget**. Press **Win+G** to show the Game Bar toolbar, pin the
+   widget on your target display, and turn on **Enable click-through**.
+3. Press **Win+G** again. When the editor shows **Ready to switch to Game Bar**,
+   choose **Game Bar** again. To switch back, choose **Desktop** in the same menu.
+   You can leave the widget pinned for next time.
 
 Desktop mode covers normal windows and borderless games. Fullscreen support
 depends on Game Bar and the game; Vulkan/OpenGL fullscreen can be restricted.

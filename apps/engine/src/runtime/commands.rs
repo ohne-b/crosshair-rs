@@ -1,4 +1,5 @@
 use super::*;
+use anyhow::Context;
 
 #[derive(Clone, Copy)]
 pub(super) enum SaveNext {
@@ -438,7 +439,12 @@ impl Runtime {
                 )?));
             }
             Command::OpenGameBar => {
-                return Ok(Some(lifecycle::open("ms-gamebar:", self.window.0)?));
+                let family = Identity::current()?
+                    .package_family
+                    .context("Install the Windows package to open its Game Bar widget")?;
+                let target =
+                    format!("ms-gamebar://launch/activate/{family}_Widget_CrosshairOverlay");
+                return Ok(Some(lifecycle::open(&target, self.window.0)?));
             }
             Command::SetStartup { enabled } => {
                 let mut candidate = self.app.state.clone();

@@ -58,8 +58,8 @@ export component Settings inherits Rectangle {
                     if root.category == 0: VerticalLayout { spacing: 12px; alignment: start;
                         SectionTitle { text: "DISPLAY"; }
                         Group {
-                            Setting { label: "Display mode";
-                                DropDown { width: 180px; model: ["Desktop", "Game Bar"]; current-index: Store.output-mode; accessible-label: "Output mode"; selected(index) => { Store.action("output-mode", index); } }
+                            Setting { label: Store.switching-output ? "Switching display mode?" : "Display mode";
+                                DropDown { width: 180px; model: ["Desktop", "Game Bar"]; enabled: Store.interactive && !Store.switching-output; current-index: Store.output-mode; accessible-label: "Output mode"; selected(index) => { Store.action("output-mode", index); } }
                                 ActionButton { icon: @image-url("../../../../assets/icons/info-circle.svg"); label: "Display compatibility"; quiet: true; clicked => { Store.action("gamebar-help", ""); } }
                             }
                             Setting { label: "Monitor"; last: true;
@@ -83,10 +83,10 @@ export component Settings inherits Rectangle {
                                 ActionButton { icon: @image-url("../../../../assets/icons/trash.svg"); label: "Remove saved position"; enabled: Store.positions.length > 0 && Store.interactive; quiet: true; clicked => { Store.action("position-delete", Store.position-index); } }
                             }
                         }
-                        if Store.output-mode == 1: VerticalLayout { spacing: 12px;
+                        if Store.gamebar-setup || Store.output-mode == 1: VerticalLayout { spacing: 12px;
                             SectionTitle { text: "GAME BAR"; }
                             Group { Setting { label: Store.widget-status; last: true;
-                                ActionButton { text: "Open Game Bar"; clicked => { Store.action("open-gamebar", ""); } }
+                                if Store.widget-installed: ActionButton { text: "Open widget"; clicked => { Store.action("open-gamebar", ""); } }
                                 ActionButton { icon: @image-url("../../../../assets/icons/info-circle.svg"); label: "Game Bar setup"; quiet: true; clicked => { Store.action("gamebar-help", ""); } }
                             } }
                         }
