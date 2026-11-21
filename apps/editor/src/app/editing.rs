@@ -3,6 +3,37 @@ use crate::features::designer::{self, FieldKind};
 use anyhow::{bail, ensure};
 
 impl App {
+    pub(super) fn draft_needs_saving(&self) -> bool {
+        self.document.dirty
+            || self.inflight.is_some()
+            || self.group_open
+            || self
+                .document
+                .draft
+                .as_ref()
+                .is_some_and(|draft| self.save_flushes.contains(&Some(draft.id)))
+    }
+
+    pub(super) fn flush_save(&mut self, changed: bool) -> Result<()> {
+        if let Err(error) = self.send("save-flush", Command::Flush) {
+            if changed {
+                self.document.dirty = true;
+                self.document.save_paused = true;
+                self.refresh_document();
+            }
+            return Err(error);
+        }
+        // The client delivers replies in submission order. A clean flush has no edited draft.
+        self.save_flushes.push_back(
+            self.document
+                .draft
+                .as_ref()
+                .filter(|_| changed)
+                .map(|draft| draft.id),
+        );
+        Ok(())
+    }
+
     pub(super) fn cancel_document_gesture(&mut self) {
         let conflicted = self.document.conflict;
         self.document.cancel_gesture(&self.state);
@@ -139,7 +170,7 @@ impl App {
         if !self.document.dirty {
             if !self.group_open {
                 self.save_requested = false;
-                self.send("save-flush", Command::Flush)?;
+                self.flush_save(false)?;
             }
             return Ok(());
         }
@@ -338,7 +369,7 @@ impl App {
         } else {
             self.window()?
                 .global::<Store>()
-                .set_dirty(self.document.dirty || self.inflight.is_some());
+                .set_dirty(self.draft_needs_saving());
         }
         Ok(())
     }

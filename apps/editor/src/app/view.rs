@@ -439,7 +439,7 @@ impl App {
         store.set_can_preview_fire(can_preview(AnimationTrigger::Fire));
         store.set_can_preview_movement(can_preview(AnimationTrigger::Movement));
         store.set_document_open(self.document.draft.is_some());
-        store.set_dirty(self.document.dirty || self.inflight.is_some());
+        store.set_dirty(self.draft_needs_saving());
         store.set_save_paused(self.document.save_paused || self.document.conflict);
         store.set_selection_editable(self.document.draft.as_ref().is_some_and(|preset| {
             preset

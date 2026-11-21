@@ -194,7 +194,7 @@ export component Designer inherits Rectangle {
                 }
                 Rectangle { horizontal-stretch: 1; }
                 if !Store.document-active: ActionButton { text: "Use"; primary: true; clicked => { Store.action("use-document", ""); } }
-                ActionButton { text: "Save"; enabled: Store.interactive; clicked => { Store.action("save", ""); } }
+                ActionButton { text: "Save"; primary: Store.dirty; enabled: Store.interactive; clicked => { Store.action("save", ""); } }
                 ActionButton { text: "Share"; icon: @image-url("../../../../assets/icons/file-export.svg"); quiet: true; clicked => { share-menu.show(); }
                     share-menu := PopupWindow { x: min(0px, root.width + root.absolute-position.x - self.width - parent.absolute-position.x - 8px); y: parent.height + 4px; width: 168px; height: 84px; close-policy: close-on-click-outside; forward-focus: share-keys;
                         share-keys := FocusScope { key-pressed(event) => { if event.text == Key.Escape { share-menu.close(); return accept; } return reject; }

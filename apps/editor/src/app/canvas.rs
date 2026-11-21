@@ -384,6 +384,7 @@ impl App {
             }
             self.document.draft = Some(changed);
             self.document.dirty = true;
+            self.window()?.global::<Store>().set_dirty(true);
             self.render();
         }
 

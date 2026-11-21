@@ -59,6 +59,7 @@ fn app(ui: &AppWindow) -> App {
         last_valid: None,
         preview_error: None,
         save_requested: false,
+        save_flushes: VecDeque::new(),
         group_open: false,
         group_ending: false,
         finish_group: false,
@@ -380,6 +381,18 @@ fn animation_enabled_switch_updates_the_live_draft_and_save() -> Result<()> {
     app.action("designer-mode", "animate")?;
     assert!(store.get_can_preview_fire());
 
+    let orange_in_toolbar = || -> Result<usize> {
+        let image = ui.window().take_snapshot()?;
+        Ok(image
+            .as_slice()
+            .chunks_exact(image.width() as usize)
+            .skip(48)
+            .take(44)
+            .flat_map(|row| &row[row.len() / 2..])
+            .filter(|p| (p.r, p.g, p.b) == (249, 115, 22))
+            .count())
+    };
+    let clean = orange_in_toolbar()?;
     slint::platform::update_timers_and_animations();
     pointer(&ui, 0, 1238.0, 205.0);
     pointer(&ui, 2, 1238.0, 205.0);
@@ -394,6 +407,56 @@ fn animation_enabled_switch_updates_the_live_draft_and_save() -> Result<()> {
 
     app.save_document()?;
     assert!(!app.inflight.as_ref().unwrap().layers[0].animations[0].enabled);
+    assert!(orange_in_toolbar()? > clean + 100);
+    app.event(Event::Engine(
+        app.connection_epoch,
+        client::Event::Completed {
+            tag: "document".into(),
+            reply: Reply::Ack {
+                document_revision: Some(2),
+            },
+        },
+    ))?;
+    assert!(orange_in_toolbar()? > clean + 100);
+    for tag in ["end-edit", "save-flush"] {
+        app.event(Event::Engine(
+            app.connection_epoch,
+            client::Event::Completed {
+                tag: tag.into(),
+                reply: Reply::Ack {
+                    document_revision: None,
+                },
+            },
+        ))?;
+        assert_eq!(orange_in_toolbar()? > clean + 100, tag == "end-edit");
+    }
+    assert_eq!(orange_in_toolbar()?, clean);
+    ui.hide()?;
+    Ok(())
+}
+
+#[test]
+fn failed_flush_keeps_the_edited_draft_unsaved() -> Result<()> {
+    let ui = window();
+    let mut app = app(&ui);
+    app.document.open(app.state.presets[0].clone())?;
+    let (client, _commands) = Client::recording_for_test();
+    app.client = client;
+    app.flush_save(false)?;
+    app.flush_save(true)?;
+    for changed in [false, true] {
+        app.event(Event::Engine(
+            app.connection_epoch,
+            client::Event::Failed {
+                tag: "save-flush".into(),
+                message: "Disk full".into(),
+                conflict: false,
+            },
+        ))?;
+        assert_eq!(app.document.dirty, changed);
+        assert_eq!(app.document.save_paused, changed);
+        assert!(ui.global::<Store>().get_dirty());
+    }
     ui.hide()?;
     Ok(())
 }

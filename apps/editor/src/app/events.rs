@@ -258,6 +258,7 @@ impl App {
                             .extend(self.deferred_ui.drain(..).map(Event::Ui))
                     });
                 } else if tag == "save-flush" {
+                    self.save_flushes.pop_front();
                     if let Some(id) = self.open_after_save.take() {
                         self.open_document(id)?;
                     }
@@ -307,7 +308,7 @@ impl App {
                     if tag == "cancel-edit" {
                         self.document.dirty = false;
                     }
-                    self.send("save-flush", Command::Flush)?;
+                    self.flush_save(tag == "end-edit")?;
                     if let Some(command) = self.pending_command.take() {
                         self.send("pending", command)?;
                     }
@@ -382,8 +383,16 @@ impl App {
                     self.send_document()?;
                 }
                 if tag == "save-flush" {
-                    self.document.dirty = true;
-                    self.document.save_paused = true;
+                    let failed_draft = self.save_flushes.pop_front().flatten();
+                    if self
+                        .document
+                        .draft
+                        .as_ref()
+                        .is_some_and(|draft| Some(draft.id) == failed_draft)
+                    {
+                        self.document.dirty = true;
+                        self.document.save_paused = true;
+                    }
                     self.closing = false;
                     self.open_after_save = None;
                 }
@@ -454,6 +463,8 @@ impl App {
                 self.refresh_document();
             }
             Event::Engine(_, client::Event::Disconnected(message)) => {
+                self.document.dirty = self.draft_needs_saving();
+                self.save_flushes.clear();
                 self.stop_playback();
                 self.pending_aim = None;
                 self.capture_profile = None;
