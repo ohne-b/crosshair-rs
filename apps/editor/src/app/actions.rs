@@ -551,32 +551,6 @@ impl App {
                 store.set_pan_x(pan[0]);
                 store.set_pan_y(pan[1]);
                 store.set_zoom(zoom);
-                self.render();
-            }
-            "zoom-reset" => {
-                store.set_zoom(1.0);
-                self.render();
-                store.set_pan_x(0.0);
-                store.set_pan_y(0.0);
-            }
-            "zoom-fit" => {
-                let (width, height) = value.split_once(',').context("Invalid canvas size")?;
-                let width: f32 = width.parse()?;
-                let height: f32 = height.parse()?;
-                store.set_zoom(
-                    ((width - 100.0) / store.get_preview_width().max(1.0))
-                        .min((height - 160.0) / store.get_preview_height().max(1.0))
-                        .clamp(0.25, 32.0)
-                        .floor()
-                        .max(0.25),
-                );
-                store.set_pan_x(
-                    -(store.get_preview_x() + store.get_preview_width() / 2.0) * store.get_zoom(),
-                );
-                store.set_pan_y(
-                    -(store.get_preview_y() + store.get_preview_height() / 2.0) * store.get_zoom(),
-                );
-                self.render();
             }
             "reset-layout" => {
                 store.set_zoom(8.0);

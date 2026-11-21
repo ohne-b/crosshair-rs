@@ -14,6 +14,12 @@ adding dependencies or abstractions. Do not scaffold future features or crates.
 Use a separate read-only reviewer for independent review, supplying the goal,
 acceptance criteria, final revision and actual validation evidence.
 
+Use Conventional Commits for every commit and PR title. Start changelog entries
+with a type like `feat:` or `fix:`. Cover every user-facing feature and fix.
+Group related changes from the same PR. Give distinct changes their own short bullets.
+End each bullet with one PR link in parentheses. Repeat the link if needed.
+Keep changelog examples in chat unless asked to edit `CHANGELOG.md`.
+
 Keep README a short product introduction with setup links and required credits.
 Update it only when essential setup or usage changes; new features and routine
 fixes do not need README entries. Put user guides in `docs/`, release changes in

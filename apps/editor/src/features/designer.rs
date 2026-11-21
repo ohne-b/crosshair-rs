@@ -1140,6 +1140,91 @@ pub fn transform_around(
     Ok(())
 }
 
+pub fn rotate_delta(x: f32, y: f32, degrees: f32) -> Point {
+    let (sin, cos) = degrees.to_radians().sin_cos();
+    Point {
+        x: cos * x - sin * y,
+        y: sin * x + cos * y,
+    }
+}
+
+/// A primitive's opposite corner stays fixed. Crosshair handles instead move
+/// the arms radially around the crosshair's own origin.
+pub fn resize_shape(layer: &mut Layer, handle: Point, delta: Point, proportional: bool) -> bool {
+    let corner = Point {
+        x: handle.x.signum(),
+        y: handle.y.signum(),
+    };
+    let t = layer.transform;
+    if let Content::Crosshair(c) = &mut layer.content {
+        const DRAG_GAIN: f32 = 1.25;
+        let delta = Point {
+            x: delta.x * DRAG_GAIN,
+            y: delta.y * DRAG_GAIN,
+        };
+        if c.length > 0.0 && c.thickness > 0.0 && c.enabled_arms.iter().any(|on| *on) {
+            // Crosshair X measures the corner one layer pixel beyond the arm tips.
+            let x = handle.x + corner.x * t.scale;
+            let y = handle.y + corner.y * t.scale;
+            let growth = (delta.x * x + delta.y * y) / (x * x + y * y);
+            if c.gap > 0.0 {
+                // Its gap spans both arms. Keep a matched pair on whole pixels.
+                let full_gap_change = (2.0 * c.gap * growth).round();
+                c.gap = (c.gap + (full_gap_change / 2.0).floor()).clamp(0.0, 512.0);
+            } else {
+                layer.transform.scale = (t.scale * (1.0 + growth)).clamp(0.01, 100.0);
+            }
+        } else if c.dot.enabled {
+            let change = (delta.x * corner.x + delta.y * corner.y).round() / t.scale;
+            c.dot.diameter = (c.dot.diameter + change).clamp(c.dot.diameter.min(1.0), 1024.0);
+        }
+        return true;
+    }
+    let Some((w, h)) = layer.content.shape_size() else {
+        return false;
+    };
+    let local = rotate_delta(delta.x, delta.y, -t.rotation);
+    let dx = corner.x * local.x;
+    let dy = corner.y * local.y;
+    let (width, height) = if proportional && w > 0.0 && h > 0.0 {
+        let span = w.max(h);
+        let growth = (dx * w + dy * h) / (w * w + h * h) * span;
+        let ratio = (1.0 + growth.round() / (span * t.scale))
+            .clamp((1.0 / w.min(h)).min(1.0), 1024.0 / span);
+        (w * ratio, h * ratio)
+    } else {
+        (
+            (w + dx.round() / t.scale).clamp(w.min(1.0), 1024.0),
+            (h + dy.round() / t.scale).clamp(h.min(1.0), 1024.0),
+        )
+    };
+    match &mut layer.content {
+        Content::Rectangle(r) => {
+            r.width = width;
+            r.height = height;
+            r.radius = r.radius.min(width.min(height) / 2.0);
+        }
+        Content::Ellipse(s) | Content::Triangle(s) => {
+            s.width = width;
+            s.height = height;
+        }
+        _ => unreachable!(),
+    }
+    // The pivot follows the layer's intrinsic bounds. Compensate for that
+    // movement as well as the signed half-size change at the dragged corner.
+    let (ax, ay) = t.anchor.fractions();
+    let (dw, dh) = (width - w, height - h);
+    let (px, py) = ((ax - 0.5) * dw, (ay - 0.5) * dh);
+    let offset = rotate_delta(
+        (corner.x * dw / 2.0 + px) * t.scale,
+        (corner.y * dh / 2.0 + py) * t.scale,
+        t.rotation,
+    );
+    layer.transform.x += offset.x - px;
+    layer.transform.y += offset.y - py;
+    true
+}
+
 pub fn resize_scale(origin: Point, point: Point, center: Point, span: f32, coarse: bool) -> f32 {
     let x = origin.x - center.x;
     let y = origin.y - center.y;
@@ -1803,6 +1888,52 @@ mod viewport_tests {
             false,
         );
         assert!((28.5 * scale - 29.5).abs() < 0.001);
+    }
+
+    #[test]
+    fn shape_resize_preserves_fractional_sizes_aspect_and_inactive_crosshair_settings() {
+        let corner = Point { x: 1.0, y: 1.0 };
+        let mut r = Layer::new(
+            "Rounded",
+            Content::Rectangle(Rectangle {
+                width: 15.5,
+                height: 7.75,
+                radius: 3.75,
+                ..Default::default()
+            }),
+        );
+        let original = r.clone();
+        assert!(resize_shape(&mut r, corner, Point::default(), true));
+        assert_eq!(r, original);
+        resize_shape(&mut r, corner, Point { x: 3.0, y: 1.5 }, true);
+        assert_eq!(r.content.shape_size(), Some((18.5, 9.25)));
+        resize_shape(&mut r, corner, Point { x: -200.0, y: 0.0 }, false);
+        let Content::Rectangle(rect) = r.content else {
+            unreachable!()
+        };
+        assert_eq!((rect.width, rect.height, rect.radius), (1.0, 9.25, 0.5));
+
+        let mut dot = Layer::new(
+            "Dot",
+            Content::Crosshair(Crosshair {
+                enabled_arms: vec![false; 4],
+                gap: 8.0,
+                dot: Dot {
+                    enabled: true,
+                    diameter: 6.0,
+                    ..Default::default()
+                },
+                ..Default::default()
+            }),
+        );
+        resize_shape(&mut dot, corner, Point { x: 1.6, y: 1.6 }, false);
+        let Content::Crosshair(c) = dot.content else {
+            unreachable!()
+        };
+        assert_eq!(
+            (c.dot.diameter, c.gap, c.thickness, c.length),
+            (10.0, 8.0, 2.0, 10.0)
+        );
     }
 
     #[test]

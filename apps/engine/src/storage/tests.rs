@@ -590,6 +590,7 @@ fn portable_component_limits_apply_before_unbounded_string_allocation() -> Resul
 
 #[test]
 fn exporting_unsent_draft_never_mutates_authoritative_state() -> Result<()> {
+    use crosshair_core::{Animation, AnimationTarget, Layer};
     let directory = tempfile::tempdir()?;
     let exports = tempfile::tempdir()?;
     let mut store = Store::open(directory.path())?;
@@ -598,6 +599,15 @@ fn exporting_unsent_draft_never_mutates_authoritative_state() -> Result<()> {
     store.save(&state)?;
     let mut draft = state.presets[0].clone();
     draft.name = "Unsent draft".into();
+    let mut ring = Layer::new("Outer ring", Content::Ellipse(Default::default()));
+    ring.animations.push(Animation {
+        target: AnimationTarget {
+            x: Some(6.0),
+            ..Default::default()
+        },
+        ..Default::default()
+    });
+    draft.layers.push(ring);
     for png in [false, true] {
         let destination = exports
             .path()
@@ -621,11 +631,35 @@ fn exporting_unsent_draft_never_mutates_authoritative_state() -> Result<()> {
         ));
         assert!(destination.exists());
         assert_eq!(store.load()?, state);
-        if !png {
-            let json: serde_json::Value = serde_json::from_slice(&fs::read(destination)?)?;
-            assert_eq!(json["state"]["presets"][0]["name"], "Unsent draft");
-        }
     }
+    let mut imported = import_file(
+        &mut store,
+        &state,
+        &mut renderer,
+        &exports.path().join("draft.json"),
+        false,
+    )?;
+    assert_eq!(imported.presets.len(), state.presets.len() + 1);
+    let restored = imported
+        .presets
+        .iter_mut()
+        .find(|p| p.name == draft.name)
+        .unwrap();
+    assert_ne!(restored.id, draft.id);
+    assert_eq!(restored.layers.len(), draft.layers.len());
+    for (actual, original) in restored.layers.iter().zip(&draft.layers) {
+        assert_ne!(actual.id, original.id);
+        assert_eq!(
+            actual,
+            &Layer {
+                id: actual.id,
+                ..original.clone()
+            }
+        );
+    }
+    restored.layers[1].animations[0].target.x = Some(12.0);
+    store.save(&imported)?;
+    assert_eq!(store.load()?, imported);
     Ok(())
 }
 

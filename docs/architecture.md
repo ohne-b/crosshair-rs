@@ -182,7 +182,7 @@ Toolbar: editable document name, File, undo/redo, Save and Share. Save or
 `Ctrl+S` commits the draft; ordinary edits never save automatically. The editor
 updates its canvas and sends a validated transient preview to the engine without
 changing the stored preset. File offers New, Open, Import, Duplicate and Export
-crosshair. Share exports the current draft as PNG or SVG.
+crosshair. Share offers that same editable preset export alongside PNG and SVG.
 
 The layer list has a collapse chevron, ordered names, visibility and per-row trash.
 Rename from the row; reorder by dragging, with neighboring rows moving aside. No footer menus
@@ -191,17 +191,25 @@ Duplicate, Move up/down, Bring to front, Send to back, Delete. Locked layers sta
 selectable from the list but immutable. Multi-selection transforms/duplication
 do not require a nested group model.
 
-Canvas: middle-button pan, pointer-anchored zoom, Fit and 100%. The dark background
+Canvas: middle-button pan and pointer-anchored scroll zoom. The dark background
 is fixed and the design-pixel grid appears automatically from 800% zoom.
 Panning uses screen-space deltas independent of the changing design transform.
-The shared renderer rasterizes previews at display/zoom resolution, capped at a
-1024px bitmap dimension; the engine still rasterizes at physical output scale.
-Bounds/handles and the grid are editor adornments only.
-Drag moves; handles resize/rotate; Shift constrains proportions/angles. Arrow
-keys nudge one design pixel, Shift+arrow ten. Move deltas, resize size changes and
-geometry fields use whole design pixels. Transforms preserve existing fractional
-offsets and their center; rounding an untouched axis must not shift the design.
-Resize measures the selection's actual span, not the handle's click offset.
+At 100% zoom one design pixel occupies one physical display pixel, independent
+of Windows text and display scaling. The preview aligns cardinal rectangles at
+native output size before magnifying their paths. Curves and diagonals rasterize
+at viewport resolution in tiles up to 1024 pixels wide and high. Large filters
+and viewport memory limits can reduce preview resolution. Magnified arc arms use
+cubic curves around the native pivot. Saved-preset validation, overlay and export
+retain the original arc geometry. The tile clip includes the filter support at
+the current zoom independently of the native selection dimensions.
+Drag moves a layer. Corner handles on rectangles, ellipses and triangles edit
+width and height along the layer axes and keep the opposite corner fixed. Shift
+preserves the aspect ratio. Crosshair handles grow a positive gap proportionally,
+keeping both arms on matching pixels around the origin. A drag starting at zero gap
+adjusts the layer scale. A dot-only design resizes its diameter. Groups, images, text and
+drawings scale uniformly about the selection center. Arrow keys move one design
+pixel, Shift+arrow ten. Whole-pixel drag increments preserve fractional starting
+geometry and offsets. Shift snaps rotation to 15 degrees.
 Effects retain the renderer's discrete padding, so a blurred selection's measured
 bounds can still change by more than one pixel at a padding threshold.
 Exact fields cover every transform.
@@ -238,7 +246,8 @@ only that layer, never lower layers. These use the same common effect order.
 
 A compact color row contains swatch, hex and opacity; its anchored popup provides
 HSV controls and a palette. Numeric fields support horizontal dragging, direct
-entry, stepping and keyboard input without inspector sliders. Invalid/nonfinite
+entry, stepping and keyboard input without inspector sliders. Pixel-size fields
+give small values more horizontal drag distance per step. Invalid/nonfinite
 values keep the last valid result; intermediate text never clamps prematurely.
 Zero-size components produce empty output predictably. The Image tool opens a
 compact import picker; imported images use the existing bounded asset pipeline.
@@ -563,7 +572,7 @@ assets. PNG exports transparent rendered output. SVG exports vector shapes and
 text outlines, embeds cropped images at output resolution and raster outline
 effects, and uses SVG Gaussian blur filters. Blur and image sampling may differ
 slightly from the raster renderer. SVG output is capped at 16 MiB.
-Both Share exports use the current draft without saving it. Imports validate the whole
+All Share exports use the current draft without saving it. Imports validate the whole
 graph, create/remap IDs and merge once; all-data Replace requires explicit backup
 and confirmation. No partially applied imports or executable content.
 
@@ -625,6 +634,11 @@ than blurring a one-pixel line. Use identical rounding on both outputs.
 Apply this alignment to rectangular contours after all layer and output transforms,
 based on their final pixel spans. Preserve fractional spans and positions with
 coverage antialiasing; do not infer alignment from scale factors alone.
+Opposing rectangular arms share a pixel axis with their center dot. When stroke
+width and gap have different parity, mirroring the arms can change the painted
+span by one pixel. If snapping would close a positive gap or clip a dot, render
+the centered vector geometry with antialiased edges. Saved dimensions and native
+output bounds stay intact.
 
 ### Animation playback
 
@@ -896,7 +910,8 @@ Headless engine never periodically contacts GitHub. No automatic download/instal
 Use TDM's compact rhythm, 6 px bar and tabular values, no wizard/card stack.
 Keep bytes and percentages outside the bar. Unknown totals show bytes only.
 Cancel removes partial data and returns Available.
-A dot on Settings may indicate update availability. Keep updater actions in Settings.
+A circled down arrow above Settings opens the Updates category when an update is
+available. Its tooltip shows the release tag. Downloads and installation start in Settings.
 
 ### Manifest and authenticity
 

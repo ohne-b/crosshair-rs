@@ -10,10 +10,12 @@ export component NumericField inherits Rectangle {
     in property <float> minimum: 0;
     in property <float> maximum: 100;
     in property <float> step: 1;
+    in property <bool> pixel-size;
     in property <float> value;
     callback changed(float, int); // 1: preview, 2: commit, 4: cancel
     property <bool> editing: false;
     property <bool> dragging: false;
+    property <bool> previewed: false;
     property <bool> cancelled: false;
     property <length> start-x;
     property <physical-length> physical-delta: touch.mouse-x - root.start-x;
@@ -44,10 +46,16 @@ export component NumericField inherits Rectangle {
     function cancel-drag() {
         if root.dragging {
             root.dragging = false; root.cancelled = true;
-            root.changed(root.start-value, 4);
+            if root.previewed { root.changed(root.start-value, 4); }
         }
     }
     pure function dragged-value() -> float {
+        if root.pixel-size {
+            // Equal pointer distances cover smaller increments at the low end.
+            let position = max(1, sqrt(root.start-value + 1) + (touch.mouse-x - root.start-x) / 40px);
+            let delta = position * position - 1 - root.start-value;
+            return clamp(root.start-value + round(delta / root.step) * root.step, root.minimum, root.maximum);
+        }
         return clamp(root.start-value + round(root.physical-delta / 1phx) * root.step, root.minimum, root.maximum);
     }
     Image { x: 9px; y: (parent.height - 16px) / 2; width: 16px; height: 16px; source: root.icon; colorize: Theme.muted; }
@@ -71,9 +79,12 @@ export component NumericField inherits Rectangle {
         pointer-event(event) => {
             if event.kind == PointerEventKind.cancel { root.cancel-drag(); }
             if event.button == PointerEventButton.left {
-                if event.kind == PointerEventKind.down { focus.focus(); root.start-x = self.mouse-x; root.start-value = root.value; root.drag-value = root.value; root.dragging = false; root.cancelled = false; }
+                if event.kind == PointerEventKind.down { focus.focus(); root.start-x = self.mouse-x; root.start-value = root.value; root.drag-value = root.value; root.dragging = false; root.previewed = false; root.cancelled = false; }
                 if event.kind == PointerEventKind.up && !root.cancelled {
-                    if root.dragging { root.drag-value = root.dragged-value(); root.dragging = false; root.changed(root.drag-value, 2); }
+                    if root.dragging || abs(self.mouse-x - root.start-x) >= 3px {
+                        root.drag-value = root.dragged-value(); root.dragging = false;
+                        if root.previewed || root.drag-value != root.start-value { root.changed(root.drag-value, 2); }
+                    }
                     else { root.begin-edit(); }
                 }
             }
@@ -81,8 +92,10 @@ export component NumericField inherits Rectangle {
         moved => {
             if self.pressed && !root.cancelled && (root.dragging || abs(self.mouse-x - root.start-x) >= 3px) {
                 root.dragging = true;
-                root.drag-value = root.dragged-value();
-                root.changed(root.drag-value, 1);
+                let value = root.dragged-value();
+                if value != root.drag-value {
+                    root.drag-value = value; root.previewed = true; root.changed(value, 1);
+                }
             }
         }
     }

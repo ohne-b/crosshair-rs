@@ -1,6 +1,7 @@
 use super::*;
 use crate::{PresetGroup, PresetRow};
 use slint::platform::{Key, Platform, WindowAdapter, WindowEvent, software_renderer::*};
+use std::{cell::Cell, time::Duration};
 
 fn click(ui: &AppWindow, x: f32, y: f32) {
     let position = slint::LogicalPosition::new(x, y);
@@ -45,10 +46,7 @@ fn snapshot(window: &MinimalSoftwareWindow, name: &str) -> Result<()> {
     Ok(())
 }
 
-#[test]
-fn settings_tooltip_has_a_uniform_fill_inside_its_corners() -> Result<()> {
-    use std::{cell::Cell, time::Duration};
-
+fn timed_test_window(clock: Rc<Cell<Duration>>) -> Result<(AppWindow, Rc<MinimalSoftwareWindow>)> {
     struct Headless(Rc<MinimalSoftwareWindow>, Rc<Cell<Duration>>);
     impl Platform for Headless {
         fn create_window_adapter(&self) -> Result<Rc<dyn WindowAdapter>, slint::PlatformError> {
@@ -59,10 +57,16 @@ fn settings_tooltip_has_a_uniform_fill_inside_its_corners() -> Result<()> {
         }
     }
     let window = MinimalSoftwareWindow::new(RepaintBufferType::NewBuffer);
-    let clock = Rc::new(Cell::new(Duration::ZERO));
-    slint::platform::set_platform(Box::new(Headless(window.clone(), clock.clone())))?;
+    slint::platform::set_platform(Box::new(Headless(window.clone(), clock)))?;
     let ui = AppWindow::new()?;
     ui.window().set_size(slint::LogicalSize::new(1280.0, 800.0));
+    Ok((ui, window))
+}
+
+#[test]
+fn settings_tooltip_has_a_uniform_fill_inside_its_corners() -> Result<()> {
+    let clock = Rc::new(Cell::default());
+    let (ui, window) = timed_test_window(clock.clone())?;
     ui.global::<Store>().set_connected(true);
     ui.show()?;
     ui.window().dispatch_event(WindowEvent::PointerMoved {
@@ -101,6 +105,68 @@ fn settings_tooltip_has_a_uniform_fill_inside_its_corners() -> Result<()> {
         (top + 5..bottom - 4)
             .any(|y| (left + 6..right - 5).any(|x| contrast.as_slice()[y * stride + x].r < 64))
     );
+    ui.hide()?;
+    Ok(())
+}
+
+#[test]
+fn sidebar_update_link_opens_updates_and_shows_the_offered_version() -> Result<()> {
+    let clock = Rc::new(Cell::default());
+    let (ui, _) = timed_test_window(clock.clone())?;
+    let store = ui.global::<Store>();
+    let app = RefCell::new(super::gesture_tests::app(&ui));
+    store.on_action(move |action, value| app.borrow_mut().action(&action, &value).unwrap());
+    ui.show()?;
+    for (phase, version, connected, visible) in [
+        (0, "", true, false),
+        (1, "0.2.0", true, false),
+        (2, "", true, false),
+        (3, "0.2.0", true, true),
+        (4, "0.2.0", true, true),
+        (5, "0.2.0", true, true),
+        (6, "0.2.0", true, false),
+        (7, "", true, false),
+        (7, "0.2.0", true, true),
+        (3, "0.2.0", false, false),
+    ] {
+        store.set_page(0);
+        store.set_settings_category(1);
+        store.set_connected(connected);
+        store.set_update_phase(phase);
+        store.set_update_version(version.into());
+        click(&ui, 28.0, 637.0); // The footer row immediately above Settings.
+        assert_eq!(
+            (store.get_page(), store.get_settings_category()),
+            if visible { (3, 3) } else { (0, 1) }
+        );
+    }
+    store.set_connected(true);
+    store.set_update_phase(3);
+    let tooltip_right_edge = |version: &str| -> Result<usize> {
+        let hover = |x, y| {
+            ui.window().dispatch_event(WindowEvent::PointerMoved {
+                position: slint::LogicalPosition::new(x, y),
+            })
+        };
+        hover(400.0, 600.0);
+        store.set_update_version(version.into());
+        hover(28.0, 637.0);
+        let before = ui.window().take_snapshot()?;
+        clock.set(clock.get() + Duration::from_secs(1));
+        slint::platform::update_timers_and_animations();
+        let after = ui.window().take_snapshot()?;
+        let stride = after.width() as usize;
+        (50..350)
+            .rfind(|&x| {
+                (638..705).any(|y| {
+                    let at = y * stride + x;
+                    before.as_slice()[at] != after.as_slice()[at]
+                })
+            })
+            .context("No update tooltip above Settings")
+    };
+    let stable = tooltip_right_edge("0.2.0")?;
+    assert!(tooltip_right_edge("0.2.0-rc.12")? > stable);
     ui.hide()?;
     Ok(())
 }
@@ -153,8 +219,7 @@ fn layer_eye_click_dispatches_visibility_toggle() -> Result<()> {
     Ok(())
 }
 
-#[test]
-fn header_crosshair_stays_centered_when_source_size_changes() -> Result<()> {
+fn pixel_test_window() -> Result<(AppWindow, Rc<MinimalSoftwareWindow>)> {
     struct Headless(Rc<MinimalSoftwareWindow>);
     impl Platform for Headless {
         fn create_window_adapter(&self) -> Result<Rc<dyn WindowAdapter>, slint::PlatformError> {
@@ -164,6 +229,391 @@ fn header_crosshair_stays_centered_when_source_size_changes() -> Result<()> {
     let window = MinimalSoftwareWindow::new(RepaintBufferType::NewBuffer);
     slint::platform::set_platform(Box::new(Headless(window.clone())))?;
     let ui = AppWindow::new()?;
+    Ok((ui, window))
+}
+
+#[test]
+fn file_menu_fits_its_five_icon_rows_at_both_text_sizes() -> Result<()> {
+    let (ui, _window) = pixel_test_window()?;
+    ui.window().set_size(slint::LogicalSize::new(1280.0, 800.0));
+    let store = ui.global::<Store>();
+    store.set_page(1);
+    store.set_document_open(true);
+    store.set_document_id("draft".into());
+    let events = Rc::new(RefCell::new(Vec::new()));
+    let recorded = events.clone();
+    store.on_action(move |action, argument| recorded.borrow_mut().push((action, argument)));
+    ui.show()?;
+    for (scale, row_height) in [(1.0, 32), (2.0, 40)] {
+        ui.global::<crate::Theme>().set_text_scale(scale);
+        let before = ui.window().take_snapshot()?;
+        click(&ui, 315.0, 70.0);
+        let menu = ui.window().take_snapshot()?;
+        let left = store.get_menu_x().round() as usize;
+        let top = store.get_menu_y().round() as usize;
+        let stride = menu.width() as usize;
+        if scale == 2.0 {
+            let extended_row = (top + 10) * stride + left + 220;
+            assert_ne!(
+                menu.as_slice()[extended_row],
+                before.as_slice()[extended_row]
+            );
+        }
+        for i in 0..5 {
+            let center = top + 8 + i * (row_height + 2) + row_height / 2;
+            assert!(
+                (center - 9..center + 9)
+                    .flat_map(|y| &menu.as_slice()[y * stride + left + 18..y * stride + left + 36])
+                    .filter(|pixel| pixel.r > 90)
+                    .count()
+                    >= 12,
+                "Missing icon in row {i}"
+            );
+        }
+        let bottom = top + 16 + 5 * row_height + 4 * 2;
+        let outside = bottom * stride + left + 160;
+        assert_ne!(
+            menu.as_slice()[outside - 2 * stride],
+            before.as_slice()[outside - 2 * stride]
+        );
+        assert_eq!(menu.as_slice()[outside], before.as_slice()[outside]);
+        click(
+            &ui,
+            (left + 55) as f32,
+            (bottom - 8 - row_height / 2) as f32,
+        );
+        assert_eq!(
+            events.borrow_mut().pop(),
+            Some(("export-draft".into(), "draft".into()))
+        );
+    }
+    ui.hide()?;
+    Ok(())
+}
+
+#[test]
+fn share_menu_dispatches_each_draft_export_at_both_text_sizes() -> Result<()> {
+    let (ui, _window) = pixel_test_window()?;
+    ui.window().set_size(slint::LogicalSize::new(1280.0, 800.0));
+    let store = ui.global::<Store>();
+    store.set_page(1);
+    store.set_document_open(true);
+    store.set_document_id("draft".into());
+    let events = Rc::new(RefCell::new(Vec::new()));
+    let recorded = events.clone();
+    store.on_action(move |action, argument| recorded.borrow_mut().push((action, argument)));
+    ui.show()?;
+    for (scale, height) in [(1.0, 32.0), (2.0, 40.0)] {
+        ui.global::<crate::Theme>().set_text_scale(scale);
+        for (row, expected) in [
+            ("export-png", ""),
+            ("export-svg", ""),
+            ("export-draft", "draft"),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            click(&ui, 1080.0, 70.0);
+            let y = store.get_menu_y() + 8.0 + row as f32 * (height + 2.0) + height / 2.0;
+            click(&ui, 1080.0, y);
+            assert_eq!(
+                events.borrow_mut().pop(),
+                Some((expected.0.into(), expected.1.into())),
+                "Share row {row} at scale {scale}"
+            );
+        }
+    }
+    ui.hide()?;
+    Ok(())
+}
+
+fn mark_canvas_origin(store: &Store<'_>) {
+    let dot = crosshair_renderer::Raster {
+        width: 1,
+        height: 1,
+        origin: [0, 0],
+        pixels: vec![255, 0, 255, 255],
+    };
+    store.set_canvas_tiles(
+        Rc::new(slint::VecModel::from(vec![crate::CanvasTile {
+            x: 0.0,
+            y: 0.0,
+            width: 1.0,
+            height: 1.0,
+            bitmap: preview::image(&dot),
+        }]))
+        .into(),
+    );
+}
+
+#[test]
+fn canvas_center_axes_stand_out_from_the_grid_at_one_physical_pixel() -> Result<()> {
+    let (ui, _) = pixel_test_window()?;
+    ui.window().set_size(slint::LogicalSize::new(1280.0, 800.0));
+    let store = ui.global::<Store>();
+    store.set_page(1);
+    store.set_document_open(true);
+    store.set_zoom(8.0);
+    mark_canvas_origin(&store);
+    ui.show()?;
+    for high_contrast in [false, true] {
+        if high_contrast {
+            let theme = ui.global::<crate::Theme>();
+            theme.set_high_contrast(true);
+            theme.set_preview(slint::Color::from_rgb_u8(255, 255, 255));
+            theme.set_text(slint::Color::from_rgb_u8(0, 0, 0));
+        }
+        let frame = ui.window().take_snapshot()?;
+        let pixels = frame.as_slice();
+        let stride = frame.width() as usize;
+        let origin = pixels
+            .iter()
+            .position(|p| (p.r, p.g, p.b) == (255, 0, 255))
+            .unwrap();
+        // Sample outside the marker, between two perpendicular grid lines.
+        for (axis, across) in [(origin + 19, stride), (origin + 19 * stride, 1)] {
+            for neighbor in [axis - across, axis + across, axis + 8 * across] {
+                assert!(pixels[axis].r.abs_diff(pixels[neighbor].r) >= 32);
+            }
+            if high_contrast {
+                assert_eq!(pixels[axis].r, 0);
+            }
+        }
+    }
+    ui.hide()?;
+    Ok(())
+}
+
+#[test]
+fn canvas_alignment_dots_only_appear_during_layer_moves() -> Result<()> {
+    let (ui, _) = pixel_test_window()?;
+    ui.window().set_size(slint::LogicalSize::new(1280.0, 800.0));
+    let store = ui.global::<Store>();
+    store.set_page(1);
+    store.set_zoom(8.0);
+    let mut app = super::gesture_tests::app(&ui);
+    let mut preset = app.state.presets[0].clone();
+    let layer = &mut preset.layers[0];
+    layer.content = Content::Rectangle(Rectangle {
+        width: 16.0,
+        height: 16.0,
+        ..Default::default()
+    });
+    let mut renderer = crosshair_renderer::Renderer::new()?;
+    app.bounds = vec![(layer.id, renderer.canvas_layer_bounds(layer)?)];
+    app.anchors.insert(layer.id, renderer.anchor_point(layer)?);
+    app.document.open(preset)?;
+    app.refresh_document();
+    let app = RefCell::new(app);
+    store.on_canvas_event(move |kind, x, y, button, shift| {
+        app.borrow_mut()
+            .canvas_event(kind, Point { x, y }, button, shift)
+            .unwrap();
+    });
+    mark_canvas_origin(&store);
+    ui.show()?;
+    let frame = ui.window().take_snapshot()?;
+    let stride = frame.width() as usize;
+    let origin = frame
+        .as_slice()
+        .iter()
+        .position(|p| (p.r, p.g, p.b) == (255, 0, 255))
+        .unwrap();
+    let pointer = |kind, dx, dy| {
+        super::gesture_tests::pointer(
+            &ui,
+            kind,
+            (origin % stride) as f32 + dx,
+            (origin / stride) as f32 + dy,
+        )
+    };
+    let has_dots = || -> Result<bool> {
+        let frame = ui.window().take_snapshot()?;
+        Ok((125..137).any(|i| {
+            let p = frame.as_slice()[origin + i];
+            (p.r, p.g, p.b) == (234, 179, 8)
+        }))
+    };
+    for (dx, dy, moving) in [(64.0, 64.0, false), (0.0, -85.0, false), (0.0, 0.0, true)] {
+        pointer(1, dx, dy);
+        pointer(0, dx, dy);
+        assert!(!has_dots()?);
+        pointer(1, dx + 16.0, dy);
+        assert_eq!(has_dots()?, moving);
+        pointer(2, dx + 16.0, dy);
+        assert!(!has_dots()?);
+    }
+    ui.hide()?;
+    Ok(())
+}
+
+#[test]
+fn canvas_highlights_the_hovered_corner_and_keeps_it_during_resize() -> Result<()> {
+    use slint::private_unstable_api::re_exports::{
+        BuiltInMouseCursor::{EwResize, NeswResize, NsResize, NwseResize},
+        MouseCursorInner::BuiltIn,
+    };
+    let (ui, window) = pixel_test_window()?;
+    ui.window().set_size(slint::LogicalSize::new(1280.0, 800.0));
+    let store = ui.global::<Store>();
+    store.set_page(1);
+    store.set_document_open(true);
+    store.on_format_number(|n| crate::features::designer::format_number(n).into());
+    store.set_selection_bounds(crate::SelectionBounds {
+        active: true,
+        x: -12.0,
+        y: -8.0,
+        width: 24.0,
+        height: 16.0,
+        rotation: 0.0,
+    });
+    store.set_zoom(8.0);
+    mark_canvas_origin(&store);
+    ui.show()?;
+    let image = ui.window().take_snapshot()?;
+    let stride = image.width() as usize;
+    let origin = image
+        .as_slice()
+        .iter()
+        .position(|p| (p.r, p.g, p.b) == (255, 0, 255))
+        .unwrap();
+    let center = [(origin % stride) as i32, (origin / stride) as i32];
+    let corners = [(-96, -64), (96, -64), (-96, 64), (96, 64)];
+    let move_to = |dx, dy| {
+        let position =
+            slint::LogicalPosition::new((center[0] + dx) as f32, (center[1] + dy) as f32);
+        ui.window()
+            .dispatch_event(WindowEvent::PointerMoved { position });
+        position
+    };
+    let check = |active| -> Result<()> {
+        let frame = ui.window().take_snapshot()?;
+        for (i, (dx, dy)) in corners.iter().enumerate() {
+            let pixel =
+                frame.as_slice()[(center[1] + dy) as usize * stride + (center[0] + dx) as usize];
+            assert_eq!(
+                (pixel.r, pixel.g, pixel.b) == (249, 115, 22),
+                active == Some(i)
+            );
+        }
+        Ok(())
+    };
+    for (i, &(dx, dy)) in corners.iter().enumerate() {
+        move_to(dx, dy);
+        check(Some(i))?;
+        for (angle, same_sign, opposite_sign) in [
+            (0.0_f32, NwseResize, NeswResize),
+            (22.0, NwseResize, NeswResize),
+            (23.0, NsResize, EwResize),
+            (45.0, NsResize, EwResize),
+            (68.0, NeswResize, NwseResize),
+            (90.0, NeswResize, NwseResize),
+            (-45.0, EwResize, NsResize),
+            (225.0, NsResize, EwResize),
+        ] {
+            let (sin, cos) = angle.to_radians().sin_cos();
+            let (x, y) = (dx as f32, dy as f32);
+            let hit = store.invoke_canvas_handle_at(
+                192.0,
+                128.0,
+                angle,
+                x * cos - y * sin,
+                x * sin + y * cos,
+            );
+            assert_eq!((hit.sx, hit.sy), (x.signum(), y.signum()));
+            let expected = if dx.signum() == dy.signum() {
+                same_sign
+            } else {
+                opposite_sign
+            };
+            assert_eq!(
+                hit.cursor,
+                BuiltIn(expected),
+                "corner {i} at {angle} degrees"
+            );
+        }
+    }
+    let position = move_to(96, 64);
+    let button = slint::platform::PointerEventButton::Left;
+    ui.window()
+        .dispatch_event(WindowEvent::PointerPressed { position, button });
+    let position = move_to(-96, -64);
+    check(Some(3))?;
+    ui.window()
+        .dispatch_event(WindowEvent::PointerReleased { position, button });
+    check(Some(0))?;
+    move_to(0, 0);
+    check(None)?;
+    move_to(96, 64);
+    snapshot(&window, "canvas-handles.png")?;
+    store.set_selection_bounds(crate::SelectionBounds {
+        x: -0.5,
+        y: -0.5,
+        width: 1.0,
+        height: 1.0,
+        ..store.get_selection_bounds()
+    });
+    store.set_zoom(1.0);
+    move_to(-1, -1);
+    let tiny = ui.window().take_snapshot()?;
+    let grip = tiny.as_slice()[origin - stride - 1];
+    // A grip centered between physical pixels blends its accent with the dark edge.
+    assert!(grip.r.saturating_sub(grip.g) > 50 && grip.g.saturating_sub(grip.b) > 25);
+    ui.hide()?;
+    Ok(())
+}
+
+#[test]
+fn canvas_zoom_counts_physical_pixels_across_windows_display_scales() -> Result<()> {
+    let (ui, window) = pixel_test_window()?;
+    let store = ui.global::<Store>();
+    store.set_page(1);
+    store.set_document_open(true);
+    mark_canvas_origin(&store);
+    ui.show()?;
+    for dpi in [1.0, 1.25, 1.5, 1.75, 2.0] {
+        ui.window()
+            .dispatch_event(WindowEvent::ScaleFactorChanged { scale_factor: dpi });
+        ui.window().set_size(slint::LogicalSize::new(1280.0, 800.0));
+        for zoom in [1.0, 8.0] {
+            store.set_zoom(zoom);
+            let mut first = None;
+            for pan in [0.0, 7.0] {
+                store.set_pan_x(pan);
+                slint::platform::update_timers_and_animations();
+                let physical = ui.window().size();
+                let stride = physical.width as usize;
+                let mut pixels =
+                    vec![slint::Rgb8Pixel::default(); stride * physical.height as usize];
+                window.draw_if_needed(|renderer| {
+                    renderer.render(&mut pixels, stride);
+                });
+                let mut painted = pixels
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, p)| p.r == 255 && p.g == 0 && p.b == 255)
+                    .map(|(i, _)| i);
+                let start = painted.next().expect("the canvas dot is visible");
+                assert_eq!(
+                    1 + painted.count(),
+                    (zoom * zoom) as usize,
+                    "{dpi}x display, {zoom}x zoom"
+                );
+                if let Some(first) = first {
+                    assert_eq!(start, first + 7, "pan offsets use physical pixels");
+                }
+                first = Some(start);
+                assert_eq!(store.get_canvas_view().scale, zoom);
+            }
+        }
+    }
+    ui.hide()?;
+    Ok(())
+}
+
+#[test]
+fn header_crosshair_stays_centered_when_source_size_changes() -> Result<()> {
+    let (ui, window) = pixel_test_window()?;
     ui.global::<Store>()
         .on_scale_thumbnail(preview::scale_thumbnail);
     ui.window().set_size(slint::LogicalSize::new(1280.0, 800.0));
@@ -229,23 +679,8 @@ fn header_crosshair_stays_centered_when_source_size_changes() -> Result<()> {
 
 #[test]
 fn library_tabs_sort_picker_and_browse_actions_are_independent() -> Result<()> {
-    use std::{cell::Cell, time::Duration};
-
-    struct Headless(Rc<MinimalSoftwareWindow>, Rc<Cell<Duration>>);
-    impl Platform for Headless {
-        fn create_window_adapter(&self) -> Result<Rc<dyn WindowAdapter>, slint::PlatformError> {
-            Ok(self.0.clone())
-        }
-
-        fn duration_since_start(&self) -> Duration {
-            self.1.get()
-        }
-    }
-    let window = MinimalSoftwareWindow::new(RepaintBufferType::NewBuffer);
-    let clock = Rc::new(Cell::new(Duration::ZERO));
-    slint::platform::set_platform(Box::new(Headless(window.clone(), clock.clone())))?;
-    let ui = AppWindow::new()?;
-    ui.window().set_size(slint::LogicalSize::new(1280.0, 800.0));
+    let clock = Rc::new(Cell::default());
+    let (ui, window) = timed_test_window(clock.clone())?;
     let store = ui.global::<Store>();
     store.set_connected(true);
     store.on_commit_focused_input(slint::platform::update_timers_and_animations);

@@ -17,9 +17,20 @@ fields horizontally or type exact values; geometry and moves use whole pixels.
 Click a color swatch for HSV and palette controls; edit hex and opacity in its row.
 Undo/redo groups each drag or stroke into one step.
 
+Drag a shape corner to change its width and height. The opposite corner stays
+in place, including on rotated shapes. Hold **Shift** to keep the proportions.
+On a crosshair, drag a corner to change the gap while keeping the arm length and
+thickness. If the arms already touch when you start dragging, the whole crosshair
+scales. On a dot-only crosshair, the same gesture changes the dot diameter.
+At 100% zoom, one design pixel is one screen pixel. At 800% and above, each
+grid cell marks one design pixel.
+
 Scroll over the canvas to zoom; hold the middle mouse button to pan. Canvas zoom
 does not change overlay size. Output is limited to 1024 x 1024 pixels including
-outline and blur. **Share** exports the current draft as transparent PNG or SVG.
+outline and blur. Choose **Share → Editable preset (.json)** to export the current
+draft, including unsaved layer and animation edits. Use **File → Import** to add
+it to your library as an editable preset. **Share** also exports transparent PNG
+and SVG images.
 SVG keeps shapes and text as vectors, embeds images at output resolution and
 outlines as pixels. Blur and image sampling can differ slightly. SVG files are limited
 to 16 MiB; use PNG for larger image-heavy designs.

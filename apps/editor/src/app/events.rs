@@ -21,6 +21,7 @@ impl App {
                     store.set_caption_hover(value);
                 }
             }
+            Event::ViewportChanged => self.refresh_canvas_view()?,
             Event::Ui(event)
                 if (self.group_ending
                     || (self.group_open && self.finish_group)
@@ -257,6 +258,7 @@ impl App {
                             .extend(self.deferred_ui.drain(..).map(Event::Ui))
                     });
                 } else if tag == "save-flush" {
+                    self.save_flushes.pop_front();
                     if let Some(id) = self.open_after_save.take() {
                         self.open_document(id)?;
                     }
@@ -301,12 +303,12 @@ impl App {
                     self.group_ending = false;
                     self.cancel_group = false;
                     self.document.finish_gesture();
-                    self.draw_base = None;
+                    self.pivot_base = None;
                     self.save_requested = false;
                     if tag == "cancel-edit" {
                         self.document.dirty = false;
                     }
-                    self.send("save-flush", Command::Flush)?;
+                    self.flush_save(tag == "end-edit")?;
                     if let Some(command) = self.pending_command.take() {
                         self.send("pending", command)?;
                     }
@@ -391,8 +393,16 @@ impl App {
                     self.send_document()?;
                 }
                 if tag == "save-flush" {
-                    self.document.dirty = true;
-                    self.document.save_paused = true;
+                    let failed_draft = self.save_flushes.pop_front().flatten();
+                    if self
+                        .document
+                        .draft
+                        .as_ref()
+                        .is_some_and(|draft| Some(draft.id) == failed_draft)
+                    {
+                        self.document.dirty = true;
+                        self.document.save_paused = true;
+                    }
                     self.closing = false;
                     self.open_after_save = None;
                 }
@@ -463,6 +473,8 @@ impl App {
                 self.refresh_document();
             }
             Event::Engine(_, client::Event::Disconnected(message)) => {
+                self.document.dirty = self.draft_needs_saving();
+                self.save_flushes.clear();
                 self.stop_playback();
                 self.pending_aim = None;
                 self.capture_profile = None;
@@ -489,7 +501,7 @@ impl App {
                 self.window()?.global::<Store>().set_read_only(false);
                 if !self.document.dirty {
                     self.document.gesture = None;
-                    self.draw_base = None;
+                    self.pivot_base = None;
                     self.preview_pending = false;
                 }
                 EVENTS.with(|events| {
@@ -513,7 +525,6 @@ impl App {
                 result,
             }) => {
                 if generation == self.playback_generation
-                    && self.animate
                     && self
                         .document
                         .draft
@@ -521,15 +532,10 @@ impl App {
                         .is_some_and(|draft| draft.id == id)
                 {
                     match result {
-                        Ok((raster, scale)) => {
-                            let ui = self.window()?;
-                            let store = ui.global::<Store>();
-                            store.set_preview(preview::image(&raster));
-                            store.set_preview_x(raster.origin[0] as f32 / scale);
-                            store.set_preview_y(raster.origin[1] as f32 / scale);
-                            store.set_preview_width(raster.width as f32 / scale);
-                            store.set_preview_height(raster.height as f32 / scale);
+                        Ok(frame) => {
+                            self.show_canvas_frame(frame)?;
                             self.schedule_playback();
+                            self.refresh_canvas_view()?;
                         }
                         Err(message) => {
                             self.stop_playback();
@@ -539,10 +545,9 @@ impl App {
                 }
             }
             Event::Preview(preview::Event::Document {
-                scale,
+                frame,
                 generation,
                 id,
-                raster,
                 thumbnail,
                 bounds,
                 inverses,
@@ -569,15 +574,15 @@ impl App {
                 self.finish_edit()?;
                 let ui = self.window()?;
                 let store = ui.global::<Store>();
-                store.set_preview(preview::image(&raster));
                 store.set_preview_thumbnail(preview::image(&thumbnail));
-                store.set_preview_x(raster.origin[0] as f32 / scale);
-                store.set_preview_y(raster.origin[1] as f32 / scale);
-                store.set_preview_width(raster.width as f32 / scale);
-                store.set_preview_height(raster.height as f32 / scale);
+                self.show_canvas_frame(frame)?;
                 self.refresh_bounds();
                 self.refresh_status();
-                self.show_animated_target()?;
+                if self.animate {
+                    self.show_animated_target()?;
+                } else {
+                    self.refresh_canvas_view()?;
+                }
             }
             Event::Preview(preview::Event::Thumbnail {
                 id,
@@ -612,7 +617,7 @@ impl App {
                 }
                 self.preview_pending = false;
                 self.drag = None;
-                self.draw_base = None;
+                self.pivot_base = None;
                 let restored = if let Some(valid) = self.last_valid.as_ref().filter(|preset| {
                     preset.id == id
                         && self.document.draft.as_ref().is_some_and(|draft| {

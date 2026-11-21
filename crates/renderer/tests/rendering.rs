@@ -1,7 +1,7 @@
 use std::{cell::Cell, io::Cursor, sync::Arc};
 
 use crosshair_core::*;
-use crosshair_renderer::{AssetData, Raster, Renderer, inspect_asset};
+use crosshair_renderer::{AssetData, CanvasView, LayerBounds, Raster, Renderer, inspect_asset};
 use image::{DynamicImage, ImageFormat, Rgba, RgbaImage};
 
 fn no_assets(_: Id) -> anyhow::Result<AssetData> {
@@ -87,6 +87,488 @@ fn default_crosshair_has_exact_pixel_geometry_and_no_center_fill() {
     assert_eq!(pixel(&raster, 0, 0), [0; 4]);
     assert_eq!(pixel(&raster, 13, -1)[3], 255);
     assert_eq!(pixel(&raster, 14, -1)[3], 0);
+}
+
+#[test]
+fn opposite_arms_and_center_hole_share_a_pixel_axis_while_resizing() -> anyhow::Result<()> {
+    let mut renderer = Renderer::new()?;
+    for (thickness, offset) in [(5.0, 0.0), (1.0, 0.0), (2.0, 0.0), (5.0, 0.5), (2.0, 0.5)] {
+        for gap in [1.0, 0.0, 0.5, 2.0, 2.5] {
+            let mut doc = preset(Content::Crosshair(Crosshair {
+                thickness,
+                gap,
+                length: 10.0,
+                ..Default::default()
+            }));
+            doc.layers[0].transform.x = offset;
+            doc.layers[0].transform.y = offset;
+            let native = renderer.render(&doc, 1.0, &no_assets)?;
+            let bounds = renderer.canvas_layer_bounds(&doc.layers[0])?.painted;
+            let center = bounds.center().x.floor() as i32;
+            assert_eq!(
+                pixel(&native, center, center)[3],
+                if gap == 0.0 { 255 } else { 0 },
+                "thickness {thickness} offset {offset} gap {gap} bounds {bounds:?}"
+            );
+            if thickness == 5.0 && gap == 1.0 && offset == 0.0 {
+                assert_eq!((native.width, native.height), (22, 22));
+                assert_eq!((bounds.width(), bounds.height()), (21.0, 21.0));
+                assert_eq!(pixel(&native, 0, 0)[3], 0);
+                for (x, y) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
+                    assert_eq!(pixel(&native, x, y)[3], 255);
+                }
+            }
+            let frame = renderer.render_canvas(
+                &doc,
+                CanvasView {
+                    scale: 8.0,
+                    visible: bounds,
+                },
+                &no_assets,
+                || false,
+            )?;
+            for (raster, zoom) in [(native.as_ref(), 1), (&frame.tiles[0], 8)] {
+                let twice_center = (bounds.left + bounds.right) * zoom as f32;
+                let mirror = |p| twice_center as i32 - 1 - p;
+                let tip = (bounds.right * zoom as f32) as i32 - 1;
+                let start = (bounds.left * zoom as f32) as i32;
+                let coverage: i32 = (start..=tip)
+                    .map(|y| i32::from(pixel(raster, tip - zoom, y)[3]))
+                    .sum();
+                assert!((coverage - thickness as i32 * zoom * 255).abs() <= 1);
+                for y in start..=tip {
+                    for x in start..=tip {
+                        let p = pixel(raster, x, y);
+                        for other in [pixel(raster, mirror(x), y), pixel(raster, x, mirror(y))] {
+                            // Opposite half-covered edges can round to alpha 127 and 128.
+                            assert!(
+                                p.iter().zip(other).all(|(a, b)| a.abs_diff(b) <= 1),
+                                "width {thickness}, gap {gap}, zoom {zoom}, x {x}, y {y}"
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+#[test]
+fn touching_one_pixel_arms_preserve_tip_coverage() -> anyhow::Result<()> {
+    let mut renderer = Renderer::new()?;
+    for (length, inner, outer) in [(3.25, 191, 0), (3.5, 255, 0), (3.75, 255, 64)] {
+        let mut doc = preset(Content::Crosshair(Crosshair {
+            length,
+            thickness: 1.0,
+            gap: 0.0,
+            ..Default::default()
+        }));
+        doc.layers[0].transform.x = 0.5;
+        doc.layers[0].transform.y = 0.5;
+        let raster = renderer.render(&doc, 1.0, &no_assets)?;
+        for (radius, alpha) in [(3, inner), (4, outer)] {
+            for (x, y) in [(radius, 0), (-radius, 0), (0, radius), (0, -radius)] {
+                assert!(
+                    pixel(&raster, x, y)[3].abs_diff(alpha) <= 1,
+                    "length {length}, ({x}, {y})"
+                );
+            }
+        }
+        let bounds = renderer.canvas_layer_bounds(&doc.layers[0])?.painted;
+        assert_eq!(
+            (bounds.width(), bounds.height()),
+            (2.0 * length, 2.0 * length)
+        );
+    }
+    Ok(())
+}
+
+#[test]
+fn fractional_arm_tips_fit_the_native_crop_and_keep_one_pixel_stems() -> anyhow::Result<()> {
+    let mut renderer = Renderer::new()?;
+    for gap in [4.0, 4.25, 4.75] {
+        let doc = preset(Content::Crosshair(Crosshair {
+            thickness: 1.0,
+            length: 9.75,
+            gap,
+            ..Default::default()
+        }));
+        let raster = renderer.render(&doc, 1.0, &no_assets)?;
+        for x in [-8, 8] {
+            assert_eq!(pixel(&raster, x, 0)[3], 255);
+            assert_eq!(pixel(&raster, x, -1)[3], 0);
+            assert_eq!(pixel(&raster, x, 1)[3], 0);
+        }
+        for x in raster.origin[0]..raster.origin[0] + raster.width as i32 {
+            assert_eq!(pixel(&raster, x, 0), pixel(&raster, -x, 0));
+        }
+    }
+    Ok(())
+}
+
+#[test]
+fn center_dot_tracks_the_arms_and_large_dots_keep_their_full_extent() -> anyhow::Result<()> {
+    let mut renderer = Renderer::new()?;
+    for shape in [DotShape::Square, DotShape::Circle] {
+        for diameter in [3.0, 32.0] {
+            let doc = preset(Content::Crosshair(Crosshair {
+                thickness: 5.0,
+                length: 8.0,
+                gap: 4.0,
+                dot: Dot {
+                    enabled: true,
+                    diameter,
+                    shape,
+                    color: Color::rgba(255, 255, 255, 255),
+                    ..Default::default()
+                },
+                ..Default::default()
+            }));
+            let raster = renderer.render(&doc, 1.0, &no_assets)?;
+            let bounds = renderer.canvas_layer_bounds(&doc.layers[0])?.painted;
+            let expected_center = if diameter == 3.0 { 0.5 } else { 0.0 };
+            assert_eq!(bounds.center().x, expected_center);
+            assert_eq!(bounds.center().y, expected_center);
+            let mirror = |p| (expected_center * 2.0) as i32 - 1 - p;
+            for y in raster.origin[1]..raster.origin[1] + raster.height as i32 {
+                for x in raster.origin[0]..raster.origin[0] + raster.width as i32 {
+                    let p = pixel(&raster, x, y);
+                    for sample in [pixel(&raster, mirror(x), y), pixel(&raster, x, mirror(y))] {
+                        assert!(p.iter().zip(sample).all(|(a, b)| a.abs_diff(b) <= 16));
+                    }
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+#[test]
+fn canvas_magnifies_whole_design_pixels_and_antialiases_vector_edges() -> anyhow::Result<()> {
+    let mut renderer = Renderer::new()?;
+    let view = CanvasView {
+        scale: 64.0,
+        visible: LayerBounds {
+            left: 3.0,
+            right: 6.0,
+            top: -2.0,
+            bottom: 2.0,
+        },
+    };
+    let doc = preset(Content::Crosshair(Crosshair {
+        thickness: 1.0,
+        ..Default::default()
+    }));
+    let native = renderer.render(&doc, 1.0, &no_assets)?;
+    let frame = renderer.render_canvas(&doc, view, &no_assets, || false)?;
+    assert_eq!(frame.bounds, renderer.measure(&doc, 1.0)?);
+    let tile = &frame.tiles[0];
+    for y in -128..128 {
+        for x in 192..384 {
+            assert_eq!(
+                pixel(tile, x, y),
+                pixel(&native, x.div_euclid(64), y.div_euclid(64))
+            );
+        }
+    }
+    for shape in [
+        Content::Ellipse(Shape::default()),
+        Content::Triangle(Shape::default()),
+    ] {
+        let doc = preset(shape);
+        let view = CanvasView {
+            scale: 64.0,
+            visible: renderer.measure(&doc, 1.0)?,
+        };
+        let frame = renderer.render_canvas(&doc, view, &no_assets, || false)?;
+        assert_eq!(frame.scale, 64.0);
+        let tile = &frame.tiles[0];
+        // A magnified bitmap would repeat each low-resolution edge for a full design cell.
+        let edges: Vec<_> = tile
+            .pixels
+            .chunks_exact(tile.width as usize * 4)
+            .filter_map(|row| row.chunks_exact(4).position(|p| p[3] > 128))
+            .collect();
+        assert!(edges.windows(2).filter(|w| w[0] != w[1]).count() > 64);
+        assert!(tile.pixels.chunks_exact(4).any(|p| p[3] > 0 && p[3] < 255));
+    }
+    Ok(())
+}
+
+#[test]
+fn rotated_one_pixel_rectangle_handles_follow_the_snapped_pixel() -> anyhow::Result<()> {
+    let mut renderer = Renderer::new()?;
+    let mut layer = Layer::new(
+        "Pixel",
+        Content::Rectangle(Rectangle {
+            width: 1.0,
+            height: 1.0,
+            ..Default::default()
+        }),
+    );
+    for rotation in [90.0, -90.0, 180.0] {
+        layer.transform.rotation = rotation;
+        let bounds = renderer.canvas_layer_bounds(&layer)?;
+        let (handles, angle) = bounds.oriented.unwrap();
+        assert_eq!((handles, angle), (bounds.painted, rotation));
+        assert_eq!(
+            (handles.left, handles.top, handles.width()),
+            (0.0, 0.0, 1.0)
+        );
+    }
+    Ok(())
+}
+
+#[test]
+fn two_pixel_circles_stay_circular_at_maximum_zoom() -> anyhow::Result<()> {
+    let mut renderer = Renderer::new()?;
+    for shape in [
+        Content::Ellipse(Shape {
+            width: 2.0,
+            height: 2.0,
+            ..Default::default()
+        }),
+        Content::Crosshair(Crosshair {
+            enabled_arms: vec![false; 4],
+            dot: Dot {
+                enabled: true,
+                diameter: 2.0,
+                ..Default::default()
+            },
+            ..Default::default()
+        }),
+    ] {
+        let doc = preset(shape);
+        let view = CanvasView {
+            scale: 64.0,
+            visible: renderer.measure(&doc, 1.0)?,
+        };
+        let frame = renderer.render_canvas(&doc, view, &no_assets, || false)?;
+        for degree in 0..360 {
+            let (sin, cos) = (degree as f32).to_radians().sin_cos();
+            for (r, inside) in [(62.0, true), (66.0, false)] {
+                let alpha = pixel(
+                    &frame.tiles[0],
+                    (r * cos).floor() as i32,
+                    (r * sin).floor() as i32,
+                )[3];
+                assert_eq!(
+                    alpha > 128,
+                    inside,
+                    "angle {degree}, radius {r}, alpha {alpha}"
+                );
+            }
+        }
+    }
+    Ok(())
+}
+
+#[test]
+fn magnified_arc_arm_follows_the_circle_between_cardinal_points() -> anyhow::Result<()> {
+    let doc = preset(Content::Crosshair(Crosshair {
+        arms: 1,
+        enabled_arms: vec![true],
+        gap: 0.0,
+        thickness: 1.0,
+        shape: ArmShape::Arc {
+            radius: 4.0,
+            sweep: 360.0,
+        },
+        ..Default::default()
+    }));
+    let mut renderer = Renderer::new()?;
+    let view = CanvasView {
+        scale: 64.0,
+        visible: renderer.measure(&doc, 1.0)?,
+    };
+    let frame = renderer.render_canvas(&doc, view, &no_assets, || false)?;
+    let tile = &frame.tiles[0];
+    for degree in 0..360 {
+        let (sin, cos) = (degree as f32).to_radians().sin_cos();
+        for (r, inside) in [
+            (4.5 * 64.0 - 2.0, true),
+            (4.5 * 64.0 + 2.0, false),
+            (3.5 * 64.0 + 2.0, true),
+            (3.5 * 64.0 - 2.0, false),
+        ] {
+            let alpha = pixel(
+                tile,
+                (4.0 * 64.0 + r * cos).floor() as i32,
+                (r * sin).floor() as i32,
+            )[3];
+            assert!(
+                if inside { alpha > 160 } else { alpha < 95 },
+                "angle {degree}, radius {r}, alpha {alpha}"
+            );
+        }
+    }
+    Ok(())
+}
+
+#[test]
+fn saved_arc_at_the_native_pixel_limit_keeps_its_dimensions() -> anyhow::Result<()> {
+    let mut renderer = Renderer::new()?;
+    let mut doc = preset(Content::Crosshair(Crosshair {
+        arms: 1,
+        enabled_arms: vec![true],
+        thickness: 1.0,
+        gap: 0.0,
+        shape: ArmShape::Arc {
+            radius: 11.0,
+            sweep: 360.0,
+        },
+        ..Default::default()
+    }));
+    doc.layers[0].transform.scale = 44.53;
+    let original = doc.clone();
+    let native = renderer.render(&doc, 1.0, &no_assets)?;
+    assert_eq!((native.width, native.height), (1024, 1024));
+    let visible = LayerBounds {
+        left: -10.0,
+        top: -10.0,
+        right: 10.0,
+        bottom: 10.0,
+    };
+    let frame = renderer.render_canvas(
+        &doc,
+        CanvasView {
+            visible,
+            scale: 8.0,
+        },
+        &no_assets,
+        || false,
+    )?;
+    assert_eq!(frame.bounds, renderer.measure(&doc, 1.0)?);
+    assert_eq!(original, doc);
+    Ok(())
+}
+
+#[test]
+fn canvas_includes_the_scaled_filter_halo_beyond_native_selection_bounds() -> anyhow::Result<()> {
+    let mut renderer = Renderer::new()?;
+    let mut doc = preset(Content::Rectangle(Rectangle::default()));
+    doc.layers[0].effects.blur = 0.5;
+    let native = renderer.measure(&doc, 1.0)?;
+    let reference = renderer.render(&doc, 8.0, &no_assets)?;
+    let view = CanvasView {
+        scale: 8.0,
+        visible: native.outset(4.0),
+    };
+    let full = renderer.render_canvas(&doc, view, &no_assets, || false)?;
+    assert_eq!(full.bounds, native);
+    let tile = &full.tiles[0];
+    for x in -85..-77 {
+        assert_eq!(pixel(tile, x, 0), pixel(&reference, x, 0));
+    }
+    let cropped = CanvasView {
+        visible: native,
+        ..view
+    };
+    assert!(!cropped.covers(view, full.painted));
+    let halo = CanvasView {
+        visible: LayerBounds {
+            left: -10.5,
+            top: -1.0,
+            right: -10.0,
+            bottom: 1.0,
+        },
+        ..view
+    };
+    let frame = renderer.render_canvas(&doc, halo, &no_assets, || false)?;
+    assert_eq!(pixel(&frame.tiles[0], -81, 0), pixel(&reference, -81, 0));
+    Ok(())
+}
+
+#[test]
+fn clipped_canvas_tiles_agree_across_an_outlined_blurred_edge() -> anyhow::Result<()> {
+    let mut renderer = Renderer::new()?;
+    let mut doc = preset(Content::Ellipse(Shape {
+        width: 40.0,
+        height: 20.0,
+        ..Default::default()
+    }));
+    doc.layers[0].effects.blur = 0.5;
+    doc.layers[0].effects.outline.enabled = true;
+    doc.layers[0].effects.outline.thickness = 1.0;
+    let visible = renderer.measure(&doc, 1.0)?;
+    let full = renderer.render_canvas(
+        &doc,
+        CanvasView {
+            scale: 32.0,
+            visible,
+        },
+        &no_assets,
+        || false,
+    )?;
+    assert!(full.tiles.len() > 1);
+    let seam = full.tiles[0].origin[0] + full.tiles[0].width as i32;
+    let strip = LayerBounds {
+        left: seam as f32 / 32.0 - 1.0,
+        right: seam as f32 / 32.0 + 1.0,
+        ..visible
+    };
+    let cropped = renderer.render_canvas(
+        &doc,
+        CanvasView {
+            scale: 32.0,
+            visible: strip,
+        },
+        &no_assets,
+        || false,
+    )?;
+    for tile in &cropped.tiles {
+        for y in tile.origin[1]..tile.origin[1] + tile.height as i32 {
+            for x in tile.origin[0]..tile.origin[0] + tile.width as i32 {
+                let source = full
+                    .tiles
+                    .iter()
+                    .find(|t| {
+                        x >= t.origin[0]
+                            && x < t.origin[0] + t.width as i32
+                            && y >= t.origin[1]
+                            && y < t.origin[1] + t.height as i32
+                    })
+                    .unwrap();
+                let actual = pixel(tile, x, y);
+                let expected = pixel(source, x, y);
+                assert!(
+                    actual.iter().zip(expected).all(|(a, b)| a.abs_diff(b) <= 2),
+                    "seam at ({x},{y}): {actual:?} vs {expected:?}"
+                );
+            }
+        }
+    }
+    Ok(())
+}
+
+#[test]
+fn canvas_filter_gutters_match_full_physical_output() -> anyhow::Result<()> {
+    let mut renderer = Renderer::new()?;
+    let mut doc = preset(Content::Rectangle(Rectangle {
+        width: 980.0,
+        height: 40.0,
+        ..Default::default()
+    }));
+    doc.layers[0].effects.blur = 3.0;
+    doc.layers[0].effects.outline.enabled = true;
+    doc.layers[0].effects.outline.thickness = 18.0;
+    doc.layers[0].effects.outline.blur = 0.5;
+    let native = renderer.render(&doc, 1.0, &no_assets)?;
+    let view = CanvasView {
+        scale: 1.0,
+        visible: renderer.measure(&doc, 1.0)?,
+    };
+    let frame = renderer.render_canvas(&doc, view, &no_assets, || false)?;
+    assert!(frame.tiles.len() > 1);
+    for tile in frame.tiles {
+        for y in tile.origin[1]..tile.origin[1] + tile.height as i32 {
+            for x in tile.origin[0]..tile.origin[0] + tile.width as i32 {
+                assert_eq!(pixel(&tile, x, y), pixel(&native, x, y));
+            }
+        }
+    }
+    Ok(())
 }
 
 #[test]
@@ -260,6 +742,26 @@ fn semitransparent_t_arms_have_no_overlap_seams() {
             .all(|p| p[3] == 0 || p[3] == 128)
     );
     assert_premultiplied(&raster);
+}
+
+#[test]
+fn fractional_t_arm_ends_flush_with_its_cap() -> anyhow::Result<()> {
+    let mut doc = preset(Content::Crosshair(Crosshair {
+        shape: ArmShape::TShape {
+            width: 5.0,
+            thickness: 1.5,
+        },
+        length: 3.5,
+        thickness: 1.0,
+        gap: 0.0,
+        ..Default::default()
+    }));
+    doc.layers[0].transform.x = 0.5;
+    doc.layers[0].transform.y = 0.5;
+    let raster = Renderer::new()?.render(&doc, 1.0, &no_assets)?;
+    let cap = pixel(&raster, 3, 1)[3];
+    assert!(cap > 0 && pixel(&raster, 3, 0)[3].abs_diff(cap) <= 1);
+    Ok(())
 }
 
 #[test]
