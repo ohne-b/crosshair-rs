@@ -110,7 +110,7 @@ try {
     # Start from the installed editor, as the Start menu does, to exercise a cold engine launch.
     $editorPid = [PackageActivation]::Start(($installed.PackageFamilyName + '!Editor'), $arguments)
     $engineStarted = $true
-    $pipeName = '\\.\pipe\LOCAL\crosshair-rs.control.v1.' + [Diagnostics.Process]::GetCurrentProcess().SessionId + '.deployment-qa'
+    $pipeName = '\\.\pipe\LOCAL\crosshair-rs.control.v1.' + [Diagnostics.Process]::GetCurrentProcess().SessionId + '.deployment-qa.' + $installed.PackageFamilyName
     $deadline = [DateTime]::UtcNow.AddSeconds(15)
     while (![PackageActivation]::WaitNamedPipe($pipeName, 100)) {
         if ([DateTime]::UtcNow -gt $deadline) { throw 'The isolated engine did not open its IPC endpoint.' }

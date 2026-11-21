@@ -249,9 +249,9 @@ pub(crate) struct App {
 
 pub fn run() -> Result<()> {
     let options = Options::parse()?;
-    let scope = options.scope.clone();
-    let Some(_instance) = frame::Instance::acquire(&options.scope)
-        .context("Could not initialize the editor instance")?
+    let scope = crosshair_platform::identity::instance_scope(&options.scope)?;
+    let Some(_instance) =
+        frame::Instance::acquire(&scope).context("Could not initialize the editor instance")?
     else {
         return Ok(());
     };

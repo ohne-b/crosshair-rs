@@ -101,7 +101,13 @@ if ($LASTEXITCODE -ne 0) { throw 'Dependency license collection failed; no insta
 [xml]$manifest = Get-Content -LiteralPath (Join-Path $repoRoot 'packaging/windows/AppxManifest.xml') -Raw
 $manifest.Package.Identity.SetAttribute('Publisher', $Publisher)
 $manifest.Package.Identity.SetAttribute('Version', [string]$msixVersion)
-if (!$ReleaseCandidate) { $manifest.Package.Identity.Name += '.Preview' }
+if (!$ReleaseCandidate) {
+    $manifest.Package.Identity.Name += '.Preview'
+    $manifest.Package.Properties.DisplayName = 'crosshair-rs Preview'
+    foreach ($node in $manifest.SelectNodes("//*[@DisplayName='crosshair-rs']")) {
+        $node.SetAttribute('DisplayName', 'crosshair-rs Preview')
+    }
+}
 $sdkReadme = Get-Content -LiteralPath (Join-Path $repoRoot 'target/gamebar/deps/microsoft.gaming.xboxgamebar.7.3.2607010/readme.txt') -Raw
 $proxyXml = [regex]::Match($sdkReadme, '(?s)<Extension Category="windows\.activatableClass\.proxyStub">.*?</Extension>').Value
 if (!$proxyXml) { throw 'Pinned SDK proxy registration is missing.' }

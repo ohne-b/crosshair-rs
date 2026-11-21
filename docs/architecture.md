@@ -1053,7 +1053,9 @@ metadata. `A.B.C-alpha.N`, `-beta.N` and `-rc.N` map to fourth components `N`,
 `20000+N` and `40000+N`, with `0 <= N < 20000`. Stable `A.B.C` maps to
 `A.B.C.65535`; each version component fits 16 bits. This preserves SemVer order.
 Release prereleases share the production identity; local development packages use
-`OhneB.crosshair-rs.Preview` with updates disabled. Like TDM, the updater consumes
+`OhneB.crosshair-rs.Preview` with updates disabled. The editor instance and engine
+control pipe use the package family so each installation opens its own editor and
+widget. Unpackaged development keeps its own control pipe. Like TDM, the updater consumes
 stable Latest by default, with optional prerelease discovery using versioned
 `latest.json` assets. Prereleases never advance Latest.
 `0.1.0-alpha.0` is the unreleased development baseline.
