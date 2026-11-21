@@ -84,6 +84,16 @@ function Assert-Startup([string]$Arguments, [bool]$Enabled, [string]$StatePath) 
     $state = Get-Content -LiteralPath $StatePath -Raw | ConvertFrom-Json
     if ($state.settings.launch_at_login -ne $Enabled) { throw 'Startup configuration was not durably saved.' }
 }
+function Assert-WidgetWindow([bool]$Open) {
+    $deadline = [DateTime]::UtcNow.AddSeconds(15)
+    do {
+        $response = Activate-Request '--ipc-scope deployment-qa --command "{\"type\":\"subscribe\"}"' | ConvertFrom-Json
+        $widget = $response.result.Ok.status.widget
+        if ($null -ne $widget.window_open -and $widget.window_open -eq $Open -and !$widget.connected) { return }
+        Start-Sleep -Milliseconds 100
+    } while ([DateTime]::UtcNow -lt $deadline)
+    throw "The installed engine did not report window_open=$Open with the widget pipe disconnected."
+}
 $installed = $null
 $engineStarted = $false
 try {
@@ -158,6 +168,10 @@ try {
             if (!$editor.WaitForExit(15000)) { throw 'The isolated editor did not close.' }
         } finally { $editor.Dispose() }
     }
+    $markerPath = Join-Path $env:LOCALAPPDATA "Packages/$($installed.PackageFamilyName)/TempState/crosshair-widget-$session.open"
+    $marker = [IO.FileStream]::new($markerPath, 'CreateNew', 'Write', 'None', 4096, [IO.FileOptions]::DeleteOnClose)
+    try { Assert-WidgetWindow $true } finally { $marker.Dispose() }
+    Assert-WidgetWindow $false
     $quit = Activate-Request '--ipc-scope deployment-qa --command "{\"type\":\"quit\",\"discard_unsaved\":false}"'
     $response = $quit | ConvertFrom-Json
     if ($null -eq $response.result.PSObject.Properties['Ok']) { throw 'The isolated engine could not shut down.' }

@@ -129,6 +129,19 @@ struct App : ApplicationT<App> {
                 } catch (...) {}
             });
         window_.Activate();
+        // A hidden or suspended widget still owns its window after the drawing pipe stops.
+        try {
+            auto folder = winrt::Windows::Storage::ApplicationData::Current().TemporaryFolder().Path();
+            std::wstring path = folder.c_str();
+            path += L"\\crosshair-widget-" + std::to_wstring(session) + L".open";
+            CREATEFILE2_EXTENDED_PARAMETERS params{sizeof(CREATEFILE2_EXTENDED_PARAMETERS)};
+            params.dwFileAttributes = FILE_ATTRIBUTE_TEMPORARY;
+            params.dwFileFlags = FILE_FLAG_DELETE_ON_CLOSE;
+            // A hard reboot can leave a stale, unlocked marker. A live owner denies deletion.
+            DeleteFileW(path.c_str());
+            window_marker_.attach(CreateFile2(path.c_str(), DELETE, 0, CREATE_NEW, &params));
+            if (!window_marker_) throw_last_error();
+        } catch (hresult_error const& error) { OutputDebugStringW(error.message().c_str()); }
         report(); update_state(); start_engine();
     }
 
@@ -157,6 +170,7 @@ private:
     }
 
     void shutdown() {
+        window_marker_.close();
         if (pipe_) pipe_->stop();
         blank();
         widget_ = nullptr;
@@ -314,6 +328,7 @@ private:
 
     Window window_{nullptr}; Frame frame_{nullptr}; Canvas canvas_{nullptr}; Image image_{nullptr};
     DisplayInformation display_{nullptr}; XboxGameBarWidget widget_{nullptr}; CoreDispatcher dispatcher_{nullptr};
+    winrt::file_handle window_marker_;
     std::unique_ptr<Pipe> pipe_;
     wire::Status status_{};
     std::optional<wire::Header> current_;

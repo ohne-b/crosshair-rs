@@ -1,3 +1,5 @@
+pub mod presence;
+
 use std::{
     os::windows::io::OwnedHandle,
     sync::{
@@ -335,6 +337,7 @@ fn decode_status(bytes: &[u8; 64], session: u32) -> Result<Status> {
         presented: flags & 64 != 0,
         widget: WidgetStatus {
             installed: true,
+            window_open: false,
             connected: flags & 1 != 0,
             pinned: flags & 2 != 0,
             visible: flags & 4 != 0,

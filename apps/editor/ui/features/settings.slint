@@ -89,8 +89,8 @@ export component Settings inherits Rectangle {
                                 if !Store.widget-installed: ActionButton { text: "Get installer"; clicked => { Store.action("get-installer", ""); } }
                                 if Store.widget-ready && Store.output-mode == 0: ActionButton { text: "Use Game Bar"; primary: true; enabled: Store.interactive && !Store.switching-output; clicked => { Store.action("output-mode", "1"); } }
                                 if Store.widget-installed && (!Store.widget-ready || Store.output-mode == 1): ActionButton {
-                                    text: Store.widget-connected && !Store.widget-pinned ? "Pin in Game Bar" : "Open widget";
-                                    primary: !Store.widget-connected;
+                                    text: Store.widget-open && !Store.widget-pinned ? "Pin in Game Bar" : "Open widget";
+                                    primary: !Store.widget-open;
                                     clicked => { Store.action("open-gamebar", ""); }
                                 }
                                 ActionButton { icon: @image-url("../../../../assets/icons/info-circle.svg"); label: "Game Bar setup"; quiet: true; clicked => { Store.action("gamebar-help", ""); } }

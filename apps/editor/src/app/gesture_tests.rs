@@ -506,13 +506,13 @@ fn game_bar_setup_keeps_desktop_selected_and_allows_retry() -> Result<()> {
     ))?;
     assert!(!store.get_switching_output());
     assert!(store.get_error().is_empty());
-    assert!(!store.get_widget_connected());
+    assert!(!store.get_widget_open());
     store.set_page(3);
     store.set_connected(true);
     let closed = ui.window().take_snapshot()?;
-    app.status.widget.connected = true;
+    app.status.widget.window_open = true;
     app.refresh_status();
-    assert!(store.get_widget_connected() && !store.get_widget_pinned());
+    assert!(store.get_widget_open() && !store.get_widget_pinned());
     assert!(!store.get_widget_ready());
     let open = ui.window().take_snapshot()?;
     let orange = slint::Rgba8Pixel::new(249, 115, 22, 255);
@@ -525,6 +525,18 @@ fn game_bar_setup_keeps_desktop_selected_and_allows_retry() -> Result<()> {
             .any(|(before, after)| *before == orange && *after == grey),
         "Opening the widget should change the primary button to a neutral button"
     );
+    // Foregrounding and dismissing Win+G only changes the unpinned widget's pipe.
+    app.status.widget.connected = true;
+    app.refresh_status();
+    app.status.widget.connected = false;
+    app.refresh_status();
+    assert!(store.get_widget_open() && !store.get_widget_ready());
+    assert_eq!(ui.window().take_snapshot()?.as_slice(), open.as_slice());
+    app.status.widget.window_open = false;
+    app.refresh_status();
+    assert!(!store.get_widget_open());
+    assert_eq!(ui.window().take_snapshot()?.as_slice(), closed.as_slice());
+    app.status.widget.connected = true;
     app.status.widget.pinned = true;
     app.status.widget.click_through = true;
     app.refresh_status();

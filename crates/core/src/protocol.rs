@@ -321,6 +321,8 @@ pub struct DisplayInfo {
 #[serde(deny_unknown_fields)]
 pub struct WidgetStatus {
     pub installed: bool,
+    #[serde(default)]
+    pub window_open: bool,
     pub connected: bool,
     pub pinned: bool,
     pub visible: bool,
@@ -330,12 +332,18 @@ pub struct WidgetStatus {
 }
 
 impl WidgetStatus {
+    pub fn is_open(&self) -> bool {
+        self.window_open || self.connected
+    }
+
     /// Setup the user can finish before the engine prepares any pixels.
     pub fn setup_hint(&self) -> Option<&'static str> {
         if !self.installed {
             Some("Install the Windows package to use Game Bar")
-        } else if !self.connected {
+        } else if !self.is_open() {
             Some("Open the crosshair widget in Game Bar and pin it")
+        } else if !self.connected {
+            Some("Press Win+G to check the widget’s pin")
         } else if !self.pinned {
             Some("Click the pin in the widget’s title bar")
         } else if !self.click_through {
@@ -432,6 +440,11 @@ mod tests {
         assert_eq!(
             widget.setup_hint(),
             Some("Open the crosshair widget in Game Bar and pin it")
+        );
+        widget.window_open = true;
+        assert_eq!(
+            widget.setup_hint(),
+            Some("Press Win+G to check the widget’s pin")
         );
         widget.connected = true;
         assert_eq!(

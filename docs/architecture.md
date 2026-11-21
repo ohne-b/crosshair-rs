@@ -690,6 +690,12 @@ with bounded backoff only while requested/pinned, without fabricated activity to
 defeat UWP lifecycle. Report disconnected/unpinned status. Editor close never
 closes the widget. Desktop mode remains usable without Game Bar.
 
+Setup tracks the widget window independently of its drawing connection. The
+widget holds a delete-on-close file in its package's temporary folder for the
+life of the window, including suspension. The engine watches directory changes
+and checks the session-specific file's sharing lock. Only authenticated widget
+frames can establish pin, click-through and presentation readiness.
+
 Output changes use a bounded native-owner transition. A hidden preparation frame
 and a visible activation frame have different generations; acknowledgments must
 match both generation and actual bitmap state. Shell visibility alone is not an

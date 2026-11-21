@@ -259,6 +259,7 @@ pub fn run(options: Options) -> Result<()> {
     })?;
     let mut widget_start_error = None;
     app.status.widget.installed = identity.package.is_some();
+    let session = identity.session;
     let widget = if app.status.widget.installed {
         let widget_wake = wake.clone();
         match Widget::start(identity.clone(), move |status| {
@@ -329,6 +330,14 @@ pub fn run(options: Options) -> Result<()> {
     if recovery.as_ref().is_some_and(|r| r.restart.reopen_editor) {
         runtime.open_editor()?;
     }
+    let mut window_presence = if runtime.app.status.widget.installed {
+        widget::presence::WindowPresence::for_package(session, runtime.window.0).ok()
+    } else {
+        None
+    };
+    runtime.app.status.widget.window_open = window_presence
+        .as_ref()
+        .is_some_and(|watch| watch.is_open());
     runtime.displays();
     runtime.refresh();
     let mut message = MSG::default();
@@ -386,6 +395,19 @@ pub fn run(options: Options) -> Result<()> {
                     }
                 }
                 WM_TIMER => runtime.timer(message.wParam.0),
+                widget::presence::CHANGED => {
+                    if let Some(watch) = &window_presence {
+                        let watching = watch.rearm().is_ok();
+                        let open = watching && watch.is_open();
+                        if runtime.app.status.widget.window_open != open {
+                            runtime.app.status.widget.window_open = open;
+                            runtime.app.changed(None, false);
+                        }
+                        if !watching {
+                            window_presence = None;
+                        }
+                    }
+                }
                 DISPLAYS => {
                     runtime.displays();
                     runtime.refresh();
@@ -487,7 +509,8 @@ impl Runtime {
                     self.app.broadcast(ServerMessage::CloseCancelled);
                 }
             },
-            Event::Widget(status) => {
+            Event::Widget(mut status) => {
+                status.widget.window_open = self.app.status.widget.window_open;
                 let semantic = self.app.status.widget != status.widget;
                 self.app.status.widget = status.widget.clone();
                 self.widget_status = status;
