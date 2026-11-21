@@ -31,6 +31,8 @@ impl CanvasBounds {
 pub struct CanvasFrame {
     /// The full 100% output bounds, independent of zoom and clipping.
     pub bounds: LayerBounds,
+    /// Magnified ink and filter support in design coordinates.
+    pub painted: LayerBounds,
     pub view: CanvasView,
     pub scale: f32,
     pub tiles: Vec<Raster>,
@@ -50,7 +52,7 @@ impl CanvasView {
 
 impl Renderer {
     pub fn canvas_layer_bounds(&mut self, layer: &crosshair_core::Layer) -> Result<CanvasBounds> {
-        let mut prepared = super::geometry::prepare_layer(layer, 1.0, &mut self.text)?;
+        let mut prepared = super::geometry::prepare_layer(layer, 1.0, &mut self.text, false)?;
         let geometry = prepared.bounds;
         prepared.align_canvas_paths();
         let painted = if prepared.is_empty() {
@@ -115,7 +117,7 @@ impl Renderer {
         assets: &impl AssetSource,
         cancelled: impl Fn() -> bool,
     ) -> Result<CanvasFrame> {
-        let (mut layers, bounds) = self.prepare(preset, 1.0, &cancelled)?;
+        let (mut layers, bounds) = self.prepare(preset, 1.0, view.scale > 1.0, &cancelled)?;
         let v = view.visible;
         ensure!(
             view.scale.is_finite()
@@ -161,29 +163,47 @@ impl Renderer {
             }
             scale *= 0.5;
         };
+        let mut ink: Option<LayerBounds> = None;
+        for layer in &mut layers {
+            ensure!(!cancelled(), "Rendering cancelled");
+            layer.magnify(scale)?;
+            let b = super::geometry::group_bounds(&layer.groups, &layer.effects, bounds)?;
+            ink = Some(ink.map_or(b, |current| current.union(b)));
+        }
+        let ink = ink.unwrap_or(LayerBounds {
+            left: 0.0,
+            top: 0.0,
+            right: scale,
+            bottom: scale,
+        });
+        // A fixed tile grid keeps a curved path's tessellation stable while panning.
+        let doc_x = ink.left.floor() as i32;
+        let doc_y = ink.top.floor() as i32;
+        let doc_right = ink.right.ceil() as i32;
+        let doc_bottom = ink.bottom.ceil() as i32;
         let mut frame = CanvasFrame {
             bounds,
             view,
             scale,
             tiles: Vec::new(),
+            painted: LayerBounds {
+                left: doc_x as f32 / scale,
+                top: doc_y as f32 / scale,
+                right: doc_right as f32 / scale,
+                bottom: doc_bottom as f32 / scale,
+            },
         };
-        if right <= left || bottom <= top {
+        let x0 = ((v.left * scale).floor() as i32).max(doc_x);
+        let y0 = ((v.top * scale).floor() as i32).max(doc_y);
+        let x1 = ((v.right * scale).ceil() as i32).min(doc_right);
+        let y1 = ((v.bottom * scale).ceil() as i32).min(doc_bottom);
+        if x1 <= x0 || y1 <= y0 {
             return Ok(frame);
         }
-        for layer in &mut layers {
-            ensure!(!cancelled(), "Rendering cancelled");
-            layer.magnify(scale)?;
-        }
-        let x0 = (left * scale).floor() as i32;
-        let x1 = (right * scale).ceil() as i32;
-        let y0 = (top * scale).floor() as i32;
-        let y1 = (bottom * scale).ceil() as i32;
-        // Anchor the rasterizer's clip to the document. Moving a curved path's clip
-        // edge changes its tessellation slightly and makes it shimmer during a pan.
-        let doc_x = (bounds.left * scale).floor() as i32;
-        let doc_y = (bounds.top * scale).floor() as i32;
-        let doc_right = (bounds.right * scale).ceil() as i32;
-        let doc_bottom = (bounds.bottom * scale).ceil() as i32;
+        ensure!(
+            i64::from(x1 - x0) * i64::from(y1 - y0) <= 8_388_608,
+            "Magnified canvas exceeds its pixel budget"
+        );
         let side = side as i32;
         let tile_x = doc_x + (x0 - doc_x).div_euclid(side) * side;
         let tile_y = doc_y + (y0 - doc_y).div_euclid(side) * side;

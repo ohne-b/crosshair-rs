@@ -156,14 +156,16 @@ fn pointer_clicks_clear_keyboard_focus_styling() {
 }
 
 fn test_frame(view: CanvasView, x: f32, y: f32) -> CanvasFrame {
+    let bounds = LayerBounds {
+        left: x,
+        top: y,
+        right: x + 1.0,
+        bottom: y + 1.0,
+    };
     CanvasFrame {
         view,
-        bounds: LayerBounds {
-            left: x,
-            top: y,
-            right: x + 1.0,
-            bottom: y + 1.0,
-        },
+        bounds,
+        painted: bounds,
         scale: 1.0,
         tiles: Vec::new(),
     }

@@ -62,7 +62,7 @@ impl App {
         store.set_preview_y(frame.bounds.top);
         store.set_preview_width(frame.bounds.width());
         store.set_preview_height(frame.bounds.height());
-        self.canvas_coverage = Some((frame.view, frame.bounds));
+        self.canvas_coverage = Some((frame.view, frame.painted));
         Ok(())
     }
 

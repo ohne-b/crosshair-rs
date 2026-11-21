@@ -166,6 +166,50 @@ fn rotated_one_pixel_rectangle_handles_follow_the_snapped_pixel() -> anyhow::Res
 }
 
 #[test]
+fn two_pixel_circles_stay_circular_at_maximum_zoom() -> anyhow::Result<()> {
+    let mut renderer = Renderer::new()?;
+    for shape in [
+        Content::Ellipse(Shape {
+            width: 2.0,
+            height: 2.0,
+            ..Default::default()
+        }),
+        Content::Crosshair(Crosshair {
+            enabled_arms: vec![false; 4],
+            dot: Dot {
+                enabled: true,
+                diameter: 2.0,
+                ..Default::default()
+            },
+            ..Default::default()
+        }),
+    ] {
+        let doc = preset(shape);
+        let view = CanvasView {
+            scale: 64.0,
+            visible: renderer.measure(&doc, 1.0)?,
+        };
+        let frame = renderer.render_canvas(&doc, view, &no_assets, || false)?;
+        for degree in 0..360 {
+            let (sin, cos) = (degree as f32).to_radians().sin_cos();
+            for (r, inside) in [(62.0, true), (66.0, false)] {
+                let alpha = pixel(
+                    &frame.tiles[0],
+                    (r * cos).floor() as i32,
+                    (r * sin).floor() as i32,
+                )[3];
+                assert_eq!(
+                    alpha > 128,
+                    inside,
+                    "angle {degree}, radius {r}, alpha {alpha}"
+                );
+            }
+        }
+    }
+    Ok(())
+}
+
+#[test]
 fn magnified_arc_arm_follows_the_circle_between_cardinal_points() -> anyhow::Result<()> {
     let doc = preset(Content::Crosshair(Crosshair {
         arms: 1,
@@ -204,6 +248,80 @@ fn magnified_arc_arm_follows_the_circle_between_cardinal_points() -> anyhow::Res
             );
         }
     }
+    Ok(())
+}
+
+#[test]
+fn saved_arc_at_the_native_pixel_limit_keeps_its_dimensions() -> anyhow::Result<()> {
+    let mut renderer = Renderer::new()?;
+    let mut doc = preset(Content::Crosshair(Crosshair {
+        arms: 1,
+        enabled_arms: vec![true],
+        thickness: 1.0,
+        gap: 0.0,
+        shape: ArmShape::Arc {
+            radius: 11.0,
+            sweep: 360.0,
+        },
+        ..Default::default()
+    }));
+    doc.layers[0].transform.scale = 44.53;
+    let original = doc.clone();
+    let native = renderer.render(&doc, 1.0, &no_assets)?;
+    assert_eq!((native.width, native.height), (1024, 1024));
+    let visible = LayerBounds {
+        left: -10.0,
+        top: -10.0,
+        right: 10.0,
+        bottom: 10.0,
+    };
+    let frame = renderer.render_canvas(
+        &doc,
+        CanvasView {
+            visible,
+            scale: 8.0,
+        },
+        &no_assets,
+        || false,
+    )?;
+    assert_eq!(frame.bounds, renderer.measure(&doc, 1.0)?);
+    assert_eq!(original, doc);
+    Ok(())
+}
+
+#[test]
+fn canvas_includes_the_scaled_filter_halo_beyond_native_selection_bounds() -> anyhow::Result<()> {
+    let mut renderer = Renderer::new()?;
+    let mut doc = preset(Content::Rectangle(Rectangle::default()));
+    doc.layers[0].effects.blur = 0.5;
+    let native = renderer.measure(&doc, 1.0)?;
+    let reference = renderer.render(&doc, 8.0, &no_assets)?;
+    let view = CanvasView {
+        scale: 8.0,
+        visible: native.outset(4.0),
+    };
+    let full = renderer.render_canvas(&doc, view, &no_assets, || false)?;
+    assert_eq!(full.bounds, native);
+    let tile = &full.tiles[0];
+    for x in -85..-77 {
+        assert_eq!(pixel(tile, x, 0), pixel(&reference, x, 0));
+    }
+    let cropped = CanvasView {
+        visible: native,
+        ..view
+    };
+    assert!(!cropped.covers(view, full.painted));
+    let halo = CanvasView {
+        visible: LayerBounds {
+            left: -10.5,
+            top: -1.0,
+            right: -10.0,
+            bottom: 1.0,
+        },
+        ..view
+    };
+    let frame = renderer.render_canvas(&doc, halo, &no_assets, || false)?;
+    assert_eq!(pixel(&frame.tiles[0], -81, 0), pixel(&reference, -81, 0));
     Ok(())
 }
 

@@ -121,7 +121,7 @@ impl Renderer {
         layer: &crosshair_core::Layer,
         scale: f32,
     ) -> Result<LayerBounds> {
-        geometry::prepare_layer(layer, scale, &mut self.text).map(|layer| layer.bounds)
+        geometry::prepare_layer(layer, scale, &mut self.text, false).map(|layer| layer.bounds)
     }
 
     /// Changes the transform pivot without moving the currently visible shape.
@@ -160,7 +160,7 @@ impl Renderer {
 
     /// Pixel-rounded output bounds, including all effects, without allocating pixels.
     pub fn measure(&mut self, preset: &Preset, scale: f32) -> Result<LayerBounds> {
-        self.prepare(preset, scale, &|| false)
+        self.prepare(preset, scale, false, &|| false)
             .map(|(_, bounds)| bounds)
     }
 
@@ -171,7 +171,7 @@ impl Renderer {
         scale: f32,
         assets: &impl AssetSource,
     ) -> Result<Vec<u8>> {
-        let (layers, bounds) = self.prepare(preset, scale, &|| false)?;
+        let (layers, bounds) = self.prepare(preset, scale, false, &|| false)?;
         export::svg(&layers, bounds, &mut self.assets, assets)
     }
 
@@ -179,6 +179,7 @@ impl Renderer {
         &mut self,
         preset: &Preset,
         scale: f32,
+        magnified_canvas: bool,
         cancelled: &impl Fn() -> bool,
     ) -> Result<(Vec<geometry::PreparedLayer>, LayerBounds)> {
         ensure!(
@@ -195,7 +196,7 @@ impl Renderer {
             .filter(|layer| layer.visible && layer.opacity > 0.0)
         {
             ensure!(!cancelled(), "Rendering cancelled");
-            let prepared = geometry::prepare_layer(layer, scale, &mut self.text)?;
+            let prepared = geometry::prepare_layer(layer, scale, &mut self.text, magnified_canvas)?;
             point_count = point_count.saturating_add(prepared.point_count());
             ensure!(
                 point_count <= 1_000_000,
@@ -263,7 +264,7 @@ impl Renderer {
             self.rasters.push_back(item);
             return Ok(raster);
         }
-        let (layers, bounds) = self.prepare(preset, scale, &cancelled)?;
+        let (layers, bounds) = self.prepare(preset, scale, false, &cancelled)?;
         let origin = [bounds.left as i32, bounds.top as i32];
         let width = bounds.width() as u32;
         let height = bounds.height() as u32;

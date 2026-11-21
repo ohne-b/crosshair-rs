@@ -484,6 +484,7 @@ fn canvas_preview(
                 };
                 return Ok(CanvasFrame {
                     bounds,
+                    painted: bounds,
                     view: CanvasView {
                         visible: bounds,
                         ..requested

@@ -198,7 +198,10 @@ At 100% zoom one design pixel occupies one physical display pixel, independent
 of Windows text and display scaling. The preview aligns cardinal rectangles at
 native output size before magnifying their paths. Curves and diagonals rasterize
 at viewport resolution in tiles up to 1024 pixels wide and high. Large filters
-and viewport memory limits can reduce preview resolution.
+and viewport memory limits can reduce preview resolution. Magnified arc arms use
+cubic curves around the native pivot. Saved-preset validation, overlay and export
+retain the original arc geometry. The tile clip includes the filter support at
+the current zoom independently of the native selection dimensions.
 Drag moves a layer. Corner handles on rectangles, ellipses and triangles edit
 width and height along the layer axes and keep the opposite corner fixed. Shift
 preserves the aspect ratio. Crosshair handles adjust the per-arm gap around the

@@ -181,6 +181,7 @@ pub(crate) fn prepare_layer(
     layer: &Layer,
     scale: f32,
     text: &mut TextRenderer,
+    magnified_canvas: bool,
 ) -> Result<PreparedLayer> {
     crosshair_core::validation::validate_layer_geometry(layer)?;
     ensure!(
@@ -216,6 +217,18 @@ pub(crate) fn prepare_layer(
         bounds.width() <= 1024.0 && bounds.height() <= 1024.0,
         "Layer exceeds 1024 physical pixels including effects"
     );
+    if magnified_canvas
+        && let Content::Crosshair(c) = &layer.content
+        && matches!(c.shape, ArmShape::Arc { .. })
+        && !transformed[0].elements.is_empty()
+    {
+        let arms = crosshair_groups(c, text, true)?.remove(0);
+        transformed[0].elements = arms
+            .elements
+            .into_iter()
+            .map(|e| e.transform(transform))
+            .collect::<Result<_>>()?;
+    }
     Ok(PreparedLayer {
         groups: transformed,
         effects,
@@ -345,7 +358,7 @@ fn single(elements: Vec<Element>) -> Vec<DrawGroup> {
 
 fn content(shape: &Content, text: &mut TextRenderer) -> Result<Vec<DrawGroup>> {
     Ok(match shape {
-        Content::Crosshair(crosshair) => crosshair_groups(crosshair, text)?,
+        Content::Crosshair(crosshair) => crosshair_groups(crosshair, text, false)?,
         Content::Rectangle(rect) => single(
             rounded_rect(rect.width, rect.height, rect.radius)
                 .map(|p| element(p, rect.color, rect.radius > 0.0))
@@ -422,7 +435,11 @@ fn text_elements(value: &Text, renderer: &mut TextRenderer) -> Result<Vec<Elemen
         .collect())
 }
 
-fn crosshair_groups(crosshair: &Crosshair, text: &mut TextRenderer) -> Result<Vec<DrawGroup>> {
+fn crosshair_groups(
+    crosshair: &Crosshair,
+    text: &mut TextRenderer,
+    magnified_arc: bool,
+) -> Result<Vec<DrawGroup>> {
     let mut arms = Vec::new();
     let mut point_count = 0usize;
     let text_arm = match &crosshair.shape {
@@ -433,6 +450,12 @@ fn crosshair_groups(crosshair: &Crosshair, text: &mut TextRenderer) -> Result<Ve
         let length = crosshair.length;
         let thickness = crosshair.thickness;
         let gap = crosshair.gap;
+        let arc = match crosshair.shape {
+            ArmShape::Arc { radius, sweep } => {
+                arc_arm(gap, thickness, radius, sweep, magnified_arc)
+            }
+            _ => None,
+        };
         for index in 0..crosshair.arms as usize {
             if !crosshair.enabled_arms.get(index).copied().unwrap_or(false) {
                 continue;
@@ -490,54 +513,11 @@ fn crosshair_groups(crosshair: &Crosshair, text: &mut TextRenderer) -> Result<Ve
                         .into_iter()
                         .collect()
                 }
-                ArmShape::Arc { radius, sweep } => {
-                    let sweep = sweep.to_radians();
-                    let segments = (sweep / std::f32::consts::FRAC_PI_4).ceil().max(1.0) as usize;
-                    let step = sweep / segments as f32;
-                    let tangent = 4.0 / 3.0 * (step / 4.0).tan();
-                    let mut path = PathBuilder::new();
-                    let point = |angle: f32| {
-                        let (sin, cos) = angle.sin_cos();
-                        (
-                            gap + radius * (1.0 - cos),
-                            radius * sin,
-                            radius * sin,
-                            radius * cos,
-                        )
-                    };
-                    let (x, y, _, _) = point(-sweep / 2.0);
-                    path.move_to(x, y);
-                    for i in 0..segments {
-                        let start = -sweep / 2.0 + step * i as f32;
-                        let (x0, y0, dx0, dy0) = point(start);
-                        let (x1, y1, dx1, dy1) = point(start + step);
-                        path.cubic_to(
-                            x0 + tangent * dx0,
-                            y0 + tangent * dy0,
-                            x1 - tangent * dx1,
-                            y1 - tangent * dy1,
-                            x1,
-                            y1,
-                        );
-                    }
-                    if sweep == TAU {
-                        path.close();
-                    }
-                    path.finish()
-                        .and_then(|path| {
-                            path.stroke(
-                                &Stroke {
-                                    width: thickness,
-                                    line_cap: LineCap::Butt,
-                                    ..Default::default()
-                                },
-                                64.0,
-                            )
-                        })
-                        .map(|p| element(p, crosshair.color, true))
-                        .into_iter()
-                        .collect()
-                }
+                ArmShape::Arc { .. } => arc
+                    .clone()
+                    .map(|p| element(p, crosshair.color, true))
+                    .into_iter()
+                    .collect(),
                 ArmShape::TShape {
                     width,
                     thickness: bar,
@@ -632,6 +612,66 @@ fn crosshair_groups(crosshair: &Crosshair, text: &mut TextRenderer) -> Result<Ve
         }
     }
     Ok(groups)
+}
+
+fn arc_arm(gap: f32, thickness: f32, radius: f32, sweep: f32, magnified: bool) -> Option<Path> {
+    let sweep = sweep.to_radians();
+    let mut path = PathBuilder::new();
+    if magnified {
+        let segments = (sweep / std::f32::consts::FRAC_PI_4).ceil().max(1.0) as usize;
+        let step = sweep / segments as f32;
+        let tangent = 4.0 / 3.0 * (step / 4.0).tan();
+        let point = |angle: f32| {
+            let (sin, cos) = angle.sin_cos();
+            (
+                gap + radius * (1.0 - cos),
+                radius * sin,
+                radius * sin,
+                radius * cos,
+            )
+        };
+        let (x, y, _, _) = point(-sweep / 2.0);
+        path.move_to(x, y);
+        for i in 0..segments {
+            let start = -sweep / 2.0 + step * i as f32;
+            let (x0, y0, dx0, dy0) = point(start);
+            let (x1, y1, dx1, dy1) = point(start + step);
+            path.cubic_to(
+                x0 + tangent * dx0,
+                y0 + tangent * dy0,
+                x1 - tangent * dx1,
+                y1 - tangent * dy1,
+                x1,
+                y1,
+            );
+        }
+        if sweep == TAU {
+            path.close();
+        }
+    } else {
+        // This tessellation defines the stored preset's native bounds and pivot.
+        let segments = ((radius * sweep.abs() / 2.0).ceil() as usize).clamp(8, 256);
+        for n in 0..=segments {
+            let angle = -sweep / 2.0 + sweep * n as f32 / segments as f32;
+            let x = gap + radius * (1.0 - angle.cos());
+            let y = radius * angle.sin();
+            if n == 0 {
+                path.move_to(x, y);
+            } else {
+                path.line_to(x, y);
+            }
+        }
+    }
+    path.finish().and_then(|path| {
+        path.stroke(
+            &Stroke {
+                width: thickness,
+                line_cap: LineCap::Butt,
+                ..Default::default()
+            },
+            if magnified { 64.0 } else { 1.0 },
+        )
+    })
 }
 
 fn ellipse(width: f32, height: f32) -> Option<Path> {
