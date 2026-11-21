@@ -1,6 +1,6 @@
 import { DropDown } from "../shared/dropdown.slint";
 import { ScrollView } from "std-widgets.slint";
-import { Store, FieldRow, CanvasViewport } from "../shared/models.slint";
+import { Store, FieldRow, CanvasViewport, CanvasHandle } from "../shared/models.slint";
 import { NumericField } from "../shared/numeric-field.slint";
 import { ColorField } from "../shared/color-field.slint";
 import { PresetPicker } from "../shared/preset-picker.slint";
@@ -225,6 +225,10 @@ export component Designer inherits Rectangle {
                 property <int> pressed-button: 0;
                 property <bool> show-selection: Store.selection-bounds.active && !Store.drawing && !Store.animate;
                 property <bool> show-guides: self.show-selection && self.pressed-button == 1;
+                property <CanvasHandle> pointed-handle: self.show-selection && mouse.enabled && mouse.has-hover ?
+                    Store.canvas-handle-at(box.w, box.h, box.angle, mouse.mouse-x - box.cx, mouse.mouse-y - box.cy) : {};
+                property <CanvasHandle> pressed-handle;
+                property <CanvasHandle> active-handle: self.pressed-button == 1 ? self.pressed-handle : self.pressed-button == 0 ? self.pointed-handle : {};
                 property <CanvasViewport> viewport: {
                     left: -self.origin-x / self.design-pixel, top: -self.origin-y / self.design-pixel,
                     right: (self.width - self.origin-x) / self.design-pixel,
@@ -252,7 +256,7 @@ export component Designer inherits Rectangle {
                     width: tile.width * canvas.design-pixel; height: tile.height * canvas.design-pixel;
                     image-fit: fill; image-rendering: smooth;
                 }
-                if canvas.show-selection: Rectangle {
+                Rectangle { visible: canvas.show-selection;
                     box := Rectangle {
                         property <length> w: Store.selection-bounds.width * canvas.design-pixel;
                         property <length> h: Store.selection-bounds.height * canvas.design-pixel;
@@ -280,10 +284,11 @@ export component Designer inherits Rectangle {
                         for corner in 4: Rectangle {
                             property <float> sx: mod(corner, 2) == 0 ? -1 : 1;
                             property <float> sy: corner < 2 ? -1 : 1;
+                            property <bool> active: canvas.active-handle.sx == self.sx && canvas.active-handle.sy == self.sy;
                             x: box.corner-x(self.sx, self.sy) - self.width / 2;
                             y: box.corner-y(self.sx, self.sy) - self.height / 2;
-                            width: 6px; height: 6px; background: Theme.canvas;
-                            border-width: 1px; border-color: Theme.muted;
+                            width: 6px; height: 6px; background: self.active ? Theme.orange : Theme.canvas;
+                            border-width: 1px; border-color: self.active ? Theme.orange : Theme.muted;
                         }
                         Rectangle {
                             x: box.rotate-x - 3px; y: box.rotate-y - 3px; width: 6px; height: 6px;
@@ -309,7 +314,8 @@ export component Designer inherits Rectangle {
                 }
                 mouse := TouchArea {
                     enabled: Store.interactive;
-                    mouse-cursor: canvas.pressed-button == 3 ? grabbing : Store.drawing ? crosshair : default;
+                    mouse-cursor: canvas.pressed-button == 3 ? grabbing : Store.drawing ? crosshair :
+                        canvas.show-selection && canvas.active-handle.sx != 0 ? (canvas.active-handle.descending ? nwse-resize : nesw-resize) : default;
                     function send-event(kind: int, shift: bool) {
                         let pan = canvas.pressed-button == 3;
                         Store.canvas-event(kind, pan ? self.mouse-x / canvas.screen-pixel : (self.mouse-x - canvas.origin-x) / canvas.design-pixel,
@@ -325,6 +331,7 @@ export component Designer inherits Rectangle {
                         let button = event.button == PointerEventButton.left ? 1 : event.button == PointerEventButton.right ? 2 : event.button == PointerEventButton.middle ? 3 : 0;
                         if event.kind == PointerEventKind.down && canvas.pressed-button == 0 && button != 0 {
                             canvas-keys.focus();
+                            canvas.pressed-handle = canvas.pointed-handle;
                             canvas.pressed-button = button;
                             if button == 2 {
                                 Store.menu-x = (self.absolute-position.x + self.mouse-x) / 1px;

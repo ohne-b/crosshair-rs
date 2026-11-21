@@ -225,12 +225,7 @@ fn file_menu_fits_its_five_icon_rows_at_both_text_sizes() -> Result<()> {
     Ok(())
 }
 
-#[test]
-fn canvas_zoom_counts_physical_pixels_across_windows_display_scales() -> Result<()> {
-    let (ui, window) = pixel_test_window()?;
-    let store = ui.global::<Store>();
-    store.set_page(1);
-    store.set_document_open(true);
+fn mark_canvas_origin(store: &Store<'_>) {
     let dot = crosshair_renderer::Raster {
         width: 1,
         height: 1,
@@ -247,6 +242,86 @@ fn canvas_zoom_counts_physical_pixels_across_windows_display_scales() -> Result<
         }]))
         .into(),
     );
+}
+
+#[test]
+fn canvas_highlights_the_hovered_corner_and_keeps_it_during_resize() -> Result<()> {
+    let (ui, window) = pixel_test_window()?;
+    ui.window().set_size(slint::LogicalSize::new(1280.0, 800.0));
+    let store = ui.global::<Store>();
+    store.set_page(1);
+    store.set_document_open(true);
+    store.set_selection_bounds(crate::SelectionBounds {
+        active: true,
+        x: -12.0,
+        y: -8.0,
+        width: 24.0,
+        height: 16.0,
+        rotation: 0.0,
+    });
+    store.set_zoom(8.0);
+    mark_canvas_origin(&store);
+    ui.show()?;
+    let image = ui.window().take_snapshot()?;
+    let stride = image.width() as usize;
+    let origin = image
+        .as_slice()
+        .iter()
+        .position(|p| (p.r, p.g, p.b) == (255, 0, 255))
+        .unwrap();
+    let center = [(origin % stride) as i32, (origin / stride) as i32];
+    let corners = [(-96, -64), (96, -64), (-96, 64), (96, 64)];
+    let move_to = |dx, dy| {
+        let position =
+            slint::LogicalPosition::new((center[0] + dx) as f32, (center[1] + dy) as f32);
+        ui.window()
+            .dispatch_event(WindowEvent::PointerMoved { position });
+        position
+    };
+    let check = |active| -> Result<()> {
+        let frame = ui.window().take_snapshot()?;
+        for (i, (dx, dy)) in corners.iter().enumerate() {
+            let pixel =
+                frame.as_slice()[(center[1] + dy) as usize * stride + (center[0] + dx) as usize];
+            assert_eq!(
+                (pixel.r, pixel.g, pixel.b) == (249, 115, 22),
+                active == Some(i)
+            );
+        }
+        Ok(())
+    };
+    for (i, &(dx, dy)) in corners.iter().enumerate() {
+        move_to(dx, dy);
+        check(Some(i))?;
+        let hit = store.invoke_canvas_handle_at(192.0, 128.0, 0.0, dx as f32, dy as f32);
+        assert_eq!(hit.descending, dx.signum() == dy.signum());
+        let rotated = store.invoke_canvas_handle_at(192.0, 128.0, 90.0, -dy as f32, dx as f32);
+        assert_eq!((hit.sx, hit.sy), (rotated.sx, rotated.sy));
+        assert_ne!(rotated.descending, hit.descending);
+    }
+    let position = move_to(96, 64);
+    let button = slint::platform::PointerEventButton::Left;
+    ui.window()
+        .dispatch_event(WindowEvent::PointerPressed { position, button });
+    let position = move_to(-96, -64);
+    check(Some(3))?;
+    ui.window()
+        .dispatch_event(WindowEvent::PointerReleased { position, button });
+    check(Some(0))?;
+    move_to(0, 0);
+    check(None)?;
+    snapshot(&window, "canvas-handles.png")?;
+    ui.hide()?;
+    Ok(())
+}
+
+#[test]
+fn canvas_zoom_counts_physical_pixels_across_windows_display_scales() -> Result<()> {
+    let (ui, window) = pixel_test_window()?;
+    let store = ui.global::<Store>();
+    store.set_page(1);
+    store.set_document_open(true);
+    mark_canvas_origin(&store);
     ui.show()?;
     for dpi in [1.0, 1.25, 1.5, 1.75, 2.0] {
         ui.window()

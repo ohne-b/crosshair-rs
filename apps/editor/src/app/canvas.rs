@@ -209,18 +209,14 @@ impl App {
                 .oriented
                 .map_or(selection.geometry.center(), |(bounds, _)| bounds.center());
             let handle_center = bounds.center();
-            let local = designer::rotate_delta(
-                point.x - handle_center.x,
-                point.y - handle_center.y,
-                -rotation,
+            let handle = store.invoke_canvas_handle_at(
+                bounds.width() * zoom,
+                bounds.height() * zoom,
+                rotation,
+                (point.x - handle_center.x) * zoom,
+                (point.y - handle_center.y) * zoom,
             );
-            let handle = Point {
-                x: local.x + handle_center.x,
-                y: local.y + handle_center.y,
-            };
-            if (handle.x - handle_center.x).abs() < tolerance
-                && (handle.y - (bounds.top - 21.0 / zoom)).abs() < tolerance
-            {
+            if handle.rotate {
                 self.begin_edit()?;
                 self.drag = Some(Drag::Rotate {
                     angle: (point.y - center.y).atan2(point.x - center.x),
@@ -228,23 +224,15 @@ impl App {
                 });
                 return Ok(());
             }
-            // Leave a move target inside even a one-pixel dot at low zoom.
-            let near_corner = |value: f32, low: f32, high: f32| {
-                let inside = tolerance.min((high - low) / 4.0);
-                (low - tolerance..=low + inside).contains(&value)
-                    || (high - inside..=high + tolerance).contains(&value)
-            };
-            if near_corner(handle.x, bounds.left, bounds.right)
-                && near_corner(handle.y, bounds.top, bounds.bottom)
-            {
+            if handle.sx != 0.0 {
                 self.begin_edit()?;
                 self.drag = Some(Drag::Resize {
                     origin: point,
                     center,
                     handle_center,
                     corner: Point {
-                        x: (bounds.width() / 2.0).copysign(local.x),
-                        y: (bounds.height() / 2.0).copysign(local.y),
+                        x: bounds.width() / 2.0 * handle.sx,
+                        y: bounds.height() / 2.0 * handle.sy,
                     },
                     span: selection.geometry.width().max(selection.geometry.height()),
                 });
