@@ -78,7 +78,7 @@ impl App {
                     self.document.save_paused = false;
                     self.preview_pending = false;
                     self.drag = None;
-                    self.draw_base = None;
+                    self.pivot_base = None;
                     self.deferred_ui.clear();
                     self.pending_command = None;
                     self.cancel_group = true;
@@ -108,7 +108,7 @@ impl App {
                     self.document.conflict = false;
                     self.document.gesture = None;
                     self.drag = None;
-                    self.draw_base = None;
+                    self.pivot_base = None;
                     self.open_document(id)?;
                 } else {
                     self.open_after_save = Some(id);
@@ -121,7 +121,7 @@ impl App {
                     self.document.dirty = false;
                     self.document.gesture = None;
                     self.drag = None;
-                    self.draw_base = None;
+                    self.pivot_base = None;
                     self.send("clear-preview", Command::ClearPreview)?;
                     self.send("install-flush", Command::Flush)?;
                 } else {

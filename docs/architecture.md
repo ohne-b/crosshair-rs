@@ -194,14 +194,18 @@ do not require a nested group model.
 Canvas: middle-button pan, pointer-anchored zoom, Fit and 100%. The dark background
 is fixed and the design-pixel grid appears automatically from 800% zoom.
 Panning uses screen-space deltas independent of the changing design transform.
-The shared renderer rasterizes previews at display/zoom resolution, capped at a
-1024px bitmap dimension; the engine still rasterizes at physical output scale.
-Bounds/handles and the grid are editor adornments only.
-Drag moves; handles resize/rotate; Shift constrains proportions/angles. Arrow
-keys nudge one design pixel, Shift+arrow ten. Move deltas, resize size changes and
-geometry fields use whole design pixels. Transforms preserve existing fractional
-offsets and their center; rounding an untouched axis must not shift the design.
-Resize measures the selection's actual span, not the handle's click offset.
+At 100% zoom one design pixel occupies one physical display pixel, independent
+of Windows text and display scaling. The preview aligns cardinal rectangles at
+native output size before magnifying their paths. Curves and diagonals rasterize
+at viewport resolution in tiles up to 1024 pixels wide and high. Large filters
+and viewport memory limits can reduce preview resolution.
+Drag moves a layer. Corner handles on rectangles, ellipses and triangles edit
+width and height along the layer axes and keep the opposite corner fixed. Shift
+preserves the aspect ratio. Crosshair handles adjust the per-arm gap around the
+crosshair origin, or the diameter on a dot-only design. Groups, images, text and
+drawings scale uniformly about the selection center. Arrow keys move one design
+pixel, Shift+arrow ten. Whole-pixel drag increments preserve fractional starting
+geometry and offsets. Shift snaps rotation to 15 degrees.
 Effects retain the renderer's discrete padding, so a blurred selection's measured
 bounds can still change by more than one pixel at a padding threshold.
 Exact fields cover every transform.

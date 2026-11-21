@@ -1,6 +1,7 @@
 //! Deterministic premultiplied raster output shared by every application surface.
 
 mod assets;
+mod canvas;
 mod composite;
 mod export;
 mod geometry;
@@ -8,6 +9,7 @@ mod svg;
 mod text;
 
 pub use assets::{AssetData, AssetInfo, AssetSource, inspect_asset};
+pub use canvas::{CanvasBounds, CanvasFrame, CanvasView};
 pub use geometry::LayerBounds;
 
 use std::{collections::VecDeque, sync::Arc};

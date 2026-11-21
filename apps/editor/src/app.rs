@@ -1,5 +1,6 @@
 mod actions;
 mod animation;
+mod canvas;
 mod editing;
 mod events;
 #[cfg(test)]
@@ -20,7 +21,7 @@ use crate::{
 };
 use anyhow::{Context, Result};
 use crosshair_core::{protocol::*, *};
-use crosshair_renderer::LayerBounds;
+use crosshair_renderer::{CanvasBounds, CanvasFrame, CanvasView, LayerBounds};
 use slint::{ComponentHandle, SharedString};
 use std::{
     cell::RefCell,
@@ -36,6 +37,7 @@ use windows::Win32::{
 thread_local! { static APPLICATION: RefCell<Weak<RefCell<App>>> = const { RefCell::new(Weak::new()) }; }
 thread_local! { static EVENTS: RefCell<VecDeque<Event>> = const { RefCell::new(VecDeque::new()) }; }
 enum Event {
+    ViewportChanged,
     Engine(u64, client::Event),
     Preview(preview::Event),
     Appearance(crate::platform::accessibility::Appearance),
@@ -157,22 +159,20 @@ enum ImageTarget {
         layer: Id,
     },
 }
-#[derive(Clone)]
 enum Drag {
     Move {
         origin: Point,
-        before: Preset,
     },
     Resize {
         origin: Point,
         center: Point,
         span: f32,
-        before: Preset,
+        handle_center: Point,
+        corner: Point,
     },
     Rotate {
         angle: f32,
         center: Point,
-        before: Preset,
     },
     Pan {
         origin: Point,
@@ -180,7 +180,7 @@ enum Drag {
     },
     Draw {
         layer: Id,
-        before: Preset,
+        inverse: [Point; 3],
         stroke: Stroke,
     },
 }
@@ -206,10 +206,11 @@ pub(crate) struct App {
     thumbnails: BTreeMap<Id, (u64, slint::Image, slint::Image)>,
     palette: Vec<Preset>,
     browse: Vec<Preset>,
-    bounds: Vec<(Id, LayerBounds)>,
+    bounds: Vec<(Id, CanvasBounds)>,
     inverses: BTreeMap<Id, [Point; 3]>,
     anchors: BTreeMap<Id, Point>,
     preview_generation: u64,
+    canvas_coverage: Option<(CanvasView, LayerBounds)>,
     inflight: Option<Preset>,
     preview_inflight: Option<Preset>,
     preview_sent: Option<Preset>,
@@ -236,7 +237,7 @@ pub(crate) struct App {
     failed_shortcut: Option<Id>,
     modal: Modal,
     drag: Option<Drag>,
-    draw_base: Option<Layer>,
+    pivot_base: Option<Layer>,
     closing: bool,
     close_flush_pending: bool,
     recovery_shown: bool,
@@ -309,6 +310,7 @@ pub fn run() -> Result<()> {
         inverses: BTreeMap::new(),
         anchors: BTreeMap::new(),
         preview_generation: 0,
+        canvas_coverage: None,
         inflight: None,
         preview_inflight: None,
         preview_sent: None,
@@ -335,7 +337,7 @@ pub fn run() -> Result<()> {
         failed_shortcut: None,
         modal: Modal::None,
         drag: None,
-        draw_base: None,
+        pivot_base: None,
         closing: false,
         close_flush_pending: false,
         recovery_shown: false,
@@ -391,6 +393,10 @@ pub fn run() -> Result<()> {
                 ));
             }
         });
+    ui.global::<Store>().on_viewport_changed(|| {
+        EVENTS.with(|events| events.borrow_mut().push_back(Event::ViewportChanged));
+        drain_events();
+    });
     ui.global::<Store>()
         .on_canvas_event(|kind, x, y, button, shift| {
             ui_event(UiEvent::Canvas(kind, Point { x, y }, button, shift))
@@ -503,7 +509,11 @@ impl App {
         )
     }
     fn render(&mut self) {
-        self.stop_playback();
+        if self.animate {
+            self.stop_playback();
+        } else {
+            self.playback_generation = self.preview.cancel_bitmap();
+        }
         self.preview_pending = self.document.draft.is_some();
         if self.image_target.is_none() {
             self.client.pin_assets(self.document.asset_ids());
@@ -522,15 +532,11 @@ impl App {
             .cloned()
             .collect();
         self.preview_generation = self.preview.request(preview::Request {
-            zoom: self
-                .ui
-                .upgrade()
-                .map(|ui| ui.global::<Store>().get_zoom() * ui.window().scale_factor())
-                .unwrap_or(1.0),
+            view: self.canvas_view(),
             document: self.document.draft.clone(),
             presets,
             assets: self.state.assets.clone(),
-            draw_base: self.draw_base.clone(),
+            pivot_base: self.pivot_base.clone(),
             max_output_scale: self
                 .state
                 .profiles

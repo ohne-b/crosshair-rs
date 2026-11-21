@@ -1,6 +1,6 @@
 use super::*;
 use crate::{
-    BindingRow, BoundsRow, FieldGroup, FieldRow, LayerRow, PresetGroup, PresetRow,
+    BindingRow, FieldGroup, FieldRow, LayerRow, PresetGroup, PresetRow, SelectionBounds,
     features::{
         designer::{self, FieldKind},
         keybinds, library, settings,
@@ -303,7 +303,7 @@ impl App {
                         .draft
                         .as_ref()
                         .is_some_and(|preset| preset.id == active)
-                    && store.get_preview().size().width > 0
+                    && store.get_preview_thumbnail().size().width > 0
                 {
                     store.get_preview_thumbnail()
                 } else {
@@ -589,22 +589,19 @@ impl App {
         let Some(ui) = self.ui.upgrade() else {
             return;
         };
-        let rows: Vec<_> = self
-            .bounds
-            .iter()
-            .map(|(id, bounds)| BoundsRow {
-                id: id.to_string().into(),
-                x: bounds.left,
-                y: bounds.top,
-                width: bounds.width(),
-                height: bounds.height(),
-                selected: self.document.selected.contains(id),
-            })
-            .collect();
-        let store = ui.global::<Store>();
-        if !update_rows(&store.get_bounds(), &rows, |a, b| a.id == b.id) {
-            store.set_bounds(model(rows));
-        }
+        ui.global::<Store>().set_selection_bounds(
+            self.selection_bounds()
+                .map(|selection| selection.oriented.unwrap_or((selection.painted, 0.0)))
+                .map(|(bounds, rotation)| SelectionBounds {
+                    rotation,
+                    x: bounds.left,
+                    y: bounds.top,
+                    width: bounds.width(),
+                    height: bounds.height(),
+                    active: true,
+                })
+                .unwrap_or_default(),
+        );
     }
 
     pub(super) fn refresh_bindings(&self) {
@@ -905,9 +902,12 @@ mod inspector_tests {
                             224
                         }) + frame % 32;
                         let raster = slint::SharedPixelBuffer::<slint::Rgba8Pixel>::new(size, size);
-                        store.set_preview(slint::Image::from_rgba8_premultiplied(raster));
-                        store.set_preview_width(size as f32 / 8.0);
-                        store.set_preview_height(size as f32 / 8.0);
+                        store.set_canvas_tiles(model(vec![crate::CanvasTile {
+                            bitmap: slint::Image::from_rgba8_premultiplied(raster),
+                            width: size as f32 / 8.0,
+                            height: size as f32 / 8.0,
+                            ..Default::default()
+                        }]));
                     }
                 }
                 slint::platform::update_timers_and_animations();

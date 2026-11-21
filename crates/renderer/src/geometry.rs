@@ -15,6 +15,12 @@ pub struct LayerBounds {
 }
 
 impl LayerBounds {
+    pub fn center(self) -> crosshair_core::Point {
+        crosshair_core::Point {
+            x: (self.left + self.right) / 2.0,
+            y: (self.top + self.bottom) / 2.0,
+        }
+    }
     pub fn width(self) -> f32 {
         self.right - self.left
     }
@@ -83,7 +89,7 @@ impl Element {
         }
     }
 
-    fn transform(self, transform: Transform) -> Result<Self> {
+    pub(super) fn transform(self, transform: Transform) -> Result<Self> {
         match self {
             Self::Path {
                 path,
@@ -122,6 +128,39 @@ pub(crate) struct PreparedLayer {
 }
 
 impl PreparedLayer {
+    pub(super) fn align_canvas_paths(&mut self) {
+        for element in self.groups.iter_mut().flat_map(|group| &mut group.elements) {
+            if let Element::Path {
+                path, antialias, ..
+            } = element
+                && !*antialias
+            {
+                if let Some(aligned) = crate::composite::align_rectangles(path) {
+                    *path = aligned;
+                }
+                *antialias = true;
+            }
+        }
+    }
+
+    pub(super) fn magnify(&mut self, scale: f32) -> Result<()> {
+        self.align_canvas_paths();
+        if scale == 1.0 {
+            return Ok(());
+        }
+        let transform = Transform::from_scale(scale, scale);
+        for group in &mut self.groups {
+            group.blur *= scale;
+            for element in std::mem::take(&mut group.elements) {
+                group.elements.push(element.transform(transform)?);
+            }
+        }
+        self.effects.blur *= scale;
+        self.effects.outline.thickness *= scale;
+        self.effects.outline.blur *= scale;
+        Ok(())
+    }
+
     pub fn is_empty(&self) -> bool {
         self.groups.iter().all(|group| group.elements.is_empty())
     }
@@ -156,27 +195,17 @@ pub(crate) fn prepare_layer(
     effects.blur *= effect_scale;
     effects.outline.thickness *= effect_scale;
     effects.outline.blur *= effect_scale;
-    let mut final_bounds: Option<LayerBounds> = None;
     let mut transformed = Vec::with_capacity(groups.len());
     for group in groups {
         let blur = group.blur * effect_scale;
         let mut elements = Vec::with_capacity(group.elements.len());
         for element in group.elements {
             let element = element.transform(transform)?;
-            let bounds = element
-                .bounds()?
-                .outset(crate::composite::blur_padding(blur));
-            final_bounds = Some(final_bounds.map_or(bounds, |previous| previous.union(bounds)));
             elements.push(element);
         }
         transformed.push(DrawGroup { elements, blur });
     }
-    let padding = crate::composite::blur_padding(effects.blur).max(if effects.outline.enabled {
-        effects.outline.thickness + crate::composite::blur_padding(effects.outline.blur) + 1.0
-    } else {
-        0.0
-    });
-    let bounds = final_bounds.unwrap_or(local).outset(padding);
+    let bounds = group_bounds(&transformed, &effects, local)?;
     ensure!(
         [bounds.left, bounds.top, bounds.right, bounds.bottom]
             .iter()
@@ -192,6 +221,32 @@ pub(crate) fn prepare_layer(
         effects,
         opacity: layer.opacity,
         bounds,
+    })
+}
+
+pub(super) fn group_bounds(
+    groups: &[DrawGroup],
+    effects: &Effects,
+    empty: LayerBounds,
+) -> Result<LayerBounds> {
+    let mut final_bounds: Option<LayerBounds> = None;
+    for group in groups {
+        let blur = crate::composite::blur_padding(group.blur);
+        for element in &group.elements {
+            let bounds = element.bounds()?.outset(blur);
+            final_bounds = Some(final_bounds.map_or(bounds, |previous| previous.union(bounds)));
+        }
+    }
+    Ok(final_bounds
+        .unwrap_or(empty)
+        .outset(effect_padding(effects)))
+}
+
+pub(super) fn effect_padding(effects: &Effects) -> f32 {
+    crate::composite::blur_padding(effects.blur).max(if effects.outline.enabled {
+        effects.outline.thickness + crate::composite::blur_padding(effects.outline.blur) + 1.0
+    } else {
+        0.0
     })
 }
 
@@ -240,7 +295,7 @@ fn intrinsic_bounds(groups: &[DrawGroup]) -> Result<LayerBounds> {
     }))
 }
 
-fn layer_transform(layer: &Layer, scale: f32, local: LayerBounds) -> Transform {
+pub(super) fn layer_transform(layer: &Layer, scale: f32, local: LayerBounds) -> Transform {
     let pivot = pivot(layer, local);
     let angle = layer.transform.rotation.to_radians();
     let (sin, cos) = (snap_trig(angle.sin()), snap_trig(angle.cos()));
@@ -437,17 +492,36 @@ fn crosshair_groups(crosshair: &Crosshair, text: &mut TextRenderer) -> Result<Ve
                 }
                 ArmShape::Arc { radius, sweep } => {
                     let sweep = sweep.to_radians();
-                    let segments = ((radius * sweep.abs() / 2.0).ceil() as usize).clamp(8, 256);
+                    let segments = (sweep / std::f32::consts::FRAC_PI_4).ceil().max(1.0) as usize;
+                    let step = sweep / segments as f32;
+                    let tangent = 4.0 / 3.0 * (step / 4.0).tan();
                     let mut path = PathBuilder::new();
-                    for n in 0..=segments {
-                        let angle = -sweep / 2.0 + sweep * n as f32 / segments as f32;
-                        let x = gap + radius * (1.0 - angle.cos());
-                        let y = radius * angle.sin();
-                        if n == 0 {
-                            path.move_to(x, y);
-                        } else {
-                            path.line_to(x, y);
-                        }
+                    let point = |angle: f32| {
+                        let (sin, cos) = angle.sin_cos();
+                        (
+                            gap + radius * (1.0 - cos),
+                            radius * sin,
+                            radius * sin,
+                            radius * cos,
+                        )
+                    };
+                    let (x, y, _, _) = point(-sweep / 2.0);
+                    path.move_to(x, y);
+                    for i in 0..segments {
+                        let start = -sweep / 2.0 + step * i as f32;
+                        let (x0, y0, dx0, dy0) = point(start);
+                        let (x1, y1, dx1, dy1) = point(start + step);
+                        path.cubic_to(
+                            x0 + tangent * dx0,
+                            y0 + tangent * dy0,
+                            x1 - tangent * dx1,
+                            y1 - tangent * dy1,
+                            x1,
+                            y1,
+                        );
+                    }
+                    if sweep == TAU {
+                        path.close();
                     }
                     path.finish()
                         .and_then(|path| {
@@ -457,7 +531,7 @@ fn crosshair_groups(crosshair: &Crosshair, text: &mut TextRenderer) -> Result<Ve
                                     line_cap: LineCap::Butt,
                                     ..Default::default()
                                 },
-                                1.0,
+                                64.0,
                             )
                         })
                         .map(|p| element(p, crosshair.color, true))

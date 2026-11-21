@@ -549,11 +549,9 @@ impl App {
                 store.set_pan_x(pan[0]);
                 store.set_pan_y(pan[1]);
                 store.set_zoom(zoom);
-                self.render();
             }
             "zoom-reset" => {
                 store.set_zoom(1.0);
-                self.render();
                 store.set_pan_x(0.0);
                 store.set_pan_y(0.0);
             }
@@ -574,7 +572,6 @@ impl App {
                 store.set_pan_y(
                     -(store.get_preview_y() + store.get_preview_height() / 2.0) * store.get_zoom(),
                 );
-                self.render();
             }
             "reset-layout" => {
                 store.set_zoom(8.0);

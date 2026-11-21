@@ -153,8 +153,7 @@ fn layer_eye_click_dispatches_visibility_toggle() -> Result<()> {
     Ok(())
 }
 
-#[test]
-fn header_crosshair_stays_centered_when_source_size_changes() -> Result<()> {
+fn pixel_test_window() -> Result<(AppWindow, Rc<MinimalSoftwareWindow>)> {
     struct Headless(Rc<MinimalSoftwareWindow>);
     impl Platform for Headless {
         fn create_window_adapter(&self) -> Result<Rc<dyn WindowAdapter>, slint::PlatformError> {
@@ -164,6 +163,75 @@ fn header_crosshair_stays_centered_when_source_size_changes() -> Result<()> {
     let window = MinimalSoftwareWindow::new(RepaintBufferType::NewBuffer);
     slint::platform::set_platform(Box::new(Headless(window.clone())))?;
     let ui = AppWindow::new()?;
+    Ok((ui, window))
+}
+
+#[test]
+fn canvas_zoom_counts_physical_pixels_across_windows_display_scales() -> Result<()> {
+    let (ui, window) = pixel_test_window()?;
+    let store = ui.global::<Store>();
+    store.set_page(1);
+    store.set_document_open(true);
+    let dot = crosshair_renderer::Raster {
+        width: 1,
+        height: 1,
+        origin: [0, 0],
+        pixels: vec![255, 0, 255, 255],
+    };
+    store.set_canvas_tiles(
+        Rc::new(slint::VecModel::from(vec![crate::CanvasTile {
+            x: 0.0,
+            y: 0.0,
+            width: 1.0,
+            height: 1.0,
+            bitmap: preview::image(&dot),
+        }]))
+        .into(),
+    );
+    ui.show()?;
+    for dpi in [1.0, 1.25, 1.5, 1.75, 2.0] {
+        ui.window()
+            .dispatch_event(WindowEvent::ScaleFactorChanged { scale_factor: dpi });
+        ui.window().set_size(slint::LogicalSize::new(1280.0, 800.0));
+        for zoom in [1.0, 8.0] {
+            store.set_zoom(zoom);
+            let mut first = None;
+            for pan in [0.0, 7.0] {
+                store.set_pan_x(pan);
+                slint::platform::update_timers_and_animations();
+                let physical = ui.window().size();
+                let stride = physical.width as usize;
+                let mut pixels =
+                    vec![slint::Rgb8Pixel::default(); stride * physical.height as usize];
+                window.draw_if_needed(|renderer| {
+                    renderer.render(&mut pixels, stride);
+                });
+                let mut painted = pixels
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, p)| p.r == 255 && p.g == 0 && p.b == 255)
+                    .map(|(i, _)| i);
+                let start = painted.next().expect("the canvas dot is visible");
+                assert_eq!(
+                    1 + painted.count(),
+                    (zoom * zoom) as usize,
+                    "{dpi}x display, {zoom}x zoom"
+                );
+                if let Some(first) = first {
+                    assert_eq!(start, first + 7, "pan offsets use physical pixels");
+                }
+                first = Some(start);
+                assert_eq!(store.get_canvas_view().scale, zoom);
+            }
+        }
+    }
+    ui.hide()?;
+    Ok(())
+}
+
+#[test]
+fn header_crosshair_stays_centered_when_source_size_changes() -> Result<()> {
+    let (ui, window) = pixel_test_window()?;
     ui.global::<Store>()
         .on_scale_thumbnail(preview::scale_thumbnail);
     ui.window().set_size(slint::LogicalSize::new(1280.0, 800.0));

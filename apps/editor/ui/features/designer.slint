@@ -1,6 +1,6 @@
 import { DropDown } from "../shared/dropdown.slint";
 import { ScrollView } from "std-widgets.slint";
-import { Store, FieldRow } from "../shared/models.slint";
+import { Store, FieldRow, CanvasViewport } from "../shared/models.slint";
 import { NumericField } from "../shared/numeric-field.slint";
 import { ColorField } from "../shared/color-field.slint";
 import { PresetPicker } from "../shared/preset-picker.slint";
@@ -205,58 +205,139 @@ export component Designer inherits Rectangle {
             spacing: 0px;
             canvas := Rectangle {
                 clip: true; background: Theme.preview;
-                property <float> center-x: self.width / 2px + Store.pan-x;
-                property <float> center-y: self.height / 2px + Store.pan-y;
+                property <length> screen-pixel: 1phx;
+                property <length> design-pixel: Store.zoom * canvas.screen-pixel;
+                property <length> origin-x: floor((self.absolute-position.x + self.width / 2) / canvas.screen-pixel + Store.pan-x) * canvas.screen-pixel - self.absolute-position.x;
+                property <length> origin-y: floor((self.absolute-position.y + self.height / 2) / canvas.screen-pixel + Store.pan-y) * canvas.screen-pixel - self.absolute-position.y;
                 property <int> pressed-button: 0;
-                property <bool> shift-down: false;
+                property <bool> show-selection: Store.selection-bounds.active && !Store.drawing && !Store.animate;
+                property <bool> show-guides: self.show-selection && self.pressed-button == 1;
+                property <CanvasViewport> viewport: {
+                    left: -self.origin-x / self.design-pixel, top: -self.origin-y / self.design-pixel,
+                    right: (self.width - self.origin-x) / self.design-pixel,
+                    bottom: (self.height - self.origin-y) / self.design-pixel,
+                    scale: Store.zoom,
+                };
+                init => { Store.canvas-view = self.viewport; }
+                changed viewport => { Store.canvas-view = self.viewport; }
                 if Store.zoom >= 8: Rectangle {
-                    for column in ceil(parent.width / (Store.zoom * 1px)): Rectangle { x: (mod(mod(canvas.center-x, Store.zoom) + Store.zoom, Store.zoom) + column * Store.zoom) * 1px; width: 1px; height: parent.height; background: #FFFFFF0C; }
-                    for row in ceil(parent.height / (Store.zoom * 1px)): Rectangle { y: (mod(mod(canvas.center-y, Store.zoom) + Store.zoom, Store.zoom) + row * Store.zoom) * 1px; height: 1px; width: parent.width; background: #FFFFFF0C; }
-                }
-                Rectangle { x: canvas.center-x * 1px; width: 1px; height: parent.height; background: #FFFFFF0A; }
-                Rectangle { y: canvas.center-y * 1px; height: 1px; width: parent.width; background: #FFFFFF0A; }
-                Image { source: Store.preview; x: (canvas.center-x + Store.preview-x * Store.zoom) * 1px; y: (canvas.center-y + Store.preview-y * Store.zoom) * 1px; width: Store.preview-width * Store.zoom * 1px; height: Store.preview-height * Store.zoom * 1px; image-rendering: smooth; }
-                for bounds in Store.bounds: Rectangle {
-                    visible: bounds.selected && !Store.drawing && !Store.animate;
-                    x: (canvas.center-x + bounds.x * Store.zoom) * 1px; y: (canvas.center-y + bounds.y * Store.zoom) * 1px;
-                    width: max(1px, bounds.width * Store.zoom * 1px); height: max(1px, bounds.height * Store.zoom * 1px);
-                    border-width: 1px; border-color: Theme.muted; background: transparent;
-                    Rectangle { x: (parent.width - self.width) / 2; y: parent.height + 8px; width: dimensions.preferred-width + 12px; height: 24px; background: Theme.panel; border-radius: 5px;
-                        dimensions := Text { text: round(bounds.width) + " x " + round(bounds.height) + " px"; color: Theme.muted; font-size: 10px * Theme.text-scale; horizontal-alignment: center; vertical-alignment: center; }
+                    for column in ceil(canvas.width / canvas.design-pixel): Rectangle {
+                        x: canvas.origin-x + (ceil(-canvas.origin-x / canvas.design-pixel) + column) * canvas.design-pixel;
+                        width: 1phx; height: canvas.height; background: #FFFFFF0C;
                     }
-                    Rectangle { x: -3px; y: -3px; width: 6px; height: 6px; background: Theme.canvas; border-width: 1px; border-color: Theme.muted; }
-                    Rectangle { x: parent.width - 3px; y: -3px; width: 6px; height: 6px; background: Theme.canvas; border-width: 1px; border-color: Theme.muted; }
-                    Rectangle { x: -3px; y: parent.height - 3px; width: 6px; height: 6px; background: Theme.canvas; border-width: 1px; border-color: Theme.muted; }
-                    Rectangle { x: parent.width - 3px; y: parent.height - 3px; width: 6px; height: 6px; background: Theme.canvas; border-width: 1px; border-color: Theme.muted; }
-                    Rectangle { x: parent.width / 2 - 3px; y: -24px; width: 6px; height: 6px; border-radius: 3px; background: Theme.canvas; border-width: 1px; border-color: Theme.orange; }
+                    for row in ceil(canvas.height / canvas.design-pixel): Rectangle {
+                        y: canvas.origin-y + (ceil(-canvas.origin-y / canvas.design-pixel) + row) * canvas.design-pixel;
+                        height: 1phx; width: canvas.width; background: #FFFFFF0C;
+                    }
                 }
-                for bounds in Store.bounds: Rectangle {
-                    visible: canvas.pressed-button == 1 && bounds.selected && !Store.drawing && !Store.animate && abs(bounds.x + bounds.width / 2) < 0.01;
-                    x: canvas.center-x * 1px; y: 0px; width: 1px; height: canvas.height;
+                Rectangle { x: canvas.origin-x; width: 1phx; height: canvas.height; background: #FFFFFF0A; }
+                Rectangle { y: canvas.origin-y; height: 1phx; width: canvas.width; background: #FFFFFF0A; }
+                for tile in Store.canvas-tiles: Image {
+                    source: tile.bitmap;
+                    x: canvas.origin-x + tile.x * canvas.design-pixel;
+                    y: canvas.origin-y + tile.y * canvas.design-pixel;
+                    width: tile.width * canvas.design-pixel; height: tile.height * canvas.design-pixel;
+                    image-fit: fill; image-rendering: smooth;
+                }
+                if canvas.show-selection: Rectangle {
+                    box := Rectangle {
+                        property <length> w: Store.selection-bounds.width * canvas.design-pixel;
+                        property <length> h: Store.selection-bounds.height * canvas.design-pixel;
+                        property <length> cx: canvas.origin-x + Store.selection-bounds.x * canvas.design-pixel + self.w / 2;
+                        property <length> cy: canvas.origin-y + Store.selection-bounds.y * canvas.design-pixel + self.h / 2;
+                        property <angle> angle: Store.selection-bounds.rotation * 1deg;
+                        pure function corner-x(x: float, y: float) -> length {
+                            return self.cx + (x * self.w * cos(self.angle) - y * self.h * sin(self.angle)) / 2;
+                        }
+                        pure function corner-y(x: float, y: float) -> length {
+                            return self.cy + (x * self.w * sin(self.angle) + y * self.h * cos(self.angle)) / 2;
+                        }
+                        property <length> rotate-x: self.corner-x(0, -1) + 21px * sin(self.angle);
+                        property <length> rotate-y: self.corner-y(0, -1) - 21px * cos(self.angle);
+                        Path {
+                            width: canvas.width; height: canvas.height;
+                            viewbox-width: self.width / 1px; viewbox-height: self.height / 1px;
+                            stroke-width: 1px; stroke: Theme.muted;
+                            MoveTo { x: box.corner-x(-1,-1) / 1px; y: box.corner-y(-1,-1) / 1px; }
+                            LineTo { x: box.corner-x(1,-1) / 1px; y: box.corner-y(1,-1) / 1px; }
+                            LineTo { x: box.corner-x(1,1) / 1px; y: box.corner-y(1,1) / 1px; }
+                            LineTo { x: box.corner-x(-1,1) / 1px; y: box.corner-y(-1,1) / 1px; }
+                            Close {}
+                        }
+                        for corner in 4: Rectangle {
+                            property <float> sx: mod(corner, 2) == 0 ? -1 : 1;
+                            property <float> sy: corner < 2 ? -1 : 1;
+                            x: box.corner-x(self.sx, self.sy) - self.width / 2;
+                            y: box.corner-y(self.sx, self.sy) - self.height / 2;
+                            width: 6px; height: 6px; background: Theme.canvas;
+                            border-width: 1px; border-color: Theme.muted;
+                        }
+                        Rectangle {
+                            x: box.rotate-x - 3px; y: box.rotate-y - 3px; width: 6px; height: 6px;
+                            border-radius: 3px; background: Theme.canvas; border-width: 1px; border-color: Theme.orange;
+                        }
+                        Rectangle {
+                            x: box.cx - self.width / 2; y: box.cy + (abs(sin(box.angle)) * box.w + abs(cos(box.angle)) * box.h) / 2 + 8px;
+                            width: dimensions.preferred-width + 12px; height: 24px; background: Theme.panel; border-radius: 5px;
+                            dimensions := Text {
+                                text: Store.format-number(Store.selection-bounds.width) + " × " + Store.format-number(Store.selection-bounds.height) + " px";
+                                color: Theme.muted; font-size: 10px * Theme.text-scale; horizontal-alignment: center; vertical-alignment: center;
+                            }
+                        }
+                    }
+                }
+                if canvas.show-guides && abs(Store.selection-bounds.x + Store.selection-bounds.width / 2) < 0.01: Rectangle {
+                    x: canvas.origin-x; y: 0px; width: 1px; height: canvas.height;
                     for dot in ceil(canvas.height / 6px): Rectangle { y: dot * 6px; width: 1px; height: 2px; background: #EAB308; }
                 }
-                for bounds in Store.bounds: Rectangle {
-                    visible: canvas.pressed-button == 1 && bounds.selected && !Store.drawing && !Store.animate && abs(bounds.y + bounds.height / 2) < 0.01;
-                    x: 0px; y: canvas.center-y * 1px; height: 1px; width: canvas.width;
+                if canvas.show-guides && abs(Store.selection-bounds.y + Store.selection-bounds.height / 2) < 0.01: Rectangle {
+                    x: 0px; y: canvas.origin-y; height: 1px; width: canvas.width;
                     for dot in ceil(canvas.width / 6px): Rectangle { x: dot * 6px; height: 1px; width: 2px; background: #EAB308; }
                 }
                 mouse := TouchArea {
                     enabled: Store.interactive;
-                    pointer-event(event) => {
-                        let button = event.button == PointerEventButton.right ? 2 : event.button == PointerEventButton.middle ? 3 : 1;
-                        if event.kind == PointerEventKind.down && button == 2 {
-                            Store.menu-x = (self.absolute-position.x + self.mouse-x) / 1px;
-                            Store.menu-y = (self.absolute-position.y + self.mouse-y) / 1px;
-                        }
-                        if event.kind == PointerEventKind.down { canvas-keys.focus(); canvas.pressed-button = button; canvas.shift-down = event.modifiers.shift; }
-                        if event.kind == PointerEventKind.up && canvas.pressed-button == button {
-                            Store.canvas-event(1, button == 3 ? self.mouse-x / 1px : (self.mouse-x / 1px - canvas.center-x) / Store.zoom, button == 3 ? self.mouse-y / 1px : (self.mouse-y / 1px - canvas.center-y) / Store.zoom, button, event.modifiers.shift);
-                        }
-                        Store.canvas-event(event.kind == PointerEventKind.down ? 0 : event.kind == PointerEventKind.up ? 2 : event.kind == PointerEventKind.cancel ? 3 : 4, button == 3 ? self.mouse-x / 1px : (self.mouse-x / 1px - canvas.center-x) / Store.zoom, button == 3 ? self.mouse-y / 1px : (self.mouse-y / 1px - canvas.center-y) / Store.zoom, button, event.modifiers.shift);
-                        if event.kind == PointerEventKind.up || event.kind == PointerEventKind.cancel { canvas.pressed-button = 0; }
+                    mouse-cursor: canvas.pressed-button == 3 ? grabbing : Store.drawing ? crosshair : default;
+                    function send-event(kind: int, shift: bool) {
+                        let pan = canvas.pressed-button == 3;
+                        Store.canvas-event(kind, pan ? self.mouse-x / canvas.screen-pixel : (self.mouse-x - canvas.origin-x) / canvas.design-pixel,
+                            pan ? self.mouse-y / canvas.screen-pixel : (self.mouse-y - canvas.origin-y) / canvas.design-pixel, canvas.pressed-button, shift);
                     }
-                    moved => { if canvas.pressed-button != 0 { Store.canvas-event(1, canvas.pressed-button == 3 ? self.mouse-x / 1px : (self.mouse-x / 1px - canvas.center-x) / Store.zoom, canvas.pressed-button == 3 ? self.mouse-y / 1px : (self.mouse-y / 1px - canvas.center-y) / Store.zoom, canvas.pressed-button, canvas.shift-down); } }
-                    scroll-event(event) => { if canvas.pressed-button == 0 { Store.action("zoom-step", (event.delta-y > 0 ? "1" : "-1") + "," + ((self.mouse-x - canvas.width / 2) / 1px) + "," + ((self.mouse-y - canvas.height / 2) / 1px)); } return accept; }
+                    changed has-hover => {
+                        if !self.has-hover && canvas.pressed-button != 0 {
+                            self.send-event(3, false);
+                            canvas.pressed-button = 0;
+                        }
+                    }
+                    pointer-event(event) => {
+                        let button = event.button == PointerEventButton.left ? 1 : event.button == PointerEventButton.right ? 2 : event.button == PointerEventButton.middle ? 3 : 0;
+                        if event.kind == PointerEventKind.down && canvas.pressed-button == 0 && button != 0 {
+                            canvas-keys.focus();
+                            canvas.pressed-button = button;
+                            if button == 2 {
+                                Store.menu-x = (self.absolute-position.x + self.mouse-x) / 1px;
+                                Store.menu-y = (self.absolute-position.y + self.mouse-y) / 1px;
+                            }
+                            self.send-event(0, event.modifiers.shift);
+                            if button == 2 && !Store.drawing { canvas.pressed-button = 0; }
+                        } else if canvas.pressed-button != 0 {
+                            if event.kind == PointerEventKind.move {
+                                self.send-event(1, event.modifiers.shift);
+                            } else if event.kind == PointerEventKind.up && canvas.pressed-button == button {
+                                self.send-event(1, event.modifiers.shift);
+                                self.send-event(2, event.modifiers.shift);
+                                canvas.pressed-button = 0;
+                            } else if event.kind == PointerEventKind.cancel {
+                                self.send-event(3, event.modifiers.shift);
+                                canvas.pressed-button = 0;
+                            }
+                        }
+                    }
+                    scroll-event(event) => {
+                        if canvas.pressed-button == 0 && event.delta-y != 0 {
+                            Store.action("zoom-step", (event.delta-y > 0 ? "1" : "-1") + "," + ((self.mouse-x - canvas.width / 2) / canvas.screen-pixel) + "," + ((self.mouse-y - canvas.height / 2) / canvas.screen-pixel));
+                        }
+                        return accept;
+                    }
                 }
                 canvas-keys := FocusScope { enabled: Store.interactive; focus-on-click: false; }
                 if root.show-layers: LayerList {
@@ -324,7 +405,7 @@ export component Designer inherits Rectangle {
                 HorizontalLayout {
                     x: 12px; y: parent.height - 38px; width: parent.width - 24px; height: 30px; spacing: 4px;
                     Rectangle { horizontal-stretch: 1; }
-                    ActionButton { text: "Fit"; quiet: true; clicked => { Store.action("zoom-fit", (canvas.width / 1px) + "," + (canvas.height / 1px)); } }
+                    ActionButton { text: "Fit"; quiet: true; clicked => { Store.action("zoom-fit", (canvas.width / canvas.screen-pixel) + "," + (canvas.height / canvas.screen-pixel)); } }
                     ActionButton { text: round(Store.zoom * 100) + "%"; label: "Reset zoom to 100%"; quiet: true; clicked => { Store.action("zoom-reset", ""); } }
                 }
             }

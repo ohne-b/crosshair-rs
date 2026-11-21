@@ -2,6 +2,9 @@ use super::*;
 
 impl App {
     pub(super) fn stop_playback(&mut self) {
+        if !self.animate && !self.playing {
+            return;
+        }
         self.playback_timer.stop();
         self.playback_next = None;
         self.playback.reset();
@@ -29,12 +32,8 @@ impl App {
         Ok(())
     }
 
-    fn request_bitmap(&mut self, preset: Preset) -> Result<()> {
-        let ui = self.window()?;
-        self.playback_generation = self.preview.bitmap(
-            preset,
-            ui.global::<Store>().get_zoom() * ui.window().scale_factor(),
-        );
+    pub(super) fn request_bitmap(&mut self, preset: Preset) -> Result<()> {
+        self.playback_generation = self.preview.bitmap(preset, self.canvas_view());
         Ok(())
     }
 
