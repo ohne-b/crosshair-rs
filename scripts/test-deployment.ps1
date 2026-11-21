@@ -24,6 +24,12 @@ public static class PackageActivation {
         try { uint process; Marshal.ThrowExceptionForHR(((IActivation)manager).ActivateApplication(app, arguments, 0, out process)); return process; }
         finally { Marshal.ReleaseComObject(manager); }
     }
+    [DllImport("user32.dll", CharSet=CharSet.Unicode)]
+    static extern IntPtr SendMessageTimeout(IntPtr window, uint message, UIntPtr wparam, IntPtr lparam, uint flags, uint timeout, out IntPtr result);
+    public static bool HasLargeIcon(IntPtr window) {
+        IntPtr icon;
+        return window != IntPtr.Zero && SendMessageTimeout(window, 0x007F, new UIntPtr(1), IntPtr.Zero, 2, 500, out icon) != IntPtr.Zero && icon != IntPtr.Zero;
+    }
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     public static extern bool WaitNamedPipe(string name, uint timeout);
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
@@ -129,9 +135,9 @@ function Stop-TestEngine([int]$EngineId) {
 $installed = $null
 $engineStarted = $false
 try {
-    Assert-ShortcutDefaults 3
-    Run-Setup '/S /DESKTOP=1 /STARTMENU=1 /STARTUP=1'
-    Assert-ShortcutDefaults 3
+    Assert-ShortcutDefaults 1
+    Run-Setup '/S /DESKTOP=1 /STARTUP=1'
+    Assert-ShortcutDefaults 1
     $installed = Get-AppxPackage -Name $identity.Name
     if (!$installed -or $installed.Version -ne $build.packageVersion -or $installed.Publisher -cne $identity.Publisher -or $installed.Status -ne 'Ok') { throw 'Windows did not register the expected package.' }
     $engineApp = $installed.PackageFamilyName + '!Engine'
@@ -139,20 +145,36 @@ try {
     if (!(Get-Content -LiteralPath $statePath -Raw | ConvertFrom-Json).settings.launch_at_login) { throw 'The installer startup option was not saved.' }
     if (Get-ChildItem -LiteralPath (Split-Path -Parent $statePath) -Filter 'startup-*.txt') { throw 'Setup left its startup reply behind.' }
     $shell = New-Object -ComObject Shell.Application
-    foreach ($shortcut in $shortcuts) {
-        if (!(Test-Path -LiteralPath $shortcut)) { throw 'An enabled installer shortcut is missing.' }
-        $item = $shell.NameSpace((Split-Path -Parent $shortcut)).ParseName((Split-Path -Leaf $shortcut))
-        if ($item.ExtendedProperty('System.AppUserModel.ID') -cne ($installed.PackageFamilyName + '!Editor')) { throw 'Shortcut does not use the stable packaged app identity.' }
-    }
-    $custom = (New-Object -ComObject WScript.Shell).CreateShortcut($shortcuts[0])
+    $editorApp = $installed.PackageFamilyName + '!Editor'
+    $item = $shell.NameSpace((Split-Path -Parent $shortcuts[0])).ParseName($shortcutName)
+    if (!$item -or $item.ExtendedProperty('System.AppUserModel.ID') -cne $editorApp) { throw 'Desktop shortcut does not use the stable packaged app identity.' }
+    if (Test-Path -LiteralPath $shortcuts[1]) { throw 'Setup created a second Start menu entry.' }
+    $deadline = [DateTime]::UtcNow.AddSeconds(15)
+    do {
+        $entry = $shell.NameSpace('shell:AppsFolder').ParseName($editorApp)
+        if ($entry -and $entry.ExtendedProperty('System.Tile.SmallLogoPath') -ceq 'Assets\Square44x44Logo.png') { break }
+        if ([DateTime]::UtcNow -ge $deadline) { throw 'The editor app ID did not resolve to its packaged tile logo.' }
+        Start-Sleep -Milliseconds 100
+    } while ($true)
+    $icon = Join-Path (Split-Path -Parent $statePath) 'Shell/crosshair.ico'
+    $packedIcon = Join-Path $installed.InstallLocation 'Assets/app.ico'
+    if ((Get-FileHash -LiteralPath $icon).Hash -cne (Get-FileHash -LiteralPath $packedIcon).Hash) { throw 'Shortcut icon differs from the installed artwork.' }
+    $links = New-Object -ComObject WScript.Shell
+    if ($links.CreateShortcut($shortcuts[0]).IconLocation -ine ($icon + ',0')) { throw 'Desktop shortcut has no explicit crosshair icon.' }
+    Run-Setup '/S /STARTMENU=1'
+    if (!(Test-Path -LiteralPath $shortcuts[1])) { throw 'An explicit legacy Start shortcut request failed.' }
+    Run-Setup '/S /STARTMENU=0'
+    if (Test-Path -LiteralPath $shortcuts[1]) { throw 'Explicitly clearing the legacy Start link failed.' }
+    $custom = $links.CreateShortcut($shortcuts[0])
     $custom.Description = 'Custom crosshair shortcut'
+    $custom.IconLocation = ',0'
     $custom.Save()
     $customHash = (Get-FileHash -LiteralPath $shortcuts[0]).Hash
     Run-Setup '/S /DESKTOP=1'
     if ((Get-FileHash -LiteralPath $shortcuts[0]).Hash -cne $customHash) { throw 'An enabled shortcut lost its user customization.' }
     Run-Setup '/S'
     Run-Setup '/S /STARTUP=1'
-    foreach ($shortcut in $shortcuts) { if (!(Test-Path -LiteralPath $shortcut)) { throw 'A silent upgrade removed an omitted shortcut option.' } }
+    if ((Get-FileHash -LiteralPath $shortcuts[0]).Hash -cne $customHash) { throw 'A silent upgrade changed the existing desktop shortcut.' }
     Assert-Startup '' $false $statePath
     # A stale saved true value must still reconcile Windows when a resident engine handles the request.
     $testData = Join-Path $fixtureRoot 'test data'
@@ -181,6 +203,12 @@ try {
     Assert-Startup $arguments $true $testStatePath
     $startup = (Activate-Request $startupRead | ConvertFrom-Json).result.Ok.status.startup_enabled
     if ($startup -ne $true) { throw 'The on-demand read did not observe the enabled Windows startup task.' }
+    $savedHash = (Get-FileHash -LiteralPath $testStatePath).Hash
+    $lockedState = [IO.File]::Open($testStatePath, 'Open', 'Read', 'Read')
+    try { $failure = Activate-Request ($arguments + ' --configure-startup false') } finally { $lockedState.Dispose() }
+    if (!$failure.Contains('Settings could not be saved')) { throw "Expected the locked settings file to prevent the save: $failure" }
+    $startup = (Activate-Request $startupRead | ConvertFrom-Json).result.Ok.status.startup_enabled
+    if ($startup -ne $true -or (Get-FileHash -LiteralPath $testStatePath).Hash -cne $savedHash) { throw 'A failed settings save changed Windows startup or the saved settings.' }
     Assert-Startup $arguments $false $testStatePath
     $saved = Get-Content -LiteralPath $testStatePath -Raw | ConvertFrom-Json
     if ($saved.settings.show_on_launch -or $saved.settings.discord_presence -or $saved.base_visible -or $saved.revision -le $state.revision) { throw 'Startup reconciliation changed unrelated settings or did not commit.' }
@@ -191,17 +219,17 @@ try {
     if ($residents.Count -ne 1) { throw 'Startup configuration must leave one isolated engine running.' }
     $enginePid = $residents[0].ProcessId
     $editor = Get-Process -Id $editorPid -ErrorAction SilentlyContinue
-    if ($editor) {
-        try {
-            $deadline = [DateTime]::UtcNow.AddSeconds(15)
-            while (!$editor.HasExited -and !$editor.CloseMainWindow()) {
-                if ([DateTime]::UtcNow -gt $deadline) { throw 'The isolated editor did not open its window.' }
-                Start-Sleep -Milliseconds 50
-                $editor.Refresh()
-            }
-            if (!$editor.WaitForExit(15000)) { throw 'The isolated editor did not close.' }
-        } finally { $editor.Dispose() }
-    }
+    if (!$editor) { throw 'The isolated editor exited before its taskbar icon could be checked.' }
+    try {
+        $deadline = [DateTime]::UtcNow.AddSeconds(15)
+        while (!$editor.HasExited -and ![PackageActivation]::HasLargeIcon($editor.MainWindowHandle)) {
+            if ([DateTime]::UtcNow -gt $deadline) { throw 'The isolated editor did not expose its large taskbar icon.' }
+            Start-Sleep -Milliseconds 50
+            $editor.Refresh()
+        }
+        if ($editor.HasExited -or !$editor.CloseMainWindow()) { throw 'The isolated editor window closed unexpectedly.' }
+        if (!$editor.WaitForExit(15000)) { throw 'The isolated editor did not close.' }
+    } finally { $editor.Dispose() }
     $markerPath = Join-Path $env:LOCALAPPDATA "Packages/$($installed.PackageFamilyName)/TempState/crosshair-widget-$session.open"
     $marker = [IO.FileStream]::new($markerPath, 'CreateNew', 'Write', 'None', 4096, [IO.FileOptions]::DeleteOnClose)
     try { Assert-WidgetWindow $true } finally { $marker.Dispose() }
@@ -276,6 +304,11 @@ try {
     $status = (Activate-Request $startupRead | ConvertFrom-Json).result.Ok.status
     if ($status.startup_enabled -isnot [bool]) { throw 'The installed app did not return the Windows sign-in setting.' }
     Write-Output "Package Runtime Broker instances before launch: $beforeLaunch, on Desktop: $onDesktop, after reading sign-in: $(Get-BrokerCount)."
+    $deadline = [DateTime]::UtcNow.AddMinutes(2)
+    while (Get-BrokerCount) {
+        if ([DateTime]::UtcNow -gt $deadline) { throw 'Runtime Broker stayed attached to the idle overlay after the sign-in request completed.' }
+        Start-Sleep -Milliseconds 500
+    }
     Stop-TestEngine $enginePid
     $engineStarted = $false
     Write-Output 'Setup registration, shortcut defaults and ownership, silent-option preservation and startup reconciliation after a cold editor launch passed. Windows sign-in itself was not exercised.'

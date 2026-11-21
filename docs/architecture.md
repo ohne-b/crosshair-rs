@@ -885,9 +885,11 @@ DisabledByUser. Activation uses stable app IDs, not versioned WindowsApps paths.
 When launched by the editor or Game Bar with a different application ID, the
 packaged engine activates its own `Engine` ID before opening storage or IPC so
 Windows can resolve its startup task.
-Opening General settings reads the current Windows sign-in setting on the
-storage worker. Engine launch, editor connection and display changes leave the
-startup task alone. An explicit startup toggle, an import that changes startup,
+Opening General settings reads the current Windows sign-in setting on demand.
+The storage worker runs each Windows startup request in a short-lived copy of
+the engine, so Windows can release Runtime Broker while the overlay stays open.
+Engine launch, editor connection and display changes leave the startup task
+alone. An explicit startup toggle, an import that changes startup,
 or recovery verifies the Windows setting and restores its previous value if
 reconciliation or durable publication fails.
 The settings switch uses queried Windows state, including changes made outside
@@ -991,12 +993,11 @@ before using Windows `PackageManager.AddPackageByUriAsync` with `AllowUnsigned`,
 with no `.appinstaller` update association. It reuses a healthy installed x64
 VCLibs runtime meeting the minimum version, supplying the bundled dependency only
 when needed. This avoids redeploying a shared runtime used by other running apps.
-Setup's optional desktop and additional Start menu links target the package's
-Editor shell item and app ID, never a versioned executable path. The package's
-standard Start entry remains. Silent setup preserves options unless explicitly
-specified; an unchecked sign-in option preserves an existing preference. Matching
-extra links are removed when explicitly unchecked on reinstall; unrelated links
-are preserved. These ordinary shell links may remain after MSIX uninstall.
+Windows provides the editor's Start entry. The optional desktop link targets the
+packaged editor and uses a copy of its icon in the package's per-user LocalState
+so version changes keep the icon path valid. Setup assigns the icon when
+creating the link. Silent setup changes shortcut choices only when explicitly
+requested. An unchecked sign-in option preserves the existing preference.
 Initial installation trusts the setup obtained from the project's GitHub release;
 it does not claim Windows code signing or a self-authenticating executable.
 [Microsoft's unsigned-package

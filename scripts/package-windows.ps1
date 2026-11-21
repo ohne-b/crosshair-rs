@@ -86,6 +86,7 @@ $stage = Join-Path $packageRoot ('stage-' + [Guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $stage | Out-Null
 foreach ($file in $required) { Copy-Item -LiteralPath $file -Destination $stage }
 Copy-Item -LiteralPath (Join-Path $repoRoot 'packaging/windows/Assets') -Destination $stage -Recurse
+Copy-Item -LiteralPath (Join-Path $repoRoot 'assets/app.ico') -Destination (Join-Path $stage 'Assets/app.ico')
 Copy-Item -LiteralPath (Join-Path $repoRoot 'LICENSE.md') -Destination $stage
 Copy-Item -LiteralPath (Join-Path $repoRoot 'README.md') -Destination $stage
 Copy-Item -LiteralPath (Join-Path $repoRoot 'NOTICE.md') -Destination $stage

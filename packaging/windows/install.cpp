@@ -206,13 +206,16 @@ fs::path shortcut_path(REFKNOWNFOLDERID folder, std::wstring const& name) {
 }
 
 bool owns_shortcut(fs::path const& path, std::wstring const& app) {
-    auto existing = create_instance<IShellLinkW>(CLSID_ShellLink);
-    if (FAILED(existing.as<IPersistFile>()->Load(path.c_str(), STGM_READ))) return false;
-    PROPVARIANT identity{};
-    auto status = existing.as<IPropertyStore>()->GetValue(PKEY_AppUserModel_ID, &identity);
-    auto owned = SUCCEEDED(status) && identity.vt == VT_LPWSTR && identity.pwszVal && app == identity.pwszVal;
-    PropVariantClear(&identity);
-    return owned;
+    com_ptr<IShellItem2> item;
+    if (FAILED(SHCreateItemFromParsingName(path.c_str(), nullptr, IID_PPV_ARGS(item.put())))) return false;
+    for (auto const& key : {PKEY_AppUserModel_ID, PKEY_Link_TargetParsingPath}) {
+        PWSTR value{};
+        auto status = item->GetString(key, &value);
+        auto matches = SUCCEEDED(status) && value && app == value;
+        CoTaskMemFree(value);
+        if (!matches) return false;
+    }
+    return true;
 }
 
 std::wstring shortcut_name() {
@@ -224,22 +227,35 @@ int shortcut_defaults() {
     auto packages = manager.FindPackagesForUser(L"", payload_name, payload_publisher);
     auto current = packages.First();
     auto name = shortcut_name();
-    auto checked = [&](REFKNOWNFOLDERID folder) {
-        auto path = shortcut_path(folder, name);
-        if (!fs::exists(path)) return !current.HasCurrent();
-        return current.HasCurrent() && owns_shortcut(path, std::wstring(current.Current().Id().FamilyName()) + L"!Editor");
-    };
-    return (checked(FOLDERID_Desktop) ? 1 : 0) | (checked(FOLDERID_Programs) ? 2 : 0);
+    auto path = shortcut_path(FOLDERID_Desktop, name);
+    if (!fs::exists(path)) return !current.HasCurrent();
+    if (!current.HasCurrent()) return 2; // Leave an existing link alone until Windows can resolve its target.
+    return owns_shortcut(path, std::wstring(current.Current().Id().FamilyName()) + L"!Editor");
 }
 
-void shortcut(REFKNOWNFOLDERID folder, std::wstring const& name, std::wstring const& app, bool enabled) {
+fs::path shortcut_icon(Windows::ApplicationModel::Package const& package) {
+    PWSTR local{};
+    check_hresult(SHGetKnownFolderPath(FOLDERID_LocalAppData, 0, nullptr, &local));
+    auto shell = fs::path(local) / L"Packages" / std::wstring(package.Id().FamilyName()) / L"LocalState" / L"Shell";
+    CoTaskMemFree(local);
+    fs::create_directories(shell);
+    auto icon = shell / L"crosshair.ico";
+    fs::copy_file(fs::path(package.InstalledPath().c_str()) / L"Assets" / L"app.ico", icon, fs::copy_options::skip_existing);
+    return icon;
+}
+
+void shortcut(REFKNOWNFOLDERID folder, std::wstring const& name, std::wstring const& app,
+              bool enabled, Windows::ApplicationModel::Package const& package) {
     auto path = shortcut_path(folder, name);
     if (fs::exists(path)) {
         if (!owns_shortcut(path, app)) {
             if (enabled) throw hresult_error(E_FAIL, L"A different shortcut already uses the crosshair-rs name.");
             return;
         }
-        if (!enabled) check_bool(DeleteFileW(path.c_str()));
+        if (!enabled) {
+            check_bool(DeleteFileW(path.c_str()));
+            SHChangeNotify(SHCNE_DELETE, SHCNF_PATHW, path.c_str(), nullptr);
+        }
         return;
     }
     if (!enabled) {
@@ -252,6 +268,7 @@ void shortcut(REFKNOWNFOLDERID folder, std::wstring const& name, std::wstring co
     auto link = create_instance<IShellLinkW>(CLSID_ShellLink);
     check_hresult(link->SetIDList(target));
     check_hresult(link->SetDescription(name.c_str()));
+    check_hresult(link->SetIconLocation(shortcut_icon(package).c_str(), 0));
     auto properties = link.as<IPropertyStore>();
     PROPVARIANT identity{};
     check_hresult(InitPropVariantFromString(app.c_str(), &identity));
@@ -260,6 +277,7 @@ void shortcut(REFKNOWNFOLDERID folder, std::wstring const& name, std::wstring co
     check_hresult(status);
     check_hresult(properties->Commit());
     check_hresult(link.as<IPersistFile>()->Save(path.c_str(), TRUE));
+    SHChangeNotify(SHCNE_CREATE, SHCNF_PATHW, path.c_str(), nullptr);
 }
 
 bool option(std::wstring const& value) {
@@ -310,8 +328,8 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int) {
             // An unchecked option must not disable an existing sign-in preference on upgrade.
             if (startup) enable_startup(package_info);
             auto name = shortcut_name();
-            if (args[2] != L"keep") shortcut(FOLDERID_Desktop, name, app, option(args[2]));
-            if (args[3] != L"keep") shortcut(FOLDERID_Programs, name, app, option(args[3]));
+            if (args[2] != L"keep") shortcut(FOLDERID_Desktop, name, app, option(args[2]), package_info);
+            if (args[3] != L"keep") shortcut(FOLDERID_Programs, name, app, option(args[3]), package_info);
             return 0;
         }
         if (elevated && args[2] != user_sid())

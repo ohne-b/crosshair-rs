@@ -147,9 +147,11 @@ Windows' startup setting. If Windows has disabled it, enable crosshair-rs in
 could not be read. Adjust the monitor, position and output scale in
 **Settings > Display**.
 
-Setup offers desktop and additional Start menu shortcuts, launch at Windows
-sign-in, and launch after installation. Windows also creates its standard Start
-entry. Sign-in starts off on a new installation; leaving its setup checkbox
-unchecked preserves an existing preference. Unchecking a shortcut removes only
-the matching shortcut created by setup. Extra shortcuts can remain after
-uninstalling the package; delete them manually if needed.
+Windows adds crosshair-rs to Start. Setup offers a desktop shortcut, launch at
+Windows sign-in, and launch after installation. Sign-in starts off on a new
+installation. Leaving it unchecked keeps your existing preference. Unchecking
+the desktop shortcut removes the matching link created by setup.
+
+To keep your settings when updating, run the newer installer over the existing
+installation. Before uninstalling or switching between Preview and release,
+export all your data from Settings so you can restore your profiles and shortcuts.

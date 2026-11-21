@@ -68,10 +68,11 @@ try {
         $reader = [IO.StreamReader]::new($archive.GetEntry('AppxManifest.xml').Open())
         try { [xml]$manifest = $reader.ReadToEnd() } finally { $reader.Dispose() }
         $visuals = $manifest.SelectSingleNode("//*[local-name()='Application' and @Id='Editor']/*[local-name()='VisualElements']")
+        $engineVisuals = $manifest.SelectSingleNode("//*[local-name()='Application' and @Id='Engine']/*[local-name()='VisualElements']")
         $widget = $manifest.SelectSingleNode("//*[local-name()='AppExtension' and @Id='CrosshairOverlay']")
         $widgetVisuals = $manifest.SelectSingleNode("//*[local-name()='Application' and @Id='Widget']/*[local-name()='VisualElements']")
         $displayName = if ($manifest.Package.Identity.Name.EndsWith('.Preview')) { 'crosshair-rs Preview' } else { 'crosshair-rs' }
-        if ($visuals.DisplayName -cne $displayName -or $widget.DisplayName -cne $displayName) { throw 'Editor and Game Bar must identify their installed channel.' }
+        if ($visuals.DisplayName -cne $displayName -or $engineVisuals.DisplayName -cne $displayName -or $widget.DisplayName -cne $displayName) { throw 'The editor, overlay group and Game Bar widget picker must identify their installed channel.' }
         if ($widgetVisuals.DisplayName -cne 'crosshair-gamebar') { throw 'The widget process must be named crosshair-gamebar.' }
         if ($visuals.BackgroundColor -ne 'transparent') { throw 'Editor icon background must be transparent.' }
         $pri = Join-Path $directory 'resources.pri'
