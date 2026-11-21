@@ -2,8 +2,20 @@
 
 ## Unreleased
 
-- Show a checkmark after adding a Browse crosshair to Saved, then restore the bookmark so it can be saved again.
-- Fix Launch at sign-in when opening an existing installation from Start or Game Bar.
+## [v0.2.0-rc.1](https://github.com/ohne-b/crosshair-rs/releases/tag/v0.2.0-rc.1) 2026-11-21
+
+- feat: Drag corner handles to resize shapes, crosshair gaps and dots. Sliders give finer control over small values, and the resize cursors follow rotated handles. ([#32](https://github.com/ohne-b/crosshair-rs/pull/32))
+- fix: Keep small crosshairs symmetric and preserve touching tips, arcs and blurred edges when zoomed. The canvas center is easier to distinguish from the pixel grid, and alignment guides appear only while moving layers. ([#32](https://github.com/ohne-b/crosshair-rs/pull/32))
+- feat: Export the current draft as an editable JSON preset, including unsaved layer and animation changes. The File menu adds icons and fits its contents, and Save highlights pending edits. ([#32](https://github.com/ohne-b/crosshair-rs/pull/32))
+- feat: Show available updates above Settings in the editor sidebar. ([#32](https://github.com/ohne-b/crosshair-rs/pull/32))
+- fix: Restore rendering in the pinned Game Bar widget. Display settings guide you through opening and pinning, keep Desktop active until the widget is ready, and switch back after the widget clears. ([#30](https://github.com/ohne-b/crosshair-rs/pull/30))
+- fix: Preserve shortcut choices and customizations during upgrades and let setup retry when Windows reports the app is in use. ([#30](https://github.com/ohne-b/crosshair-rs/pull/30))
+- fix: Use the crosshair icon and distinct editor, engine and Game Bar process names in Task Manager. ([#30](https://github.com/ohne-b/crosshair-rs/pull/30))
+- fix: Read the Windows launch-at-sign-in setting when General settings opens. Starting the app and switching displays no longer wake Runtime Broker for this setting. ([#30](https://github.com/ohne-b/crosshair-rs/pull/30))
+- fix: Apply the launch-at-sign-in option on existing installations when the app starts from the Start menu or Game Bar. ([#29](https://github.com/ohne-b/crosshair-rs/pull/29))
+- fix: Show a checkmark after saving a Browse crosshair and allow saving another copy. ([#31](https://github.com/ohne-b/crosshair-rs/pull/31))
+- feat: Add the community Discord link to the website navigation and README. ([#27](https://github.com/ohne-b/crosshair-rs/pull/27))
+- docs: Update the homepage introduction to describe availability and memory use. ([#28](https://github.com/ohne-b/crosshair-rs/pull/28))
 
 ## [v0.1.0](https://github.com/ohne-b/crosshair-rs/releases/tag/v0.1.0) 2026-11-20
 
