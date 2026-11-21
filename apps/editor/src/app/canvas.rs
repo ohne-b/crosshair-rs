@@ -247,8 +247,8 @@ impl App {
                     center,
                     handle_center,
                     corner: Point {
-                        x: if local.x < 0.0 { -1.0 } else { 1.0 },
-                        y: if local.y < 0.0 { -1.0 } else { 1.0 },
+                        x: (bounds.width() / 2.0).copysign(local.x),
+                        y: (bounds.height() / 2.0).copysign(local.y),
                     },
                     span: selection.geometry.width().max(selection.geometry.height()),
                 });

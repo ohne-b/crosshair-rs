@@ -312,6 +312,7 @@ fn worker(
         let mut adjusted = None;
         if let (Some(base), Some(document)) = (&request.pivot_base, &mut request.document)
             && let Some(layer) = document.layers.iter_mut().find(|layer| layer.id == base.id)
+            && layer.transform.scale == base.transform.scale
         {
             let Ok(previous) = renderer.local_point(base, Point::default()) else {
                 events(Event::DocumentFailed {

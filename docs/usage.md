@@ -20,7 +20,8 @@ Undo/redo groups each drag or stroke into one step.
 Drag a shape corner to change its width and height. The opposite corner stays
 in place, including on rotated shapes. Hold **Shift** to keep the proportions.
 On a crosshair, drag a corner to change the gap while keeping the arm length and
-thickness. On a dot-only crosshair, the same gesture changes the dot diameter.
+thickness. If the arms already touch when you start dragging, the whole crosshair
+scales. On a dot-only crosshair, the same gesture changes the dot diameter.
 At 100% zoom, one design pixel is one screen pixel. At 800% and above, each
 grid cell marks one design pixel.
 

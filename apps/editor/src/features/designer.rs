@@ -1150,21 +1150,25 @@ pub fn rotate_delta(x: f32, y: f32, degrees: f32) -> Point {
 
 /// A primitive's opposite corner stays fixed. Crosshair handles instead move
 /// the arms radially around the crosshair's own origin.
-pub fn resize_shape(layer: &mut Layer, corner: Point, delta: Point, proportional: bool) -> bool {
+pub fn resize_shape(layer: &mut Layer, handle: Point, delta: Point, proportional: bool) -> bool {
+    let corner = Point {
+        x: handle.x.signum(),
+        y: handle.y.signum(),
+    };
     let t = layer.transform;
     if let Content::Crosshair(c) = &mut layer.content {
         if c.length > 0.0 && c.thickness > 0.0 && c.enabled_arms.iter().any(|on| *on) {
-            // Project onto the movement of the two outer edges as the gap grows.
-            let mut edge = Point { x: -1.0, y: -1.0 };
-            for (i, _) in c.enabled_arms.iter().enumerate().filter(|(_, on)| **on) {
-                let angle = t.rotation + c.rotation + 360.0 * i as f32 / f32::from(c.arms);
-                let (sin, cos) = angle.to_radians().sin_cos();
-                edge.x = edge.x.max(corner.x * cos);
-                edge.y = edge.y.max(corner.y * sin);
+            // Crosshair X measures the corner one layer pixel beyond the arm tips.
+            let x = handle.x + corner.x * t.scale;
+            let y = handle.y + corner.y * t.scale;
+            let growth = (delta.x * x + delta.y * y) / (x * x + y * y);
+            if c.gap > 0.0 {
+                // Its gap spans both arms. Keep a matched pair on whole pixels.
+                let full_gap_change = (2.0 * c.gap * growth).round();
+                c.gap = (c.gap + (full_gap_change / 2.0).floor()).clamp(0.0, 512.0);
+            } else {
+                layer.transform.scale = (t.scale * (1.0 + growth)).clamp(0.01, 100.0);
             }
-            let change = (delta.x * corner.x * edge.x + delta.y * corner.y * edge.y)
-                / (edge.x * edge.x + edge.y * edge.y).max(0.0001);
-            c.gap = (c.gap + change.round() / t.scale).clamp(0.0, 512.0);
         } else if c.dot.enabled {
             let change = (delta.x * corner.x + delta.y * corner.y).round() / t.scale;
             c.dot.diameter = (c.dot.diameter + change).clamp(c.dot.diameter.min(1.0), 1024.0);
