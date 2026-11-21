@@ -194,6 +194,14 @@ pub enum Content {
 }
 
 impl Content {
+    pub fn shape_size(&self) -> Option<(f32, f32)> {
+        match self {
+            Self::Rectangle(r) => Some((r.width, r.height)),
+            Self::Ellipse(s) | Self::Triangle(s) => Some((s.width, s.height)),
+            _ => None,
+        }
+    }
+
     pub fn kind_name(&self) -> &'static str {
         match self {
             Self::Crosshair(_) => "Crosshair",

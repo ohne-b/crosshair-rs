@@ -52,6 +52,14 @@ fn svg_matches_small_scaled_fractional_and_rotated_crosshairs() {
         preset.layers[0].transform.x = offset;
         compare(&preset, &no_assets, 1);
     }
+    let mut preset = Preset::new("Centered arms");
+    preset.layers[0].content = Content::Crosshair(Crosshair {
+        thickness: 5.0,
+        gap: 1.0,
+        length: 10.0,
+        ..Default::default()
+    });
+    compare(&preset, &no_assets, 0);
 }
 
 #[test]

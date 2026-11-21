@@ -9,16 +9,16 @@ use std::{
 
 use anyhow::{Context, Result};
 use crosshair_core::{Anchor, AppState, ArmShape, Asset, Content, Id, Layer, Point, Preset};
-use crosshair_renderer::{AssetData, LayerBounds, Raster, Renderer};
+use crosshair_renderer::{AssetData, CanvasBounds, CanvasFrame, CanvasView, Raster, Renderer};
 
 use super::client::Client;
 
 pub struct Request {
     pub document: Option<Preset>,
-    pub zoom: f32,
+    pub view: CanvasView,
     pub presets: Vec<Preset>,
     pub assets: BTreeMap<Id, Asset>,
-    pub draw_base: Option<Layer>,
+    pub pivot_base: Option<Layer>,
     pub max_output_scale: f32,
 }
 
@@ -26,15 +26,14 @@ pub enum Event {
     Bitmap {
         generation: u64,
         id: Id,
-        result: Result<(Arc<Raster>, f32), String>,
+        result: Result<CanvasFrame, String>,
     },
     Document {
-        scale: f32,
+        frame: CanvasFrame,
         generation: u64,
         id: Id,
-        raster: Arc<Raster>,
         thumbnail: Raster,
-        bounds: Vec<(Id, LayerBounds)>,
+        bounds: Vec<(Id, CanvasBounds)>,
         inverses: BTreeMap<Id, [Point; 3]>,
         anchors: BTreeMap<Id, Point>,
         adjusted: Option<Preset>,
@@ -83,7 +82,7 @@ struct Pending {
     anchor: Mutex<Option<(Preset, Vec<Id>, Anchor)>>,
     recovery: Mutex<Option<(Preset, RecoveryAction)>>,
     recovering: AtomicBool,
-    bitmap: Mutex<Option<(u64, Preset, f32)>>,
+    bitmap: Mutex<Option<(u64, Preset, CanvasView)>>,
     bitmap_generation: AtomicU64,
 }
 
@@ -92,7 +91,7 @@ pub struct Preview {
 }
 
 impl Preview {
-    pub fn bitmap(&self, document: Preset, zoom: f32) -> u64 {
+    pub fn bitmap(&self, document: Preset, view: CanvasView) -> u64 {
         let _request = self.pending.request.lock();
         let generation = self
             .pending
@@ -100,7 +99,7 @@ impl Preview {
             .fetch_add(1, Ordering::AcqRel)
             + 1;
         if let Ok(mut pending) = self.pending.bitmap.lock() {
-            *pending = Some((generation, document, zoom));
+            *pending = Some((generation, document, view));
         }
         self.pending.ready.notify_one();
         generation
@@ -251,7 +250,7 @@ fn worker(
             }
         }
         let Some((generation, mut request)) = render_job else {
-            if let Some((generation, document, zoom)) =
+            if let Some((generation, document, view)) =
                 pending.bitmap.lock().ok().and_then(|mut job| job.take())
             {
                 let cancelled = || {
@@ -266,9 +265,8 @@ fn worker(
                         .or_else(|| client.cached_asset(id))
                         .context("Preview image is not ready")
                 };
-                let result = render_preview(&mut renderer, &document, zoom, &source, cancelled)
+                let result = canvas_preview(&mut renderer, &document, view, &source, cancelled)
                     .map_err(|error| error.to_string());
-                renderer.clear_raster_cache();
                 if !cancelled() {
                     events(Event::Bitmap {
                         generation,
@@ -312,14 +310,15 @@ fn worker(
             Ok(asset)
         };
         let mut adjusted = None;
-        if let (Some(base), Some(document)) = (&request.draw_base, &mut request.document)
+        if let (Some(base), Some(document)) = (&request.pivot_base, &mut request.document)
             && let Some(layer) = document.layers.iter_mut().find(|layer| layer.id == base.id)
+            && layer.transform.scale == base.transform.scale
         {
             let Ok(previous) = renderer.local_point(base, Point::default()) else {
                 events(Event::DocumentFailed {
                     generation,
                     id: document.id,
-                    message: "The drawing's transform is invalid".into(),
+                    message: "The layer's transform is invalid".into(),
                 });
                 continue;
             };
@@ -327,7 +326,7 @@ fn worker(
                 events(Event::DocumentFailed {
                     generation,
                     id: document.id,
-                    message: "This stroke exceeds the drawing bounds".into(),
+                    message: "The edited layer exceeds its bounds".into(),
                 });
                 continue;
             };
@@ -342,20 +341,21 @@ fn worker(
             let rendered = renderer
                 .measure(document, request.max_output_scale)
                 .and_then(|_| {
-                    render_preview(&mut renderer, document, request.zoom, &source, cancelled)
-                })
-                .and_then(|(raster, scale)| {
-                    let thumbnail = raster.thumbnail(24, 1.0)?;
-                    Ok((raster, scale, thumbnail))
+                    let thumbnail = renderer
+                        .render_cancellable(document, 1.0, &source, cancelled)?
+                        .thumbnail(24, 1.0)?;
+                    let frame =
+                        canvas_preview(&mut renderer, document, request.view, &source, cancelled)?;
+                    Ok((frame, thumbnail))
                 });
             match rendered {
-                Ok((raster, scale, thumbnail)) if !cancelled() => {
+                Ok((frame, thumbnail)) if !cancelled() => {
                     let bounds = document
                         .layers
                         .iter()
                         .filter_map(|layer| {
                             renderer
-                                .layer_bounds(layer, 1.0)
+                                .canvas_layer_bounds(layer)
                                 .ok()
                                 .map(|bounds| (layer.id, bounds))
                         })
@@ -387,10 +387,9 @@ fn worker(
                         })
                         .collect();
                     events(Event::Document {
-                        scale,
+                        frame,
                         generation,
                         id: document.id,
-                        raster,
                         thumbnail,
                         bounds,
                         inverses,
@@ -457,6 +456,46 @@ fn worker(
         thumbnail_revisions.retain(|id, _| ids.contains(id));
     }
     Ok(())
+}
+
+fn canvas_preview(
+    renderer: &mut Renderer,
+    document: &Preset,
+    mut view: CanvasView,
+    source: &impl crosshair_renderer::AssetSource,
+    cancelled: impl Fn() -> bool,
+) -> Result<CanvasFrame> {
+    let requested = view;
+    // A filtered SVG can fit its native output budget but exceed it at display scale.
+    loop {
+        match renderer.render_canvas(document, view, source, &cancelled) {
+            Ok(mut frame) => {
+                frame.view = requested;
+                return Ok(frame);
+            }
+            Err(_) if view.scale > 2.0 && !cancelled() => view.scale /= 2.0,
+            Err(error) if cancelled() => return Err(error),
+            Err(_) => {
+                let native = renderer.render_cancellable(document, 1.0, source, &cancelled)?;
+                let bounds = crosshair_renderer::LayerBounds {
+                    left: native.origin[0] as f32,
+                    top: native.origin[1] as f32,
+                    right: native.origin[0] as f32 + native.width as f32,
+                    bottom: native.origin[1] as f32 + native.height as f32,
+                };
+                return Ok(CanvasFrame {
+                    bounds,
+                    painted: bounds,
+                    view: CanvasView {
+                        visible: bounds,
+                        ..requested
+                    },
+                    scale: 1.0,
+                    tiles: vec![Arc::unwrap_or_clone(native)],
+                });
+            }
+        }
+    }
 }
 
 fn recover(client: &Client, original: &Preset) -> Result<(Preset, AppState)> {
@@ -566,45 +605,23 @@ mod tests {
     }
 }
 
-// Bound editor bitmaps to the same 1024px budget as the overlay, even at 6400% zoom.
-fn render_preview(
-    renderer: &mut Renderer,
-    document: &Preset,
-    zoom: f32,
-    source: &impl crosshair_renderer::AssetSource,
-    cancelled: impl Fn() -> bool,
-) -> Result<(Arc<Raster>, f32)> {
-    let mut scale = zoom.clamp(1.0, 16.0);
-    loop {
-        anyhow::ensure!(!cancelled(), "Rendering cancelled");
-        let bounds = document
-            .layers
-            .iter()
-            .filter(|layer| layer.visible && layer.opacity > 0.0)
-            .try_fold(None::<LayerBounds>, |bounds, layer| {
-                renderer
-                    .layer_bounds(layer, scale)
-                    .map(|next| Some(bounds.map_or(next, |current| current.union(next))))
-            });
-        let fits = bounds.as_ref().is_ok_and(|bounds| {
-            bounds.is_none_or(|bounds| {
-                bounds.right.ceil() - bounds.left.floor() <= 1024.0
-                    && bounds.bottom.ceil() - bounds.top.floor() <= 1024.0
-            })
-        });
-        if fits || scale <= 1.0 {
-            return renderer
-                .render_cancellable(document, scale, source, cancelled)
-                .map(|raster| (raster, scale));
-        }
-        scale = (scale / 2.0).max(1.0);
-    }
-}
-
 #[cfg(test)]
 mod preview_tests {
     use super::*;
     use crosshair_core::{Color, Content, Shape};
+    use crosshair_renderer::LayerBounds;
+
+    fn viewport(scale: f32) -> CanvasView {
+        CanvasView {
+            scale,
+            visible: LayerBounds {
+                left: -32.0,
+                top: -32.0,
+                right: 32.0,
+                bottom: 32.0,
+            },
+        }
+    }
 
     #[test]
     #[ignore = "manual preview timing benchmark; run with --nocapture"]
@@ -613,14 +630,20 @@ mod preview_tests {
         let mut preset = Preset::new("Timing fixture");
         let source = |_id| anyhow::bail!("No images in this fixture");
         let mut samples = Vec::new();
-        for frame in 0..70 {
-            preset.layers[0].transform.scale = 1.0 + frame as f32 * 0.02;
+        for index in 0..70 {
+            preset.layers[0].transform.scale = 1.0 + index as f32 * 0.02;
             let start = std::time::Instant::now();
             renderer.measure(&preset, 1.0).unwrap();
-            let (raster, _) =
-                render_preview(&mut renderer, &preset, 8.0, &source, || false).unwrap();
-            assert!(raster.width <= 1024 && raster.height <= 1024);
-            if frame >= 10 {
+            let frame = renderer
+                .render_canvas(&preset, viewport(8.0), &source, || false)
+                .unwrap();
+            assert!(
+                frame
+                    .tiles
+                    .iter()
+                    .all(|r| r.width <= 1024 && r.height <= 1024)
+            );
+            if index >= 10 {
                 samples.push(start.elapsed().as_secs_f64() * 1000.0);
             }
         }
@@ -632,14 +655,56 @@ mod preview_tests {
     }
 
     #[test]
+    fn zoom_only_svg_filter_limit_keeps_a_valid_frame() {
+        use crosshair_core::{AssetKind, Image};
+        let mut renderer = Renderer::new().unwrap();
+        let mut preset = Preset::new("Filtered image");
+        preset.layers = vec![Layer::new(
+            "Image",
+            Content::Image(Image::new(Id::new_v4(), 20.0, 20.0)),
+        )];
+        let svg = b"<svg xmlns='http://www.w3.org/2000/svg' width='20' height='20'><defs><filter id='f' x='-50%' y='-50%' width='200%' height='200%'><feGaussianBlur stdDeviation='0.5'/></filter></defs><rect width='20' height='20' filter='url(#f)'/></svg>";
+        let source = |_| {
+            Ok(AssetData {
+                kind: AssetKind::Svg,
+                bytes: Arc::from(svg.as_slice()),
+            })
+        };
+        assert!(renderer.render(&preset, 1.0, &source).is_ok());
+        let view = viewport(64.0);
+        assert!(
+            renderer
+                .render_canvas(&preset, view, &source, || false)
+                .is_err()
+        );
+        let frame = canvas_preview(&mut renderer, &preset, view, &source, || false).unwrap();
+        assert_eq!(frame.view, view);
+        assert!(frame.scale < view.scale);
+        assert!(
+            frame
+                .tiles
+                .iter()
+                .any(|t| t.pixels.chunks_exact(4).any(|p| p[3] > 0))
+        );
+        assert!(canvas_preview(&mut renderer, &preset, view, &source, || true).is_err());
+    }
+
+    #[test]
     fn oversized_design_does_not_poison_the_next_preview() {
         let mut renderer = Renderer::new().unwrap();
         let mut preset = Preset::new("Size limit");
         preset.layers[0].transform.scale = 100.0;
         let source = |_: Id| -> Result<AssetData> { anyhow::bail!("No assets") };
-        assert!(render_preview(&mut renderer, &preset, 16.0, &source, || false).is_err());
+        assert!(
+            renderer
+                .render_canvas(&preset, viewport(16.0), &source, || false)
+                .is_err()
+        );
         preset.layers[0].transform.scale = 1.0;
-        let (raster, _) = render_preview(&mut renderer, &preset, 16.0, &source, || false).unwrap();
+        let frame = renderer
+            .render_canvas(&preset, viewport(16.0), &source, || false)
+            .unwrap();
+        let raster = &frame.tiles[0];
         assert!(
             raster.width <= crosshair_renderer::MAX_DIMENSION
                 && raster.height <= crosshair_renderer::MAX_DIMENSION
@@ -665,9 +730,11 @@ mod preview_tests {
             }),
         )];
         let source = |_: Id| -> Result<AssetData> { anyhow::bail!("No assets") };
-        let (raster, scale) =
-            render_preview(&mut renderer, &preset, 8.0, &source, || false).unwrap();
-        assert_eq!(scale, 8.0);
+        let frame = renderer
+            .render_canvas(&preset, viewport(8.0), &source, || false)
+            .unwrap();
+        let raster = &frame.tiles[0];
+        assert_eq!(frame.scale, 8.0);
         assert!(raster.width >= 160 && raster.height >= 160);
         assert!(raster.pixels.chunks_exact(4).any(|pixel| pixel[3] == 128));
         assert!(raster.pixels.chunks_exact(4).all(|pixel| pixel[3] <= 128));
@@ -675,9 +742,21 @@ mod preview_tests {
             shape.width = 900.0;
             shape.height = 900.0;
         }
-        let (raster, scale) =
-            render_preview(&mut renderer, &preset, 64.0, &source, || false).unwrap();
-        assert_eq!(scale, 1.0);
-        assert!(raster.width <= 1024 && raster.height <= 1024);
+        let frame = renderer
+            .render_canvas(&preset, viewport(32.0), &source, || false)
+            .unwrap();
+        assert_eq!(frame.bounds.width(), 900.0);
+        assert_eq!(frame.scale, 32.0);
+        assert!(frame.tiles.len() >= 4);
+        assert!(
+            frame
+                .tiles
+                .iter()
+                .all(|r| r.width <= 1024 && r.height <= 1024)
+        );
+        assert_eq!(
+            frame.tiles.iter().map(|r| r.width * r.height).sum::<u32>(),
+            2048 * 2048
+        );
     }
 }

@@ -51,6 +51,7 @@ pub(super) fn app(ui: &AppWindow) -> App {
         inverses: BTreeMap::new(),
         anchors: BTreeMap::new(),
         preview_generation: 0,
+        canvas_coverage: None,
         inflight: None,
         preview_inflight: None,
         preview_sent: None,
@@ -59,6 +60,7 @@ pub(super) fn app(ui: &AppWindow) -> App {
         last_valid: None,
         preview_error: None,
         save_requested: false,
+        save_flushes: VecDeque::new(),
         group_open: false,
         group_ending: false,
         finish_group: false,
@@ -77,7 +79,7 @@ pub(super) fn app(ui: &AppWindow) -> App {
         failed_shortcut: None,
         modal: Modal::None,
         drag: None,
-        draw_base: None,
+        pivot_base: None,
         closing: false,
         close_flush_pending: false,
         recovery_shown: false,
@@ -167,7 +169,7 @@ fn startup_toggle_uses_windows_state_and_always_requests_reconciliation() -> Res
     Ok(())
 }
 
-fn pointer(ui: &AppWindow, kind: i32, x: f32, y: f32) {
+pub(super) fn pointer(ui: &AppWindow, kind: i32, x: f32, y: f32) {
     let position = slint::LogicalPosition::new(x, y);
     let button = slint::platform::PointerEventButton::Left;
     ui.window().dispatch_event(match kind {
@@ -206,9 +208,30 @@ fn pointer_clicks_clear_keyboard_focus_styling() {
     ui.hide().unwrap();
 }
 
+fn test_frame(view: CanvasView, x: f32, y: f32) -> CanvasFrame {
+    let bounds = LayerBounds {
+        left: x,
+        top: y,
+        right: x + 1.0,
+        bottom: y + 1.0,
+    };
+    CanvasFrame {
+        view,
+        bounds,
+        painted: bounds,
+        scale: 1.0,
+        tiles: vec![crosshair_renderer::Raster {
+            width: 1,
+            height: 1,
+            origin: [x as i32, y as i32],
+            pixels: vec![255; 4],
+        }],
+    }
+}
+
 fn complete_preview(app: &mut App, adjusted: Option<Preset>) -> Result<()> {
     app.event(Event::Preview(preview::Event::Document {
-        scale: 1.0,
+        frame: test_frame(app.canvas_view(), 0.0, 0.0),
         generation: app.preview_generation,
         id: app.document.draft.as_ref().unwrap().id,
         thumbnail: crosshair_renderer::Raster {
@@ -217,12 +240,6 @@ fn complete_preview(app: &mut App, adjusted: Option<Preset>) -> Result<()> {
             origin: [0, 0],
             pixels: vec![0; 4],
         },
-        raster: std::sync::Arc::new(crosshair_renderer::Raster {
-            width: 1,
-            height: 1,
-            origin: [0, 0],
-            pixels: vec![0; 4],
-        }),
         bounds: app.bounds.clone(),
         inverses: app.inverses.clone(),
         anchors: app.anchors.clone(),
@@ -327,7 +344,6 @@ fn middle_mouse_pan_works_during_animation_without_editing() -> Result<()> {
     }
     app.drag = Some(Drag::Move {
         origin: Point { x: 0.0, y: 0.0 },
-        before: base.clone(),
     });
     app.group_open = true;
     app.canvas_event(0, Point { x: 10.0, y: 10.0 }, 3, false)?;
@@ -417,6 +433,18 @@ fn animation_enabled_switch_updates_the_live_draft_and_save() -> Result<()> {
     app.action("designer-mode", "animate")?;
     assert!(store.get_can_preview_fire());
 
+    let orange_in_toolbar = || -> Result<usize> {
+        let image = ui.window().take_snapshot()?;
+        Ok(image
+            .as_slice()
+            .chunks_exact(image.width() as usize)
+            .skip(48)
+            .take(44)
+            .flat_map(|row| &row[row.len() / 2..])
+            .filter(|p| (p.r, p.g, p.b) == (249, 115, 22))
+            .count())
+    };
+    let clean = orange_in_toolbar()?;
     slint::platform::update_timers_and_animations();
     pointer(&ui, 0, 1238.0, 205.0);
     pointer(&ui, 2, 1238.0, 205.0);
@@ -431,6 +459,56 @@ fn animation_enabled_switch_updates_the_live_draft_and_save() -> Result<()> {
 
     app.save_document()?;
     assert!(!app.inflight.as_ref().unwrap().layers[0].animations[0].enabled);
+    assert!(orange_in_toolbar()? > clean + 100);
+    app.event(Event::Engine(
+        app.connection_epoch,
+        client::Event::Completed {
+            tag: "document".into(),
+            reply: Reply::Ack {
+                document_revision: Some(2),
+            },
+        },
+    ))?;
+    assert!(orange_in_toolbar()? > clean + 100);
+    for tag in ["end-edit", "save-flush"] {
+        app.event(Event::Engine(
+            app.connection_epoch,
+            client::Event::Completed {
+                tag: tag.into(),
+                reply: Reply::Ack {
+                    document_revision: None,
+                },
+            },
+        ))?;
+        assert_eq!(orange_in_toolbar()? > clean + 100, tag == "end-edit");
+    }
+    assert_eq!(orange_in_toolbar()?, clean);
+    ui.hide()?;
+    Ok(())
+}
+
+#[test]
+fn failed_flush_keeps_the_edited_draft_unsaved() -> Result<()> {
+    let ui = window();
+    let mut app = app(&ui);
+    app.document.open(app.state.presets[0].clone())?;
+    let (client, _commands) = Client::recording_for_test();
+    app.client = client;
+    app.flush_save(false)?;
+    app.flush_save(true)?;
+    for changed in [false, true] {
+        app.event(Event::Engine(
+            app.connection_epoch,
+            client::Event::Failed {
+                tag: "save-flush".into(),
+                message: "Disk full".into(),
+                conflict: false,
+            },
+        ))?;
+        assert_eq!(app.document.dirty, changed);
+        assert_eq!(app.document.save_paused, changed);
+        assert!(ui.global::<Store>().get_dirty());
+    }
     ui.hide()?;
     Ok(())
 }
@@ -459,32 +537,39 @@ fn preview_frames_never_edit_the_document_and_stale_bitmaps_are_ignored() -> Res
         "Wait for the worker before scheduling another frame"
     );
     let generation = app.playback_generation;
-    let bitmap = || {
-        Arc::new(crosshair_renderer::Raster {
-            width: 1,
-            height: 1,
-            origin: [7, 9],
-            pixels: vec![255; 4],
-        })
-    };
+    let view = app.canvas_view();
     app.event(Event::Preview(preview::Event::Bitmap {
         generation,
         id: preset.id,
-        result: Ok((bitmap(), 1.0)),
+        result: Ok(test_frame(view, 7.0, 9.0)),
     }))?;
-    assert_eq!(ui.global::<Store>().get_preview_x(), 7.0);
+    assert_eq!(
+        ui.global::<Store>()
+            .get_canvas_tiles()
+            .row_data(0)
+            .unwrap()
+            .x,
+        7.0
+    );
     assert_eq!(app.document.draft.as_ref(), Some(&preset));
     assert!(!app.document.dirty);
     assert!(!app.document.can_undo());
     assert!(commands().is_empty());
     app.stop_playback();
-    ui.global::<Store>().set_preview_x(42.0);
+    app.show_canvas_frame(test_frame(view, 42.0, 9.0))?;
     app.event(Event::Preview(preview::Event::Bitmap {
         generation,
         id: preset.id,
-        result: Ok((bitmap(), 1.0)),
+        result: Ok(test_frame(view, 7.0, 9.0)),
     }))?;
-    assert_eq!(ui.global::<Store>().get_preview_x(), 42.0);
+    assert_eq!(
+        ui.global::<Store>()
+            .get_canvas_tiles()
+            .row_data(0)
+            .unwrap()
+            .x,
+        42.0
+    );
     app.preview_input("movement-up")?;
     assert!(
         !app.playing,
@@ -920,51 +1005,335 @@ fn hidden_layers_remain_editable_and_visibility_is_undoable() -> Result<()> {
 }
 
 #[test]
-fn canvas_resize_reaches_odd_sizes_and_does_not_grow_past_the_center() -> Result<()> {
+fn canvas_draws_and_hits_one_group_box_and_preserves_a_tiny_move_target() -> Result<()> {
     let ui = window();
     let mut app = app(&ui);
-    let preset = app.state.presets[0].clone();
-    let mut renderer = crosshair_renderer::Renderer::new()?;
-    let layer = &preset.layers[0];
-    let bounds = renderer.layer_bounds(layer, 1.0)?;
-    app.bounds = vec![(layer.id, bounds)];
-    app.anchors.insert(layer.id, renderer.anchor_point(layer)?);
-    app.document.open(preset)?;
-    // The pointer can land off the exact corner within the handle's hit target.
-    let origin = Point {
-        x: bounds.right + 0.25,
-        y: bounds.bottom + 0.25,
+    let store = ui.global::<Store>();
+    let mut preset = app.state.presets[0].clone();
+    let first = preset.layers[0].id;
+    let mut second = preset.layers[0].duplicate();
+    second.transform.x = 20.0;
+    let id = second.id;
+    preset.layers.push(second);
+    let small = LayerBounds {
+        left: -0.5,
+        top: -0.5,
+        right: 0.5,
+        bottom: 0.5,
     };
+    let other = LayerBounds {
+        left: 19.5,
+        right: 20.5,
+        ..small
+    };
+    app.bounds = vec![
+        (
+            first,
+            CanvasBounds {
+                geometry: small,
+                painted: small,
+                oriented: None,
+            },
+        ),
+        (
+            id,
+            CanvasBounds {
+                geometry: other,
+                painted: other,
+                oriented: None,
+            },
+        ),
+    ];
+    app.document.open(preset)?;
+    app.document.select(first, true);
+    app.refresh_bounds();
+    let box_ = store.get_selection_bounds();
+    assert!(box_.active);
+    assert_eq!((box_.x, box_.width), (-0.5, 21.0));
+    app.canvas_event(0, Point { x: 20.5, y: 0.5 }, 1, false)?;
+    assert!(matches!(app.drag, Some(Drag::Resize { span: 21.0, .. })));
+    app.canvas_event(2, Point::default(), 1, false)?;
+    app.canvas_event(0, Point::default(), 1, true)?;
+    assert!(!app.document.selected.contains(&first));
+    assert!(app.drag.is_none());
+    store.set_zoom(1.0);
+    app.canvas_event(0, Point { x: 20.0, y: 0.0 }, 1, false)?;
+    assert!(matches!(app.drag, Some(Drag::Move { .. })));
+    app.canvas_event(2, Point::default(), 1, false)?;
+    app.canvas_event(0, Point::default(), 2, false)?;
+    assert_eq!(app.document.selected, BTreeSet::from([first]));
+    assert!(matches!(app.modal, Modal::Menu(_)));
+    Ok(())
+}
+
+#[test]
+fn one_pixel_handle_follows_the_painted_cell_and_keeps_the_opposite_edge_fixed() -> Result<()> {
+    let ui = window();
+    let mut app = app(&ui);
+    let mut doc = app.state.presets[0].clone();
+    let layer = &mut doc.layers[0];
+    layer.content = Content::Rectangle(Rectangle {
+        width: 1.0,
+        height: 1.0,
+        radius: 0.0,
+        ..Default::default()
+    });
+    ui.global::<Store>().set_zoom(64.0);
+    let mut renderer = crosshair_renderer::Renderer::new()?;
+    app.bounds = vec![(layer.id, renderer.canvas_layer_bounds(layer)?)];
+    app.anchors.insert(layer.id, renderer.anchor_point(layer)?);
+    app.document.open(doc)?;
+    app.refresh_bounds();
+    let shown = ui.global::<Store>().get_selection_bounds();
+    assert_eq!(
+        (shown.x, shown.y, shown.width, shown.height),
+        (0.0, 0.0, 1.0, 1.0)
+    );
+    app.canvas_event(0, Point { x: 0.8, y: 0.8 }, 1, false)?;
+    assert!(matches!(app.drag, Some(Drag::Move { .. })));
+    app.canvas_event(2, Point::default(), 1, false)?;
+    app.canvas_event(0, Point { x: 1.0, y: 1.0 }, 1, false)?;
+    app.canvas_event(1, Point { x: 2.0, y: 2.0 }, 1, false)?;
+    let layer = &app.document.draft.as_ref().unwrap().layers[0];
+    assert_eq!(
+        (layer.transform.x, layer.transform.y, layer.transform.scale),
+        (0.5, 0.5, 1.0)
+    );
+    let after = renderer.canvas_layer_bounds(layer)?.painted;
+    assert_eq!(
+        (after.left, after.top, after.right, after.bottom),
+        (0.0, 0.0, 2.0, 2.0)
+    );
+    Ok(())
+}
+
+#[test]
+fn selection_and_focus_changes_preserve_a_pending_design_frame() -> Result<()> {
+    let ui = window();
+    let mut app = app(&ui);
+    let doc = app.state.presets[0].clone();
+    app.document.open(doc.clone())?;
+    app.refresh_canvas_view()?;
+    let generation = app.playback_generation;
+    app.event(Event::Ui(UiEvent::Select(
+        doc.layers[0].id.to_string(),
+        false,
+    )))?;
+    app.action("animation-stop", "")?;
+    app.event(Event::Preview(preview::Event::Bitmap {
+        generation,
+        id: doc.id,
+        result: Ok(test_frame(app.canvas_view(), 7.0, 9.0)),
+    }))?;
+    assert_eq!(
+        ui.global::<Store>()
+            .get_canvas_tiles()
+            .row_data(0)
+            .unwrap()
+            .x,
+        7.0
+    );
+    assert_eq!(app.document.draft.as_ref(), Some(&doc));
+    Ok(())
+}
+
+#[test]
+fn canvas_keeps_drag_ownership_and_reads_shift_while_moving() {
+    use slint::platform::PointerEventButton::{Left, Middle};
+    let ui = window();
+    let events = Rc::new(RefCell::new(Vec::new()));
+    let out = events.clone();
+    ui.global::<Store>()
+        .on_canvas_event(move |kind, _, _, button, shift| {
+            out.borrow_mut().push((kind, button, shift))
+        });
+    let position = slint::LogicalPosition::new(600.0, 400.0);
+    ui.window().dispatch_event(WindowEvent::PointerPressed {
+        position,
+        button: Left,
+    });
+    ui.window().dispatch_event(WindowEvent::PointerPressed {
+        position,
+        button: Middle,
+    });
+    ui.window().dispatch_event(WindowEvent::PointerReleased {
+        position,
+        button: Middle,
+    });
+    ui.window().dispatch_event(WindowEvent::KeyPressed {
+        text: Key::Shift.into(),
+    });
+    pointer(&ui, 1, 608.0, 408.0);
+    ui.window().dispatch_event(WindowEvent::KeyReleased {
+        text: Key::Shift.into(),
+    });
+    pointer(&ui, 2, 616.0, 408.0);
+    let events = events.borrow();
+    assert_eq!(events.iter().filter(|(k, _, _)| *k == 0).count(), 1);
+    assert!(events.iter().all(|(_, button, _)| *button == 1));
+    assert!(events.contains(&(1, 1, true)));
+    assert_eq!(events.last(), Some(&(2, 1, false)));
+}
+
+#[test]
+fn canvas_crosshair_drag_changes_only_the_gap_until_arms_touch() -> Result<()> {
+    let ui = window();
+    let mut app = app(&ui);
+    let mut preset = app.state.presets[0].clone();
+    let layer = &mut preset.layers[0];
+    layer.content = Content::Crosshair(Crosshair {
+        length: 6.0,
+        thickness: 2.0,
+        gap: 2.0,
+        ..Default::default()
+    });
+    let mut renderer = crosshair_renderer::Renderer::new()?;
+    app.bounds = vec![(layer.id, renderer.canvas_layer_bounds(layer)?)];
+    app.document.open(preset)?;
+    let origin = Point { x: 8.25, y: 8.25 };
     app.canvas_event(0, origin, 1, false)?;
-    let span = bounds.width().max(bounds.height());
-    for added in 0..6 {
-        let ratio = (span + added as f32) / span;
+    for (delta, gap) in [
+        (0.0, 2.0),
+        (2.625, 2.0),
+        (2.75, 3.0),
+        (-0.875, 2.0),
+        (-1.0, 1.0),
+        (-20.0, 0.0),
+        (7.2, 4.0),
+        (0.0, 2.0),
+    ] {
         app.canvas_event(
             1,
             Point {
-                x: origin.x * ratio,
-                y: origin.y * ratio,
+                x: origin.x + delta,
+                y: origin.y + delta,
             },
             1,
             false,
         )?;
-        let actual = renderer.layer_bounds(&app.document.draft.as_ref().unwrap().layers[0], 1.0)?;
-        assert!((actual.width() - span - added as f32).abs() < 0.001);
-        assert!((actual.left + actual.right).abs() < 0.001);
-        assert!((actual.top + actual.bottom).abs() < 0.001);
+        let layer = &app.document.draft.as_ref().unwrap().layers[0];
+        let Content::Crosshair(c) = &layer.content else {
+            unreachable!()
+        };
+        assert_eq!(
+            (c.length, c.thickness, c.gap, layer.transform.scale),
+            (6.0, 2.0, gap, 1.0)
+        );
+        let actual = renderer.canvas_layer_bounds(layer)?.painted;
+        assert_eq!(
+            (actual.center(), actual.width()),
+            (Point::default(), 2.0 * (6.0 + gap))
+        );
     }
-    app.canvas_event(
-        1,
-        Point {
-            x: -origin.x,
-            y: -origin.y,
-        },
-        1,
-        false,
-    )?;
-    let actual = renderer.layer_bounds(&app.document.draft.as_ref().unwrap().layers[0], 1.0)?;
-    assert!((actual.width() - 1.0).abs() < 0.001);
+    // The next drag starts with touching arms and scales the complete layer.
+    app.canvas_event(1, Point { x: -12.0, y: -12.0 }, 1, false)?;
+    app.canvas_event(2, origin, 1, false)?;
+    complete_preview(&mut app, None)?;
+    let layer = &app.document.draft.as_ref().unwrap().layers[0];
+    app.bounds = vec![(layer.id, renderer.canvas_layer_bounds(layer)?)];
+    app.canvas_event(0, Point { x: 6.0, y: 6.0 }, 1, false)?;
+    app.canvas_event(1, Point { x: 10.8, y: 10.8 }, 1, false)?;
+    let layer = &app.document.draft.as_ref().unwrap().layers[0];
+    let Content::Crosshair(c) = &layer.content else {
+        unreachable!()
+    };
+    assert_eq!((c.gap, c.length, c.thickness), (0.0, 6.0, 2.0));
+    assert!((layer.transform.scale - 13.0 / 7.0).abs() < 0.0001);
     ui.hide()?;
+    Ok(())
+}
+
+#[test]
+fn ellipse_corner_drag_matches_the_ruler_and_undo_restores_the_original() -> Result<()> {
+    let ui = window();
+    let mut app = app(&ui);
+    let mut preset = app.state.presets[0].clone();
+    let layer = &mut preset.layers[0];
+    layer.content = Content::Ellipse(Shape {
+        width: 10.0,
+        height: 10.0,
+        ..Default::default()
+    });
+    layer.transform.x = 31.0;
+    layer.transform.y = -7.0;
+    let mut renderer = crosshair_renderer::Renderer::new()?;
+    app.bounds = vec![(layer.id, renderer.canvas_layer_bounds(layer)?)];
+    app.document.open(preset.clone())?;
+    let src = Point { x: 36.2, y: -1.8 };
+    let dest = Point { x: 39.2, y: -0.8 };
+    app.canvas_event(0, src, 1, false)?;
+    app.canvas_event(1, dest, 1, false)?;
+    app.canvas_event(2, dest, 1, false)?;
+    let layer = &app.document.draft.as_ref().unwrap().layers[0];
+    let result = renderer.canvas_layer_bounds(layer)?.painted;
+    assert_eq!(
+        (result.left, result.top, result.width(), result.height()),
+        (26.0, -12.0, 13.0, 11.0)
+    );
+    complete_preview(&mut app, None)?;
+    app.action("undo", "")?;
+    assert!(crate::features::designer::same_design(
+        app.document.draft.as_ref().unwrap(),
+        &preset
+    ));
+    Ok(())
+}
+
+#[test]
+fn rotated_shape_handles_keep_the_opposite_corner_on_scaled_anchored_shapes() -> Result<()> {
+    use crate::features::designer::rotate_delta;
+    let ui = window();
+    let mut renderer = crosshair_renderer::Renderer::new()?;
+    for content in [
+        Content::Ellipse(Shape::default()),
+        Content::Triangle(Shape::default()),
+        Content::Rectangle(Rectangle {
+            radius: 4.0,
+            ..Default::default()
+        }),
+    ] {
+        for (sx, sy) in [(-1.0, -1.0), (1.0, -1.0), (-1.0, 1.0), (1.0, 1.0)] {
+            let mut app = app(&ui);
+            let mut preset = app.state.presets[0].clone();
+            let layer = &mut preset.layers[0];
+            layer.content = content.clone();
+            layer.transform = Transform {
+                x: 3.25,
+                y: -7.25,
+                rotation: 37.0,
+                scale: 1.5,
+                anchor: Anchor::TopRight,
+            };
+            let bounds = renderer.canvas_layer_bounds(layer)?;
+            let corner = |b: CanvasBounds, sx: f32, sy: f32| {
+                let (b, angle) = b.oriented.unwrap();
+                let d = rotate_delta(sx * b.width() / 2.0, sy * b.height() / 2.0, angle);
+                Point {
+                    x: b.center().x + d.x,
+                    y: b.center().y + d.y,
+                }
+            };
+            let press = corner(bounds, sx, sy);
+            let fixed = corner(bounds, -sx, -sy);
+            let delta = rotate_delta(3.0 * sx, -6.0 * sy, 37.0);
+            app.bounds = vec![(layer.id, bounds)];
+            app.document.open(preset)?;
+            app.canvas_event(0, press, 1, false)?;
+            app.canvas_event(
+                1,
+                Point {
+                    x: press.x + delta.x,
+                    y: press.y + delta.y,
+                },
+                1,
+                false,
+            )?;
+            let layer = &app.document.draft.as_ref().unwrap().layers[0];
+            assert_eq!(layer.content.shape_size(), Some((22.0, 16.0)));
+            let other = corner(renderer.canvas_layer_bounds(layer)?, -sx, -sy);
+            assert!((fixed.x - other.x).hypot(fixed.y - other.y) < 0.0001);
+        }
+    }
     Ok(())
 }
 
@@ -976,7 +1345,7 @@ fn undo_and_keyboard_edits_stop_the_previous_canvas_drag() -> Result<()> {
     let layer = &preset.layers[0];
     app.bounds = vec![(
         layer.id,
-        crosshair_renderer::Renderer::new()?.layer_bounds(layer, 1.0)?,
+        crosshair_renderer::Renderer::new()?.canvas_layer_bounds(layer)?,
     )];
     app.document.open(preset.clone())?;
     app.canvas_event(0, Point::default(), 1, false)?;
@@ -1048,7 +1417,7 @@ fn keyboard_edits_wait_for_a_scaled_strokes_preview_and_keep_separate_history() 
         false,
     )?;
     assert!(app.drag.is_none());
-    assert!(app.draw_base.is_some());
+    assert!(app.pivot_base.is_some());
     assert_eq!(app.preview_generation, generation);
     assert_eq!(app.deferred_ui.len(), 1);
     app.canvas_event(1, Point { x: 40.0, y: 0.0 }, 1, false)?;
@@ -1058,7 +1427,7 @@ fn keyboard_edits_wait_for_a_scaled_strokes_preview_and_keep_separate_history() 
     let mut adjusted = app.document.draft.as_ref().unwrap().clone();
     adjusted.layers[0].transform.x = 5.0;
     complete_preview(&mut app, Some(adjusted.clone()))?;
-    assert!(app.draw_base.is_none());
+    assert!(app.pivot_base.is_none());
     let layer = &app.document.draft.as_ref().unwrap().layers[0];
     let mut renderer = crosshair_renderer::Renderer::new()?;
     assert!(
@@ -1077,7 +1446,7 @@ fn keyboard_edits_wait_for_a_scaled_strokes_preview_and_keep_separate_history() 
     app.canvas_event(0, Point::default(), 1, false)?;
     app.canvas_event(1, Point { x: 20.0, y: 0.0 }, 1, false)?;
     app.action("undo", "")?;
-    assert!(app.draw_base.is_some());
+    assert!(app.pivot_base.is_some());
     assert_eq!(app.deferred_ui.len(), 1);
     complete_preview(&mut app, Some(adjusted.clone()))?;
     assert_eq!(app.document.draft.as_ref().unwrap(), &preset);
@@ -1090,17 +1459,18 @@ fn keyboard_edits_wait_for_a_scaled_strokes_preview_and_keep_separate_history() 
 fn numeric_drag_commits_release_position_and_escape_restores_the_start() -> Result<()> {
     let ui = window();
     let store = ui.global::<Store>();
+    let mut app = app(&ui);
+    app.document.open(Preset::new("Drag test"))?;
+    app.refresh_document();
+    let properties = store.get_fields();
+    let mut length = properties
+        .iter()
+        .flat_map(|group| [group.first, group.second])
+        .find(|field| field.key == "/content/properties/length")
+        .unwrap();
+    length.numeric = 1.0;
     let fields = Rc::new(slint::VecModel::from(vec![FieldGroup {
-        first: FieldRow {
-            selection: "test".into(),
-            key: "/length".into(),
-            label: "Length".into(),
-            kind: 2,
-            numeric: 10.0,
-            maximum: 1000.0,
-            step: 1.0,
-            ..Default::default()
-        },
+        first: length,
         ..Default::default()
     }]));
     store.set_fields(fields.clone().into());
@@ -1116,20 +1486,26 @@ fn numeric_drag_commits_release_position_and_escape_restores_the_start() -> Resu
         }
     });
     pointer(&ui, 0, 1120.0, 182.0);
-    pointer(&ui, 1, 1126.0, 182.0);
-    assert_eq!(events.borrow().last(), Some(&(16.0, 1)));
-    pointer(&ui, 2, 1129.0, 182.0);
-    assert_eq!(events.borrow().last(), Some(&(19.0, 2)));
+    pointer(&ui, 1, 1124.0, 182.0);
+    pointer(&ui, 2, 1124.0, 182.0);
+    assert!(events.borrow().is_empty(), "A small drag should keep 1 px");
     pointer(&ui, 0, 1120.0, 182.0);
-    pointer(&ui, 1, 1125.0, 182.0);
-    assert_eq!(events.borrow().last(), Some(&(24.0, 1)));
+    pointer(&ui, 1, 1132.0, 182.0);
+    pointer(&ui, 1, 1142.0, 182.0);
+    pointer(&ui, 2, 1153.0, 182.0);
+    assert_eq!(&*events.borrow(), &[(2.0, 1), (3.0, 1), (4.0, 2)]);
+    pointer(&ui, 0, 1120.0, 182.0);
+    pointer(&ui, 1, 1240.0, 182.0);
+    assert_eq!(events.borrow().last(), Some(&(26.0, 1)));
+    pointer(&ui, 1, 1087.0, 182.0);
+    assert_eq!(events.borrow().last(), Some(&(1.0, 1)));
     let escape: SharedString = Key::Escape.into();
     ui.window().dispatch_event(WindowEvent::KeyPressed {
         text: escape.clone(),
     });
     ui.window()
         .dispatch_event(WindowEvent::KeyReleased { text: escape });
-    assert_eq!(events.borrow().last(), Some(&(19.0, 4)));
+    assert_eq!(events.borrow().last(), Some(&(4.0, 4)));
     events.borrow_mut().clear();
     pointer(&ui, 1, 1130.0, 182.0);
     pointer(&ui, 2, 1130.0, 182.0);

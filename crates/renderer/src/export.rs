@@ -42,15 +42,8 @@ pub(crate) fn svg(
             for element in &group.elements {
                 match element {
                     Element::Path {
-                        path,
-                        color,
-                        erase,
-                        antialias,
+                        path, color, erase, ..
                     } => {
-                        let aligned = (!*antialias)
-                            .then(|| crate::composite::align_rectangles(path))
-                            .flatten();
-                        let path = aligned.as_ref().unwrap_or(path);
                         let mut data = String::new();
                         for segment in path.segments() {
                             match segment {
