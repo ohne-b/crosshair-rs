@@ -88,7 +88,8 @@ try {
             $fileName = 'crosshair-' + $role.Replace(' ', '').ToLowerInvariant() + '.exe'
             $path = Join-Path $directory $fileName
             [IO.Compression.ZipFileExtensions]::ExtractToFile($archive.GetEntry($fileName), $path)
-            if ([Diagnostics.FileVersionInfo]::GetVersionInfo($path).FileDescription -cne "crosshair-rs $role") { throw "Missing process description on $fileName." }
+            $info = [Diagnostics.FileVersionInfo]::GetVersionInfo($path)
+            if ($info.FileDescription -cne "crosshair-rs $role" -or $info.FileVersion -cne $build.version) { throw "Incorrect process description or version on $fileName." }
             $bytes.GetString([IO.File]::ReadAllBytes($path))
         }
         foreach ($size in @(16, 24, 32, 48, 256)) {

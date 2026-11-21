@@ -11,16 +11,17 @@ pub fn embed(role: &str) {
     let compiled = output.join("app.res");
     let compiler = PathBuf::from(env::var_os("ProgramFiles(x86)").unwrap())
         .join("Windows Kits/10/bin/10.0.26100.0/x64/rc.exe");
+    let numeric_version = [
+        env!("CARGO_PKG_VERSION_MAJOR"),
+        env!("CARGO_PKG_VERSION_MINOR"),
+        env!("CARGO_PKG_VERSION_PATCH"),
+    ]
+    .join(",");
     let status = Command::new(compiler)
-        .args([
-            "/nologo",
-            "/c65001",
-            "/i",
-            "../../assets",
-            "/d",
-            role,
-            "/fo",
-        ])
+        .args(["/nologo", "/i", "../../assets", "/d", role])
+        .arg(concat!("/dAPP_VERSION=", env!("CARGO_PKG_VERSION")))
+        .arg(format!("/dNUMERIC_VERSION={numeric_version}"))
+        .arg("/fo")
         .arg(&compiled)
         .arg("../../packaging/windows/process.rc")
         .status()

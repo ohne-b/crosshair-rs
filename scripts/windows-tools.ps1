@@ -1,5 +1,11 @@
 $ErrorActionPreference = 'Stop'
 
+function Get-WorkspaceProductVersion([string]$RepoRoot) {
+    $cargo = Get-Content -LiteralPath (Join-Path $RepoRoot 'Cargo.toml') -Raw
+    $packageSection = [regex]::Match($cargo, '(?ms)^\[workspace\.package\]\s*(.*?)(?=^\[|\z)').Groups[1].Value
+    return [regex]::Match($packageSection, '(?m)^version\s*=\s*"([^"\r\n]+)"\s*$').Groups[1].Value
+}
+
 function Initialize-X64Compiler {
     # Repeated vcvars calls grow PATH enough to exceed cmd.exe's limit in packaging tests.
     if ($env:VSCMD_ARG_HOST_ARCH -eq 'x64' -and $env:VSCMD_ARG_TGT_ARCH -eq 'x64' -and

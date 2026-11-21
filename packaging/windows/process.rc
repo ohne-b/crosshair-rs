@@ -1,6 +1,11 @@
+#define AS_STRING_INNER(value) #value
+#define AS_STRING(value) AS_STRING_INNER(value)
+
 1 ICON "app.ico"
 
 1 VERSIONINFO
+FILEVERSION NUMERIC_VERSION,0
+PRODUCTVERSION NUMERIC_VERSION,0
 FILETYPE 1
 BEGIN
     BLOCK "StringFileInfo"
@@ -8,6 +13,8 @@ BEGIN
         BLOCK "040904B0"
         BEGIN
             VALUE "ProductName", "crosshair-rs"
+            VALUE "FileVersion", AS_STRING(APP_VERSION)
+            VALUE "ProductVersion", AS_STRING(APP_VERSION)
 #if defined(EDITOR)
             VALUE "FileDescription", "crosshair-rs Editor"
 #elif defined(ENGINE)

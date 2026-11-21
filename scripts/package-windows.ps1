@@ -13,9 +13,7 @@ $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $packageRoot = if ($OutputDirectory) { [IO.Path]::GetFullPath($OutputDirectory) } else { Join-Path $repoRoot 'target/packages' }
 New-Item -ItemType Directory -Force $packageRoot | Out-Null
-$cargo = Get-Content -LiteralPath (Join-Path $repoRoot 'Cargo.toml') -Raw
-$packageSection = [regex]::Match($cargo, '(?ms)^\[workspace\.package\]\s*(.*?)(?=^\[|\z)').Groups[1].Value
-$productVersion = [regex]::Match($packageSection, '(?m)^version\s*=\s*"([^"\r\n]+)"\s*$').Groups[1].Value
+$productVersion = Get-WorkspaceProductVersion $repoRoot
 if ($Publisher -notmatch ', OID\.2\.25\.311729368913984317654407730594956997722=1$') { throw 'The publisher must use the Windows unsigned-package namespace.' }
 $msixVersion = & node (Join-Path $PSScriptRoot 'release.mjs') package-version $productVersion
 if ($LASTEXITCODE) { throw 'The workspace version cannot be mapped to MSIX.' }
