@@ -284,7 +284,18 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int) {
         }
         if (elevated && args[2] != user_sid())
             throw hresult_error(E_ACCESSDENIED, L"Approve installation using the same Windows account.");
-        if (IsUserAnAdmin()) { deploy(directory); return 0; }
+        if (IsUserAnAdmin()) {
+            for (;;) {
+                try { deploy(directory); return 0; }
+                catch (hresult_error const& error) {
+                    if (quiet || error.code() != HRESULT_FROM_WIN32(ERROR_PACKAGES_IN_USE)) throw;
+                    if (MessageBoxW(nullptr,
+                        L"Save your edits, choose Quit from the crosshair-rs tray icon, then select Retry.",
+                        L"Close crosshair-rs to update", MB_RETRYCANCEL | MB_ICONINFORMATION) != IDRETRY)
+                        return static_cast<int>(HRESULT_FROM_WIN32(ERROR_CANCELLED));
+                }
+            }
+        }
         if (elevated) throw hresult_error(E_ACCESSDENIED);
         auto parameters = std::wstring(quiet ? L"--elevated-silent " : L"--elevated ") + user_sid();
         SHELLEXECUTEINFOW execute{sizeof(execute)};
@@ -305,6 +316,10 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int) {
             wchar_t code[32]{};
             swprintf_s(code, L"\n\nWindows error: 0x%08X", static_cast<unsigned>(error));
             std::wstring message = L"Installation did not finish.\n\n";
+            if (error == HRESULT_FROM_WIN32(ERROR_INSTALL_PACKAGE_DOWNGRADE))
+                message += L"A newer version is already installed. Open it from Start or use a newer setup file.\n\n";
+            else if (error == HRESULT_FROM_WIN32(ERROR_PACKAGE_ALREADY_EXISTS))
+                message += L"Windows already has a different build with this version number. Use a newer setup to keep your settings.\n\n";
             message += to_message();
             message += code;
             MessageBoxW(nullptr, message.c_str(), L"crosshair-rs Setup", MB_OK | MB_ICONERROR);

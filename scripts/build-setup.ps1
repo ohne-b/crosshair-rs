@@ -30,7 +30,8 @@ try {
     if ($LASTEXITCODE) { throw 'Native installer compilation failed.' }
 } finally { Pop-Location }
 $compiler = & (Join-Path $PSScriptRoot 'get-nsis.ps1') -Offline:$Offline
-$definitions = [ordered]@{ SETUP_OUT=$Output; PAYLOAD=$Package; FRAMEWORK=$Framework; INSTALL_HELPER=$installer; VERSION=$Version; PACKAGE_VERSION=$packageVersion }
+$productName = if ($identity.Name.EndsWith('.Preview')) { 'crosshair-rs Preview' } else { 'crosshair-rs' }
+$definitions = [ordered]@{ PRODUCT_NAME=$productName; SETUP_OUT=$Output; PAYLOAD=$Package; FRAMEWORK=$Framework; INSTALL_HELPER=$installer; VERSION=$Version; PACKAGE_VERSION=$packageVersion }
 $config = foreach ($entry in $definitions.GetEnumerator()) {
     $literal = [string]$entry.Value
     if ($literal.Contains('"') -or $literal.Contains('${') -or $literal.Contains('$%') -or $literal.Contains("`r") -or $literal.Contains("`n")) { throw 'Unsupported characters in an installer build path.' }

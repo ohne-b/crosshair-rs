@@ -20,6 +20,12 @@ are not Windows-signed. In-app updates authenticate both using the project's rel
 No certificate import or Developer Mode is needed. Normal use does not require
 administrator rights. `latest.json` and `SHA256SUMS` are update and verification metadata.
 
+For a manual upgrade, save your edits and choose **Quit** from the tray before
+running setup. If Windows reports the app is in use, you can quit it and select
+**Retry** in setup. Install the newer version over the existing one to keep your
+presets and settings. Preview builds appear as **crosshair-rs Preview** in Start
+and Game Bar and use separate settings from releases.
+
 For a source build, see [Contributing](CONTRIBUTING.md#development).
 
 ## Fullscreen with Game Bar
