@@ -478,6 +478,7 @@ fn animation_enabled_switch_updates_the_live_draft_and_save() -> Result<()> {
         app.connection_epoch,
         client::Event::Completed {
             tag: "document".into(),
+            revision: app.state.revision,
             reply: Reply::Ack {
                 document_revision: Some(2),
             },
@@ -489,6 +490,7 @@ fn animation_enabled_switch_updates_the_live_draft_and_save() -> Result<()> {
             app.connection_epoch,
             client::Event::Completed {
                 tag: tag.into(),
+                revision: app.state.revision,
                 reply: Reply::Ack {
                     document_revision: None,
                 },
