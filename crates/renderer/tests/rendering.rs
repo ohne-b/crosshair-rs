@@ -155,6 +155,36 @@ fn opposite_arms_and_center_hole_share_a_pixel_axis_while_resizing() -> anyhow::
 }
 
 #[test]
+fn touching_one_pixel_arms_preserve_tip_coverage() -> anyhow::Result<()> {
+    let mut renderer = Renderer::new()?;
+    for (length, inner, outer) in [(3.25, 191, 0), (3.5, 255, 0), (3.75, 255, 64)] {
+        let mut doc = preset(Content::Crosshair(Crosshair {
+            length,
+            thickness: 1.0,
+            gap: 0.0,
+            ..Default::default()
+        }));
+        doc.layers[0].transform.x = 0.5;
+        doc.layers[0].transform.y = 0.5;
+        let raster = renderer.render(&doc, 1.0, &no_assets)?;
+        for (radius, alpha) in [(3, inner), (4, outer)] {
+            for (x, y) in [(radius, 0), (-radius, 0), (0, radius), (0, -radius)] {
+                assert!(
+                    pixel(&raster, x, y)[3].abs_diff(alpha) <= 1,
+                    "length {length}, ({x}, {y})"
+                );
+            }
+        }
+        let bounds = renderer.canvas_layer_bounds(&doc.layers[0])?.painted;
+        assert_eq!(
+            (bounds.width(), bounds.height()),
+            (2.0 * length, 2.0 * length)
+        );
+    }
+    Ok(())
+}
+
+#[test]
 fn fractional_arm_tips_fit_the_native_crop_and_keep_one_pixel_stems() -> anyhow::Result<()> {
     let mut renderer = Renderer::new()?;
     for gap in [4.0, 4.25, 4.75] {
@@ -712,6 +742,26 @@ fn semitransparent_t_arms_have_no_overlap_seams() {
             .all(|p| p[3] == 0 || p[3] == 128)
     );
     assert_premultiplied(&raster);
+}
+
+#[test]
+fn fractional_t_arm_ends_flush_with_its_cap() -> anyhow::Result<()> {
+    let mut doc = preset(Content::Crosshair(Crosshair {
+        shape: ArmShape::TShape {
+            width: 5.0,
+            thickness: 1.5,
+        },
+        length: 3.5,
+        thickness: 1.0,
+        gap: 0.0,
+        ..Default::default()
+    }));
+    doc.layers[0].transform.x = 0.5;
+    doc.layers[0].transform.y = 0.5;
+    let raster = Renderer::new()?.render(&doc, 1.0, &no_assets)?;
+    let cap = pixel(&raster, 3, 1)[3];
+    assert!(cap > 0 && pixel(&raster, 3, 0)[3].abs_diff(cap) <= 1);
+    Ok(())
 }
 
 #[test]

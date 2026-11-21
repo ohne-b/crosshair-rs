@@ -8,6 +8,7 @@ use crate::geometry::{DrawGroup, Element, LayerBounds, effect_padding};
 pub(super) struct PixelAxis {
     origin: f32,
     shift: f32,
+    joined_rectangles: bool,
 }
 
 fn grid_shift(start: f32, length: f32) -> f32 {
@@ -45,6 +46,7 @@ pub(super) fn crosshair_axes(
         [transform.tx, transform.ty].map(|origin| PixelAxis {
             origin,
             shift: grid_shift(origin - width / 2.0, width),
+            joined_rectangles: matches!(c.shape, ArmShape::Rectangle) && c.gap == 0.0,
         })
     })
 }
@@ -178,7 +180,12 @@ fn span_offset(
     }
     let low = a.min(b);
     let high = a.max(b);
-    let Some(PixelAxis { origin, shift }) = center else {
+    let Some(PixelAxis {
+        origin,
+        shift,
+        joined_rectangles,
+    }) = center
+    else {
         return Some(grid_shift(low, high - low));
     };
     let middle = (low + high) / 2.0;
@@ -191,7 +198,12 @@ fn span_offset(
     let negative = middle < origin;
     let start = if negative { 2.0 * origin - high } else { low };
     let axis = origin + shift;
-    let mut offset = shift - edge_shift(-(start + shift));
+    let mut offset = if shift == 0.0 && joined_rectangles {
+        // Touching arms form one stroke. Preserve fractional lengths at their hidden join.
+        -grid_shift(-start, high - low)
+    } else {
+        shift - edge_shift(-(start + shift))
+    };
     // Resolve half-pixel ties inward except when that would close a positive gap.
     if start > origin + 0.0001 && start + offset <= axis + 0.0001 {
         offset += 1.0;
