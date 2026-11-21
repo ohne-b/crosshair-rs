@@ -32,8 +32,9 @@ For a source build, see [Contributing](CONTRIBUTING.md#development).
 
 1. In **Settings > Display**, choose **Game Bar**. If the widget needs setup,
    Desktop stays active and the editor shows the next step.
-2. Click **Open widget**. Press **Win+G** to show the Game Bar toolbar, pin the
-   widget on your target display, and turn on **Enable click-through**.
+2. Click **Open widget**. If the toolbar is hidden, press **Win+G**. You can
+   also open **crosshair-rs** (or **crosshair-rs Preview**) from **Widgets**.
+   Pin it on your target display and turn on **Enable click-through**.
 3. Press **Win+G** again. When the editor shows **Ready to switch to Game Bar**,
    click **Use Game Bar**. To switch back, choose **Desktop** in Display mode.
    You can leave the widget pinned for next time.

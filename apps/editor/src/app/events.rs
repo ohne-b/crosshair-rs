@@ -163,6 +163,13 @@ impl App {
                     }
                 }
                 self.state = state;
+                if self
+                    .output_ack_revision
+                    .is_some_and(|revision| self.state.revision >= revision)
+                {
+                    self.output_ack_revision = None;
+                    store.set_switching_output(false);
+                }
                 if let Some(id) = self.open_after_refresh.take() {
                     self.open_document(id)?;
                 }
@@ -243,9 +250,20 @@ impl App {
                 }
                 ServerMessage::Response(_) => {}
             },
-            Event::Engine(_, client::Event::Completed { tag, reply }) => {
+            Event::Engine(
+                _,
+                client::Event::Completed {
+                    tag,
+                    revision,
+                    reply,
+                },
+            ) => {
                 if tag == "output-mode" {
-                    self.window()?.global::<Store>().set_switching_output(false);
+                    // The acknowledgment can arrive before the snapshot that updates the selector.
+                    self.output_ack_revision = (self.state.revision < revision).then_some(revision);
+                    self.window()?
+                        .global::<Store>()
+                        .set_switching_output(self.output_ack_revision.is_some());
                 }
                 if tag == "preview" {
                     self.preview_sent = self.preview_inflight.take();
@@ -365,7 +383,11 @@ impl App {
                     conflict,
                 },
             ) => {
-                if tag == "output-mode" || tag == "connection" {
+                if tag == "output-mode"
+                    || tag == "connection"
+                    || (tag == "refresh" && self.output_ack_revision.is_some())
+                {
+                    self.output_ack_revision = None;
                     self.window()?.global::<Store>().set_switching_output(false);
                 }
                 if tag == "save-browse" || tag == "connection" {
@@ -463,6 +485,7 @@ impl App {
                 self.refresh_document();
             }
             Event::Engine(_, client::Event::Disconnected(message)) => {
+                self.output_ack_revision = None;
                 self.window()?.global::<Store>().set_switching_output(false);
                 self.stop_playback();
                 self.pending_aim = None;

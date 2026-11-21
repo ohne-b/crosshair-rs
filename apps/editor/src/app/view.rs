@@ -347,11 +347,11 @@ impl App {
             if self.state.settings.output_mode == OutputMode::Desktop {
                 "Ready to switch to Game Bar"
             } else if !widget.visible {
-                "Pinned ? hidden by Game Bar"
+                "Pinned · hidden by Game Bar"
             } else if self.status.visible && !widget.positioned {
-                "Pinned ? check widget position"
+                "Pinned · check widget position"
             } else {
-                "Pinned ? connected"
+                "Pinned · connected"
             }
         });
         store.set_widget_status(widget_status.into());

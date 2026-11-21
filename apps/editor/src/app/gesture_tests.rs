@@ -81,6 +81,7 @@ fn app(ui: &AppWindow) -> App {
         close_flush_pending: false,
         recovery_shown: false,
         connection_epoch: 0,
+        output_ack_revision: None,
         install_requested: false,
         shutdown_requested: None,
         preview_pending: false,
@@ -511,6 +512,25 @@ fn game_bar_setup_keeps_desktop_selected_and_allows_retry() -> Result<()> {
     assert!(store.get_widget_ready());
     app.action("output-mode", "1")?;
     assert!(matches!(&commands()[..], [Command::SetSettings { .. }]));
+    let revision = app.state.revision + 1;
+    app.event(Event::Engine(
+        0,
+        client::Event::Completed {
+            tag: "output-mode".into(),
+            revision,
+            reply: Reply::Ack {
+                document_revision: None,
+            },
+        },
+    ))?;
+    app.action("output-mode", "1")?;
+    assert!(commands().is_empty() && store.get_switching_output());
+    let mut state = app.state.clone();
+    state.revision = revision;
+    state.settings.output_mode = OutputMode::GameBar;
+    app.event(Event::Engine(0, client::Event::State(state)))?;
+    assert!(!store.get_switching_output());
+    assert_eq!(store.get_output_mode(), 1);
     Ok(())
 }
 
