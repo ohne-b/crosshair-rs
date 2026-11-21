@@ -991,12 +991,12 @@ before using Windows `PackageManager.AddPackageByUriAsync` with `AllowUnsigned`,
 with no `.appinstaller` update association. It reuses a healthy installed x64
 VCLibs runtime meeting the minimum version, supplying the bundled dependency only
 when needed. This avoids redeploying a shared runtime used by other running apps.
-Setup's optional desktop and additional Start menu links target the package's
-Editor shell item and app ID, never a versioned executable path. The package's
-standard Start entry remains. Silent setup preserves options unless explicitly
-specified; an unchecked sign-in option preserves an existing preference. Matching
-extra links are removed when explicitly unchecked on reinstall; unrelated links
-are preserved. These ordinary shell links may remain after MSIX uninstall.
+Windows provides the editor's Start entry. The optional desktop link targets the
+packaged editor and uses a copy of its icon in the package's per-user LocalState
+so version changes keep the icon path valid. Setup and in-app upgrades repair
+unbranded desktop and legacy Start links whose app ID and target match. Custom
+icons are preserved. Silent setup changes shortcut choices only when explicitly
+requested. An unchecked sign-in option preserves the existing preference.
 Initial installation trusts the setup obtained from the project's GitHub release;
 it does not claim Windows code signing or a self-authenticating executable.
 [Microsoft's unsigned-package

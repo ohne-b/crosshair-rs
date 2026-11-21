@@ -598,6 +598,9 @@ pub fn recover(data_root: &Path) -> Result<Option<Recovery>> {
     let succeeded = installed
         .as_ref()
         .is_some_and(|package| package.family == journal.family && package.version >= target);
+    if succeeded && let Err(error) = package::repair_shortcut_icons(&journal.family, data_root) {
+        eprintln!("Could not repair the shortcut icons: {error:#}");
+    }
     Ok(Some(Recovery {
         installed_version: installed.map(|package| manifest::product_version(package.version)),
         restart: journal.restart,
