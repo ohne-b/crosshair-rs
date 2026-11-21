@@ -1157,6 +1157,11 @@ pub fn resize_shape(layer: &mut Layer, handle: Point, delta: Point, proportional
     };
     let t = layer.transform;
     if let Content::Crosshair(c) = &mut layer.content {
+        const DRAG_GAIN: f32 = 1.25;
+        let delta = Point {
+            x: delta.x * DRAG_GAIN,
+            y: delta.y * DRAG_GAIN,
+        };
         if c.length > 0.0 && c.thickness > 0.0 && c.enabled_arms.iter().any(|on| *on) {
             // Crosshair X measures the corner one layer pixel beyond the arm tips.
             let x = handle.x + corner.x * t.scale;
@@ -1921,7 +1926,7 @@ mod viewport_tests {
                 ..Default::default()
             }),
         );
-        resize_shape(&mut dot, corner, Point { x: 2.0, y: 2.0 }, false);
+        resize_shape(&mut dot, corner, Point { x: 1.6, y: 1.6 }, false);
         let Content::Crosshair(c) = dot.content else {
             unreachable!()
         };

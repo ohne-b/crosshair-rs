@@ -1054,7 +1054,16 @@ fn canvas_crosshair_drag_changes_only_the_gap_until_arms_touch() -> Result<()> {
     app.document.open(preset)?;
     let origin = Point { x: 8.25, y: 8.25 };
     app.canvas_event(0, origin, 1, false)?;
-    for (delta, gap) in [(0.0, 2.0), (3.0, 2.0), (4.0, 3.0), (-20.0, 0.0), (9.0, 4.0)] {
+    for (delta, gap) in [
+        (0.0, 2.0),
+        (2.625, 2.0),
+        (2.75, 3.0),
+        (-0.875, 2.0),
+        (-1.0, 1.0),
+        (-20.0, 0.0),
+        (7.2, 4.0),
+        (0.0, 2.0),
+    ] {
         app.canvas_event(
             1,
             Point {
@@ -1085,7 +1094,7 @@ fn canvas_crosshair_drag_changes_only_the_gap_until_arms_touch() -> Result<()> {
     let layer = &app.document.draft.as_ref().unwrap().layers[0];
     app.bounds = vec![(layer.id, renderer.canvas_layer_bounds(layer)?)];
     app.canvas_event(0, Point { x: 6.0, y: 6.0 }, 1, false)?;
-    app.canvas_event(1, Point { x: 12.0, y: 12.0 }, 1, false)?;
+    app.canvas_event(1, Point { x: 10.8, y: 10.8 }, 1, false)?;
     let layer = &app.document.draft.as_ref().unwrap().layers[0];
     let Content::Crosshair(c) = &layer.content else {
         unreachable!()
