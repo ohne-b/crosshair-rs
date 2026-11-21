@@ -276,7 +276,15 @@ pub fn run() -> Result<()> {
     slint::BackendSelector::new()
         .backend_name("winit".into())
         .renderer_name("software".into())
-        .with_winit_window_attributes_hook(|attributes| attributes.with_transparent(true))
+        .with_winit_window_attributes_hook(|attributes| {
+            use slint::winit_030::winit::{
+                platform::windows::{IconExtWindows, WindowAttributesExtWindows},
+                window::Icon,
+            };
+            attributes
+                .with_transparent(true)
+                .with_taskbar_icon(Icon::from_resource(1, None).ok())
+        })
         .select()
         .context("Could not initialize the software window backend")?;
     let ui = AppWindow::new().context("Could not create the editor interface")?;

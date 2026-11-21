@@ -24,6 +24,12 @@ public static class PackageActivation {
         try { uint process; Marshal.ThrowExceptionForHR(((IActivation)manager).ActivateApplication(app, arguments, 0, out process)); return process; }
         finally { Marshal.ReleaseComObject(manager); }
     }
+    [DllImport("user32.dll", CharSet=CharSet.Unicode)]
+    static extern IntPtr SendMessageTimeout(IntPtr window, uint message, UIntPtr wparam, IntPtr lparam, uint flags, uint timeout, out IntPtr result);
+    public static bool HasLargeIcon(IntPtr window) {
+        IntPtr icon;
+        return window != IntPtr.Zero && SendMessageTimeout(window, 0x007F, new UIntPtr(1), IntPtr.Zero, 2, 500, out icon) != IntPtr.Zero && icon != IntPtr.Zero;
+    }
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     public static extern bool WaitNamedPipe(string name, uint timeout);
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
@@ -194,11 +200,12 @@ try {
     if ($editor) {
         try {
             $deadline = [DateTime]::UtcNow.AddSeconds(15)
-            while (!$editor.HasExited -and !$editor.CloseMainWindow()) {
-                if ([DateTime]::UtcNow -gt $deadline) { throw 'The isolated editor did not open its window.' }
+            while (!$editor.HasExited -and ![PackageActivation]::HasLargeIcon($editor.MainWindowHandle)) {
+                if ([DateTime]::UtcNow -gt $deadline) { throw 'The isolated editor did not expose its large taskbar icon.' }
                 Start-Sleep -Milliseconds 50
                 $editor.Refresh()
             }
+            if ($editor.HasExited -or !$editor.CloseMainWindow()) { throw 'The isolated editor window closed unexpectedly.' }
             if (!$editor.WaitForExit(15000)) { throw 'The isolated editor did not close.' }
         } finally { $editor.Dispose() }
     }
