@@ -479,6 +479,42 @@ fn action_picker_cancellation_and_late_profile_events_do_not_commit() -> Result<
 }
 
 #[test]
+fn game_bar_setup_keeps_desktop_selected_and_allows_retry() -> Result<()> {
+    let ui = window();
+    let mut app = app(&ui);
+    let (client, commands) = Client::recording_for_test();
+    app.client = client;
+    app.status.widget.installed = true;
+    let store = ui.global::<Store>();
+    app.refresh_status();
+    app.action("output-mode", "1")?;
+    app.action("output-mode", "1")?;
+    assert!(store.get_gamebar_setup() && store.get_switching_output());
+    assert_eq!(store.get_output_mode(), 0);
+    assert!(
+        matches!(&commands()[..], [Command::SetSettings { settings, .. }] if settings.output_mode == OutputMode::GameBar)
+    );
+    app.event(Event::Engine(
+        0,
+        client::Event::Failed {
+            tag: "output-mode".into(),
+            message: app.status.widget.setup_hint().unwrap().into(),
+            conflict: false,
+        },
+    ))?;
+    assert!(!store.get_switching_output());
+    assert!(store.get_error().is_empty());
+    app.status.widget.connected = true;
+    app.status.widget.pinned = true;
+    app.status.widget.click_through = true;
+    app.refresh_status();
+    assert!(store.get_widget_ready());
+    app.action("output-mode", "1")?;
+    assert!(matches!(&commands()[..], [Command::SetSettings { .. }]));
+    Ok(())
+}
+
+#[test]
 fn title_switch_reflects_master_state_and_clearing_its_key_only_unbinds() -> Result<()> {
     let ui = window();
     let mut app = app(&ui);

@@ -35,7 +35,7 @@ For a source build, see [Contributing](CONTRIBUTING.md#development).
 2. Click **Open widget**. Press **Win+G** to show the Game Bar toolbar, pin the
    widget on your target display, and turn on **Enable click-through**.
 3. Press **Win+G** again. When the editor shows **Ready to switch to Game Bar**,
-   choose **Game Bar** again. To switch back, choose **Desktop** in the same menu.
+   click **Use Game Bar**. To switch back, choose **Desktop** in Display mode.
    You can leave the widget pinned for next time.
 
 Desktop mode covers normal windows and borderless games. Fullscreen support

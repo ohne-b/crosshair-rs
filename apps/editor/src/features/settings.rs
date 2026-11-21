@@ -45,7 +45,7 @@ fn bytes(value: u64) -> String {
     format!("{:.1} MB", value as f64 / 1_000_000.0)
 }
 
-pub const GAME_BAR_HELP: &str = "Choose Game Bar in Display mode, then Open widget if setup is needed. Press Win+G, pin the widget on your target display and enable click-through in the top toolbar. Dismiss Game Bar and select Game Bar again when the widget is ready. Fullscreen support depends on the game and Game Bar.";
+pub const GAME_BAR_HELP: &str = "Choose Game Bar in Display mode, then Open widget if setup is needed. Press Win+G, pin the widget on your target display and enable click-through in the top toolbar. Dismiss Game Bar and click Use Game Bar when the widget is ready. Fullscreen support depends on the game and Game Bar.";
 pub const INPUT_HELP: &str = "Shortcuts work globally, including while typing in other apps. They observe input without blocking it. Windows and other applications keep their existing shortcuts. Wheel bindings are press-only.";
 
 #[cfg(test)]

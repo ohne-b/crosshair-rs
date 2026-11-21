@@ -439,7 +439,7 @@ impl Runtime {
     fn widget_unavailable(&self) -> &str {
         self.widget_start_error
             .as_deref()
-            .unwrap_or("Install the Windows package to use Game Bar output")
+            .unwrap_or("Install the Windows package to use Game Bar")
     }
 
     fn event(&mut self, event: Event) {

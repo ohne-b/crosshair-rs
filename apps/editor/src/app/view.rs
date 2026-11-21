@@ -341,7 +341,9 @@ impl App {
         );
         let widget = &self.status.widget;
         store.set_widget_installed(widget.installed);
-        let widget_status = widget.setup_hint().unwrap_or_else(|| {
+        let hint = widget.setup_hint();
+        store.set_widget_ready(hint.is_none());
+        let widget_status = hint.unwrap_or_else(|| {
             if self.state.settings.output_mode == OutputMode::Desktop {
                 "Ready to switch to Game Bar"
             } else if !widget.visible {

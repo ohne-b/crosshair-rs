@@ -86,7 +86,8 @@ export component Settings inherits Rectangle {
                         if Store.gamebar-setup || Store.output-mode == 1: VerticalLayout { spacing: 12px;
                             SectionTitle { text: "GAME BAR"; }
                             Group { Setting { label: Store.widget-status; last: true;
-                                if Store.widget-installed: ActionButton { text: "Open widget"; clicked => { Store.action("open-gamebar", ""); } }
+                                if Store.widget-ready && Store.output-mode == 0: ActionButton { text: "Use Game Bar"; primary: true; enabled: Store.interactive && !Store.switching-output; clicked => { Store.action("output-mode", "1"); } }
+                                if Store.widget-installed && (!Store.widget-ready || Store.output-mode == 1): ActionButton { text: "Open widget"; clicked => { Store.action("open-gamebar", ""); } }
                                 ActionButton { icon: @image-url("../../../../assets/icons/info-circle.svg"); label: "Game Bar setup"; quiet: true; clicked => { Store.action("gamebar-help", ""); } }
                             } }
                         }

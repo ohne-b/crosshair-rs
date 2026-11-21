@@ -455,7 +455,11 @@ impl App {
                         let _ = self.send("cancel-quit", Command::CancelQuit);
                     }
                 }
-                self.error(message);
+                // Display setup already shows this guidance and updates it as the user pins the widget.
+                if tag != "output-mode" || self.status.widget.setup_hint() != Some(message.as_str())
+                {
+                    self.error(message);
+                }
                 self.refresh_document();
             }
             Event::Engine(_, client::Event::Disconnected(message)) => {
