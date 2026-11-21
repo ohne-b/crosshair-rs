@@ -196,12 +196,13 @@ export component Designer inherits Rectangle {
                 if !Store.document-active: ActionButton { text: "Use"; primary: true; clicked => { Store.action("use-document", ""); } }
                 ActionButton { text: "Save"; primary: Store.dirty; enabled: Store.interactive; clicked => { Store.action("save", ""); } }
                 ActionButton { text: "Share"; icon: @image-url("../../../../assets/icons/file-export.svg"); quiet: true; clicked => { share-menu.show(); }
-                    share-menu := PopupWindow { x: min(0px, root.width + root.absolute-position.x - self.width - parent.absolute-position.x - 8px); y: parent.height + 4px; width: 168px; height: 84px; close-policy: close-on-click-outside; forward-focus: share-keys;
+                    share-menu := PopupWindow { x: min(0px, root.width + root.absolute-position.x - self.width - parent.absolute-position.x - 8px); y: parent.height + 4px; width: max(168px, share-items.preferred-width); height: share-items.preferred-height; close-policy: close-on-click-outside; forward-focus: share-keys;
                         share-keys := FocusScope { key-pressed(event) => { if event.text == Key.Escape { share-menu.close(); return accept; } return reject; }
                         Rectangle { background: Theme.panel; border-radius: 10px; border-width: 1px; border-color: Theme.border;
-                            VerticalLayout { padding: 8px; spacing: 2px;
+                            share-items := VerticalLayout { padding: 8px; spacing: 2px;
                                 ActionButton { text: "Export PNG"; align-left: true; quiet: true; clicked => { share-menu.close(); Store.action("export-png", ""); } }
                                 ActionButton { text: "Export SVG"; align-left: true; quiet: true; clicked => { share-menu.close(); Store.action("export-svg", ""); } }
+                                ActionButton { text: "Editable preset (.json)"; align-left: true; quiet: true; clicked => { share-menu.close(); Store.action("export-draft", Store.document-id); } }
                             }
                         }
                         }

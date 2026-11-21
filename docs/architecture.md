@@ -182,7 +182,7 @@ Toolbar: editable document name, File, undo/redo, Save and Share. Save or
 `Ctrl+S` commits the draft; ordinary edits never save automatically. The editor
 updates its canvas and sends a validated transient preview to the engine without
 changing the stored preset. File offers New, Open, Import, Duplicate and Export
-crosshair. Share exports the current draft as PNG or SVG.
+crosshair. Share offers that same editable preset export alongside PNG and SVG.
 
 The layer list has a collapse chevron, ordered names, visibility and per-row trash.
 Rename from the row; reorder by dragging, with neighboring rows moving aside. No footer menus
@@ -572,7 +572,7 @@ assets. PNG exports transparent rendered output. SVG exports vector shapes and
 text outlines, embeds cropped images at output resolution and raster outline
 effects, and uses SVG Gaussian blur filters. Blur and image sampling may differ
 slightly from the raster renderer. SVG output is capped at 16 MiB.
-Both Share exports use the current draft without saving it. Imports validate the whole
+All Share exports use the current draft without saving it. Imports validate the whole
 graph, create/remap IDs and merge once; all-data Replace requires explicit backup
 and confirmation. No partially applied imports or executable content.
 

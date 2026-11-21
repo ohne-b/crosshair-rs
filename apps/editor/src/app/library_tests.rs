@@ -225,6 +225,42 @@ fn file_menu_fits_its_five_icon_rows_at_both_text_sizes() -> Result<()> {
     Ok(())
 }
 
+#[test]
+fn share_menu_dispatches_each_draft_export_at_both_text_sizes() -> Result<()> {
+    let (ui, _window) = pixel_test_window()?;
+    ui.window().set_size(slint::LogicalSize::new(1280.0, 800.0));
+    let store = ui.global::<Store>();
+    store.set_page(1);
+    store.set_document_open(true);
+    store.set_document_id("draft".into());
+    let events = Rc::new(RefCell::new(Vec::new()));
+    let recorded = events.clone();
+    store.on_action(move |action, argument| recorded.borrow_mut().push((action, argument)));
+    ui.show()?;
+    for (scale, height) in [(1.0, 32.0), (2.0, 40.0)] {
+        ui.global::<crate::Theme>().set_text_scale(scale);
+        for (row, expected) in [
+            ("export-png", ""),
+            ("export-svg", ""),
+            ("export-draft", "draft"),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            click(&ui, 1080.0, 70.0);
+            let y = store.get_menu_y() + 8.0 + row as f32 * (height + 2.0) + height / 2.0;
+            click(&ui, 1080.0, y);
+            assert_eq!(
+                events.borrow_mut().pop(),
+                Some((expected.0.into(), expected.1.into())),
+                "Share row {row} at scale {scale}"
+            );
+        }
+    }
+    ui.hide()?;
+    Ok(())
+}
+
 fn mark_canvas_origin(store: &Store<'_>) {
     let dot = crosshair_renderer::Raster {
         width: 1,
