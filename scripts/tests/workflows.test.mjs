@@ -23,6 +23,7 @@ test('website and Markdown changes avoid application CI without skipping mixed a
     [['website/src/components/Hero.astro'], false, true],
     [['website/package-lock.json'], false, true],
     [['website/public/assets/logo.svg'], false, true],
+    [['assets/icons/brand-discord.svg'], true, true],
     [['README.md', 'docs/architecture.md', 'AGENTS.md'], false, false],
     [['website/README.md'], false, false],
     [['website/src/styles/global.css', 'docs/usage.md'], false, true],

@@ -4,12 +4,14 @@ on:
   pull_request:
     paths:
       - 'website/**'
+      - 'assets/icons/brand-discord.svg'
       - '.github/workflows/website-validation.yml'
       - '!**/*.md'
   push:
     branches: [main]
     paths:
       - 'website/**'
+      - 'assets/icons/brand-discord.svg'
       - '.github/workflows/website-validation.yml'
       - '!**/*.md'
   workflow_dispatch:

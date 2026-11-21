@@ -8,6 +8,7 @@
 
 <p align="center">
   <a href="LICENSE.md"><img src="https://img.shields.io/badge/license-GPLv3-F97316?style=flat-square" alt="License: GPLv3 with Game Bar exception"></a>
+  <a href="https://discord.gg/fX5yC8CduV"><img src="https://img.shields.io/badge/Discord-5865F2?style=flat-square&amp;logo=discord&amp;logoColor=white" alt="Join Discord"></a>
 </p>
 
 ![crosshair-rs dashboard showing the Browse crosshair collection](.github/assets/crosshairs.webp)
