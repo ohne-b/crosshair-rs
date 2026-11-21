@@ -179,7 +179,12 @@ try {
     $custom.Description = 'Custom crosshair shortcut'
     $custom.Save()
     $customHash = (Get-FileHash -LiteralPath $shortcuts[0]).Hash
+    $ownedDesktop = Join-Path $fixtureRoot 'desktop.lnk'
+    Copy-Item -LiteralPath $shortcuts[0] -Destination $ownedDesktop
+    # Package uninstall can remove the cached artwork while the desktop link survives.
+    Remove-Item -LiteralPath $icon
     Run-Setup '/S /DESKTOP=1'
+    if ((Get-FileHash -LiteralPath $icon).Hash -cne (Get-FileHash -LiteralPath $packedIcon).Hash) { throw 'Reinstall did not restore the shortcut artwork.' }
     if ((Get-FileHash -LiteralPath $shortcuts[0]).Hash -cne $customHash) { throw 'An enabled shortcut lost its user customization.' }
     Run-Setup '/S'
     Run-Setup '/S /STARTUP=1'
@@ -222,18 +227,17 @@ try {
     if ($residents.Count -ne 1) { throw 'Startup configuration must leave one isolated engine running.' }
     $enginePid = $residents[0].ProcessId
     $editor = Get-Process -Id $editorPid -ErrorAction SilentlyContinue
-    if ($editor) {
-        try {
-            $deadline = [DateTime]::UtcNow.AddSeconds(15)
-            while (!$editor.HasExited -and ![PackageActivation]::HasLargeIcon($editor.MainWindowHandle)) {
-                if ([DateTime]::UtcNow -gt $deadline) { throw 'The isolated editor did not expose its large taskbar icon.' }
-                Start-Sleep -Milliseconds 50
-                $editor.Refresh()
-            }
-            if ($editor.HasExited -or !$editor.CloseMainWindow()) { throw 'The isolated editor window closed unexpectedly.' }
-            if (!$editor.WaitForExit(15000)) { throw 'The isolated editor did not close.' }
-        } finally { $editor.Dispose() }
-    }
+    if (!$editor) { throw 'The isolated editor exited before its taskbar icon could be checked.' }
+    try {
+        $deadline = [DateTime]::UtcNow.AddSeconds(15)
+        while (!$editor.HasExited -and ![PackageActivation]::HasLargeIcon($editor.MainWindowHandle)) {
+            if ([DateTime]::UtcNow -gt $deadline) { throw 'The isolated editor did not expose its large taskbar icon.' }
+            Start-Sleep -Milliseconds 50
+            $editor.Refresh()
+        }
+        if ($editor.HasExited -or !$editor.CloseMainWindow()) { throw 'The isolated editor window closed unexpectedly.' }
+        if (!$editor.WaitForExit(15000)) { throw 'The isolated editor did not close.' }
+    } finally { $editor.Dispose() }
     $markerPath = Join-Path $env:LOCALAPPDATA "Packages/$($installed.PackageFamilyName)/TempState/crosshair-widget-$session.open"
     $marker = [IO.FileStream]::new($markerPath, 'CreateNew', 'Write', 'None', 4096, [IO.FileOptions]::DeleteOnClose)
     try { Assert-WidgetWindow $true } finally { $marker.Dispose() }
@@ -285,6 +289,8 @@ try {
         & $makeappx pack /d $layout /p $previous | Out-Null
         if ($LASTEXITCODE) { throw 'Could not pack the previous-version fixture.' }
         Remove-AppxPackage -Package $installed.PackageFullName
+        Copy-Item -LiteralPath $ownedDesktop -Destination $shortcuts[0] -Force
+        Assert-ShortcutDefaults 1
         Add-AppxPackage -AllowUnsigned -Path $previous
         $old = Get-AppxPackage -Name $identity.Name
         if ($old.Version -ne $previousVersion -or $old.PackageFamilyName -cne $installed.PackageFamilyName) { throw 'Wrong upgrade fixture registration.' }
