@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+## [v0.2.0](https://github.com/ohne-b/crosshair-rs/releases/tag/v0.2.0) 2026-11-21
+
+- feat: Resize shapes, gaps and dots with corner handles. Rotated handles show the matching cursor, and sliders give finer control over small values. ([#32](https://github.com/ohne-b/crosshair-rs/pull/32))
+- fix: Keep small crosshairs symmetric when zoomed, including touching tips, arcs and blur. The center marker stays visible against the pixel grid and alignment guides appear while dragging. ([#32](https://github.com/ohne-b/crosshair-rs/pull/32))
+- refactor: Zoom the canvas around the mouse pointer with the wheel. The Fit and 100% buttons have been removed. ([#32](https://github.com/ohne-b/crosshair-rs/pull/32))
+- feat: Export an editable JSON preset directly from the current draft, including unsaved changes. The File menu has labeled actions with icons, and Save highlights pending edits. ([#32](https://github.com/ohne-b/crosshair-rs/pull/32))
+- feat: See available updates above Settings in the editor sidebar. ([#32](https://github.com/ohne-b/crosshair-rs/pull/32))
+- fix: Show a checkmark after saving a crosshair from Browse and allow saving another copy. ([#31](https://github.com/ohne-b/crosshair-rs/pull/31))
+- fix: Restore rendering in the pinned Game Bar widget. Display settings show when to open and pin the widget and keep the desktop crosshair visible until Game Bar is ready. ([#30](https://github.com/ohne-b/crosshair-rs/pull/30))
+- fix: Preserve shortcut choices during upgrades and let setup retry if Windows reports the app is in use. ([#30](https://github.com/ohne-b/crosshair-rs/pull/30))
+- fix: Keep Preview and release sessions separate and identify their widgets in the Game Bar picker. ([#30](https://github.com/ohne-b/crosshair-rs/pull/30))
+- fix: Give the engine, editor and Game Bar widget distinct process names and crosshair icons in Task Manager. ([#30](https://github.com/ohne-b/crosshair-rs/pull/30))
+- fix: Use the native Windows Start entry and show the crosshair icon on new desktop shortcuts, the taskbar and the app switcher. ([#34](https://github.com/ohne-b/crosshair-rs/pull/34))
+- fix: Name the Task Manager group `crosshair-rs` and keep the individual process names visible underneath. ([#34](https://github.com/ohne-b/crosshair-rs/pull/34))
+- fix: Apply the launch-at-sign-in setting on existing installations when opening the app from Start or Game Bar. ([#29](https://github.com/ohne-b/crosshair-rs/pull/29))
+- fix: Read the sign-in preference when General settings opens so starting the app or switching displays no longer wakes Runtime Broker for that setting. ([#30](https://github.com/ohne-b/crosshair-rs/pull/30))
+- fix: Let Windows close Runtime Broker after reading or changing the sign-in setting while the overlay keeps running. ([#34](https://github.com/ohne-b/crosshair-rs/pull/34))
+- feat: Link to the community Discord from the website and README. ([#27](https://github.com/ohne-b/crosshair-rs/pull/27))
+- docs: Clarify Windows availability and memory use on the homepage. ([#28](https://github.com/ohne-b/crosshair-rs/pull/28))
+
 ## [v0.2.0-rc.2](https://github.com/ohne-b/crosshair-rs/releases/tag/v0.2.0-rc.2) 2026-11-21
 
 - fix: Give new desktop shortcuts the crosshair icon. Setup now uses the Start menu entry that Windows creates automatically. ([#34](https://github.com/ohne-b/crosshair-rs/pull/34))
