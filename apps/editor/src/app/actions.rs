@@ -624,9 +624,10 @@ impl App {
                 profile: value.parse()?,
             })?,
             "read-startup" => {
-                if !store.get_reading_startup() {
+                if store.get_startup_read() != StartupRead::Checking {
+                    store.set_startup_read(StartupRead::Unavailable);
                     self.send("read-startup", Command::ReadStartup)?;
-                    store.set_reading_startup(true);
+                    store.set_startup_read(StartupRead::Checking);
                 }
             }
             "startup" => self.send(

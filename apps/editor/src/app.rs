@@ -12,7 +12,7 @@ mod prompts;
 mod view;
 
 use crate::{
-    AppWindow, Store,
+    AppWindow, StartupRead, Store,
     features::designer::{Document, Field},
     platform::{
         client::{self, Client, Options},

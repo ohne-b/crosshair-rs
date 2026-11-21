@@ -267,11 +267,14 @@ impl App {
                         .set_switching_output(self.output_ack_revision.is_some());
                 }
                 if tag == "read-startup" {
-                    self.window()?.global::<Store>().set_reading_startup(false);
-                    if let Reply::Status { status } = reply
-                        && accept_status(&mut self.status, status)
-                    {
+                    let ui = self.window()?;
+                    let store = ui.global::<Store>();
+                    if let Reply::Status { status } = reply {
+                        accept_status(&mut self.status, status);
+                        store.set_startup_read(StartupRead::Ready);
                         self.refresh_status();
+                    } else {
+                        store.set_startup_read(StartupRead::Unavailable);
                     }
                 } else if tag == "preview" {
                     self.preview_sent = self.preview_inflight.take();
@@ -403,7 +406,9 @@ impl App {
                 },
             ) => {
                 if tag == "read-startup" {
-                    self.window()?.global::<Store>().set_reading_startup(false);
+                    self.window()?
+                        .global::<Store>()
+                        .set_startup_read(StartupRead::Unavailable);
                 }
                 if tag == "output-mode"
                     || tag == "connection"
@@ -515,7 +520,9 @@ impl App {
                 self.refresh_document();
             }
             Event::Engine(_, client::Event::Disconnected(message)) => {
-                self.window()?.global::<Store>().set_reading_startup(false);
+                self.window()?
+                    .global::<Store>()
+                    .set_startup_read(StartupRead::Unavailable);
                 self.output_ack_revision = None;
                 self.window()?.global::<Store>().set_switching_output(false);
                 self.document.dirty = self.draft_needs_saving();

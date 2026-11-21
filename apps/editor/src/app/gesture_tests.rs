@@ -136,7 +136,10 @@ fn startup_toggle_uses_windows_state_and_always_requests_reconciliation() -> Res
     app.state.settings.launch_at_login = true;
     app.action("read-startup", "")?;
     app.action("read-startup", "")?;
-    assert!(ui.global::<Store>().get_reading_startup());
+    assert_eq!(
+        ui.global::<Store>().get_startup_read(),
+        StartupRead::Checking
+    );
     app.event(Event::Engine(
         0,
         client::Event::Completed {
@@ -150,7 +153,7 @@ fn startup_toggle_uses_windows_state_and_always_requests_reconciliation() -> Res
             },
         },
     ))?;
-    assert!(!ui.global::<Store>().get_reading_startup());
+    assert!(ui.global::<Store>().get_show_startup_switch());
     assert!(!ui.global::<Store>().get_startup());
     assert!(ui.global::<Store>().get_startup_known());
     app.action("startup", "true")?;
@@ -161,6 +164,17 @@ fn startup_toggle_uses_windows_state_and_always_requests_reconciliation() -> Res
     app.status.startup_enabled = Some(true);
     app.refresh_status();
     assert!(ui.global::<Store>().get_startup());
+    app.action("read-startup", "")?;
+    app.event(Event::Engine(
+        0,
+        client::Event::Failed {
+            tag: "read-startup".into(),
+            message: "Windows is busy".into(),
+            conflict: false,
+        },
+    ))?;
+    app.refresh_status();
+    assert!(!ui.global::<Store>().get_show_startup_switch());
     app.status.startup_enabled = None;
     app.refresh_status();
     assert!(!ui.global::<Store>().get_startup());
