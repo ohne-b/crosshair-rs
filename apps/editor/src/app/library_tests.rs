@@ -251,6 +251,7 @@ fn canvas_highlights_the_hovered_corner_and_keeps_it_during_resize() -> Result<(
     let store = ui.global::<Store>();
     store.set_page(1);
     store.set_document_open(true);
+    store.on_format_number(|n| crate::features::designer::format_number(n).into());
     store.set_selection_bounds(crate::SelectionBounds {
         active: true,
         x: -12.0,
@@ -310,7 +311,21 @@ fn canvas_highlights_the_hovered_corner_and_keeps_it_during_resize() -> Result<(
     check(Some(0))?;
     move_to(0, 0);
     check(None)?;
+    move_to(96, 64);
     snapshot(&window, "canvas-handles.png")?;
+    store.set_selection_bounds(crate::SelectionBounds {
+        x: -0.5,
+        y: -0.5,
+        width: 1.0,
+        height: 1.0,
+        ..store.get_selection_bounds()
+    });
+    store.set_zoom(1.0);
+    move_to(-1, -1);
+    let tiny = ui.window().take_snapshot()?;
+    let grip = tiny.as_slice()[origin - stride - 1];
+    // A grip centered between physical pixels blends its accent with the dark edge.
+    assert!(grip.r.saturating_sub(grip.g) > 50 && grip.g.saturating_sub(grip.b) > 25);
     ui.hide()?;
     Ok(())
 }

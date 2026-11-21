@@ -263,6 +263,7 @@ export component Designer inherits Rectangle {
                         property <length> cx: canvas.origin-x + Store.selection-bounds.x * canvas.design-pixel + self.w / 2;
                         property <length> cy: canvas.origin-y + Store.selection-bounds.y * canvas.design-pixel + self.h / 2;
                         property <angle> angle: Store.selection-bounds.rotation * 1deg;
+                        property <color> outline: Theme.high-contrast ? Theme.text : Theme.muted.with-alpha(0.82);
                         pure function corner-x(x: float, y: float) -> length {
                             return self.cx + (x * self.w * cos(self.angle) - y * self.h * sin(self.angle)) / 2;
                         }
@@ -274,29 +275,39 @@ export component Designer inherits Rectangle {
                         Path {
                             width: canvas.width; height: canvas.height;
                             viewbox-width: self.width / 1px; viewbox-height: self.height / 1px;
-                            stroke-width: 1px; stroke: Theme.muted;
+                            stroke-width: 1phx; stroke: box.outline;
                             MoveTo { x: box.corner-x(-1,-1) / 1px; y: box.corner-y(-1,-1) / 1px; }
                             LineTo { x: box.corner-x(1,-1) / 1px; y: box.corner-y(1,-1) / 1px; }
                             LineTo { x: box.corner-x(1,1) / 1px; y: box.corner-y(1,1) / 1px; }
                             LineTo { x: box.corner-x(-1,1) / 1px; y: box.corner-y(-1,1) / 1px; }
                             Close {}
+                            MoveTo { x: box.corner-x(0,-1) / 1px; y: box.corner-y(0,-1) / 1px; }
+                            LineTo { x: box.rotate-x / 1px; y: box.rotate-y / 1px; }
                         }
-                        for corner in 4: Rectangle {
-                            property <float> sx: mod(corner, 2) == 0 ? -1 : 1;
-                            property <float> sy: corner < 2 ? -1 : 1;
-                            property <bool> active: canvas.active-handle.sx == self.sx && canvas.active-handle.sy == self.sy;
-                            x: box.corner-x(self.sx, self.sy) - self.width / 2;
-                            y: box.corner-y(self.sx, self.sy) - self.height / 2;
-                            width: 6px; height: 6px; background: self.active ? Theme.orange : Theme.canvas;
-                            border-width: 1px; border-color: self.active ? Theme.orange : Theme.muted;
+                        // Paint the active grip last when a tiny selection's corners overlap.
+                        for corner[i] in [
+                            { sx: -1, sy: -1 }, { sx: 1, sy: -1 }, { sx: -1, sy: 1 }, { sx: 1, sy: 1 },
+                            { sx: canvas.active-handle.sx, sy: canvas.active-handle.sy },
+                        ]: Rectangle {
+                            visible: corner.sx != 0;
+                            property <bool> active: i == 4;
+                            x: box.corner-x(corner.sx, corner.sy) - self.width / 2;
+                            y: box.corner-y(corner.sx, corner.sy) - self.height / 2;
+                            width: clamp(min(box.w, box.h) / 2, 4px, 8px); height: self.width;
+                            border-radius: self.width / 4; background: self.active ? Theme.orange : Theme.text;
+                            border-width: 1phx; border-color: self.active ? Theme.on-accent : Theme.canvas;
                         }
                         Rectangle {
-                            x: box.rotate-x - 3px; y: box.rotate-y - 3px; width: 6px; height: 6px;
-                            border-radius: 3px; background: Theme.canvas; border-width: 1px; border-color: Theme.orange;
+                            x: box.rotate-x - self.width / 2; y: box.rotate-y - self.height / 2;
+                            width: 8px; height: 8px; border-radius: self.width / 2;
+                            background: canvas.active-handle.rotate ? Theme.orange : Theme.canvas;
+                            border-width: 1px; border-color: canvas.active-handle.rotate ? Theme.on-accent : Theme.text;
                         }
                         Rectangle {
                             x: box.cx - self.width / 2; y: box.cy + (abs(sin(box.angle)) * box.w + abs(cos(box.angle)) * box.h) / 2 + 8px;
-                            width: dimensions.preferred-width + 12px; height: 24px; background: Theme.panel; border-radius: 5px;
+                            width: dimensions.preferred-width + 14px; height: max(20px, 10px * Theme.text-scale + 8px);
+                            border-radius: self.height / 2; background: Theme.panel;
+                            border-width: 1phx; border-color: Theme.high-contrast ? Theme.text : Theme.border;
                             dimensions := Text {
                                 text: Store.format-number(Store.selection-bounds.width) + " × " + Store.format-number(Store.selection-bounds.height) + " px";
                                 color: Theme.muted; font-size: 10px * Theme.text-scale; horizontal-alignment: center; vertical-alignment: center;
