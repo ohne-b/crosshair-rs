@@ -31,7 +31,6 @@ Page custom OptionsPage OptionsLeave
 
 Var Mode
 Var DesktopShortcut
-Var StartMenuShortcut
 Var Startup
 Var DesktopControl
 Var StartupControl
@@ -40,25 +39,12 @@ Function .onInit
     StrCpy $FailureCode 1
     StrCpy $Mode "install"
     StrCpy $DesktopShortcut "keep"
-    StrCpy $StartMenuShortcut "keep"
     StrCpy $Startup 0
     ${GetParameters} $0
     ClearErrors
     ${GetOptions} $0 "/DESKTOP=" $1
     ${IfNot} ${Errors}
         StrCpy $DesktopShortcut $1
-    ${EndIf}
-    ClearErrors
-    ${GetOptions} $0 "/STARTMENU=" $1
-    ${IfNot} ${Errors}
-        ; Keep explicit legacy switches working. Interactive setup uses the packaged Start entry.
-        StrCpy $StartMenuShortcut $1
-        ${If} $1 != 0
-        ${AndIf} $1 != 1
-        ${AndIf} $1 != "keep"
-            SetErrorLevel 1
-            Quit
-        ${EndIf}
     ${EndIf}
     ClearErrors
     ${GetOptions} $0 "/STARTUP=" $1
@@ -97,7 +83,7 @@ Function .onInit
 FunctionEnd
 
 Function OptionsPage
-    !insertmacro MUI_HEADER_TEXT "Options" "Choose shortcuts and startup options."
+    !insertmacro MUI_HEADER_TEXT "Options" "Choose desktop shortcut and startup options."
     ${If} $DesktopShortcut == "keep"
         InitPluginsDir
         SetOutPath "$PLUGINSDIR"
@@ -187,14 +173,13 @@ Section "Install"
     ${EndIf}
     ${If} $Mode == "install"
         ${If} $DesktopShortcut == "keep"
-        ${AndIf} $StartMenuShortcut == "keep"
         ${AndIf} $Startup == 0
             Goto success
         ${EndIf}
         StrCpy $0 "--options"
         IfSilent 0 +2
         StrCpy $0 "--options-silent"
-        nsExec::ExecToStack '"$PLUGINSDIR\install.exe" $0 $DesktopShortcut $StartMenuShortcut $Startup'
+        nsExec::ExecToStack '"$PLUGINSDIR\install.exe" $0 $DesktopShortcut $Startup'
         Pop $1
         Pop $2
         ${If} $1 != 0

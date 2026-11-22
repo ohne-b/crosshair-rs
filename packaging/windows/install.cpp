@@ -197,9 +197,9 @@ void enable_startup(Windows::ApplicationModel::Package const& package) {
     }
 }
 
-fs::path shortcut_path(REFKNOWNFOLDERID folder, std::wstring const& name) {
+fs::path desktop_shortcut_path(std::wstring const& name) {
     PWSTR raw{};
-    check_hresult(SHGetKnownFolderPath(folder, 0, nullptr, &raw));
+    check_hresult(SHGetKnownFolderPath(FOLDERID_Desktop, 0, nullptr, &raw));
     fs::path path = fs::path(raw) / (name + L".lnk");
     CoTaskMemFree(raw);
     return path;
@@ -226,8 +226,7 @@ int shortcut_defaults() {
     PackageManager manager;
     auto packages = manager.FindPackagesForUser(L"", payload_name, payload_publisher);
     auto current = packages.First();
-    auto name = shortcut_name();
-    auto path = shortcut_path(FOLDERID_Desktop, name);
+    auto path = desktop_shortcut_path(shortcut_name());
     if (!fs::exists(path)) return !current.HasCurrent();
     if (!current.HasCurrent()) return 2; // Leave an existing link alone until Windows can resolve its target.
     return owns_shortcut(path, std::wstring(current.Current().Id().FamilyName()) + L"!Editor");
@@ -244,9 +243,9 @@ fs::path shortcut_icon(Windows::ApplicationModel::Package const& package) {
     return icon;
 }
 
-void shortcut(REFKNOWNFOLDERID folder, std::wstring const& name, std::wstring const& app,
-              bool enabled, Windows::ApplicationModel::Package const& package) {
-    auto path = shortcut_path(folder, name);
+void set_desktop_shortcut(std::wstring const& app, bool enabled, Windows::ApplicationModel::Package const& package) {
+    auto name = shortcut_name();
+    auto path = desktop_shortcut_path(name);
     if (fs::exists(path)) {
         if (!owns_shortcut(path, app)) {
             if (enabled) throw hresult_error(E_FAIL, L"A different shortcut already uses the crosshair-rs name.");
@@ -302,7 +301,7 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int) {
         auto verify_only = args.size() == 2 && args[1] == L"--verify";
         quiet = verify_only || (args.size() > 1 && args[1].ends_with(L"-silent"));
         auto elevated = args.size() == 3 && (args[1] == L"--elevated" || args[1] == L"--elevated-silent");
-        auto apply_options = args.size() == 5 && (args[1] == L"--options" || args[1] == L"--options-silent");
+        auto apply_options = args.size() == 4 && (args[1] == L"--options" || args[1] == L"--options-silent");
         auto launch = args.size() == 2 && args[1] == L"--launch";
         if (!(verify_only || apply_options || launch || (args.size() == 2 && (args[1] == L"--install" || args[1] == L"--install-silent")) || elevated))
             throw hresult_invalid_argument();
@@ -322,14 +321,12 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int) {
             auto package_info = installed();
             auto app = std::wstring(package_info.Id().FamilyName()) + L"!Editor";
             if (launch) { activate(app, L""); return 0; }
-            if (args[2] != L"keep") option(args[2]);
-            if (args[3] != L"keep") option(args[3]);
-            auto startup = option(args[4]);
+            auto keep_desktop = args[2] == L"keep";
+            auto desktop = !keep_desktop && option(args[2]);
+            auto startup = option(args[3]);
             // An unchecked option must not disable an existing sign-in preference on upgrade.
             if (startup) enable_startup(package_info);
-            auto name = shortcut_name();
-            if (args[2] != L"keep") shortcut(FOLDERID_Desktop, name, app, option(args[2]), package_info);
-            if (args[3] != L"keep") shortcut(FOLDERID_Programs, name, app, option(args[3]), package_info);
+            if (!keep_desktop) set_desktop_shortcut(app, desktop, package_info);
             return 0;
         }
         if (elevated && args[2] != user_sid())

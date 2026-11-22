@@ -136,7 +136,8 @@ $installed = $null
 $engineStarted = $false
 try {
     Assert-ShortcutDefaults 1
-    Run-Setup '/S /DESKTOP=1 /STARTUP=1'
+    # Old command lines must still resolve Start to the packaged editor.
+    Run-Setup '/S /DESKTOP=1 /STARTMENU=1 /STARTUP=1'
     Assert-ShortcutDefaults 1
     $installed = Get-AppxPackage -Name $identity.Name
     if (!$installed -or $installed.Version -ne $build.packageVersion -or $installed.Publisher -cne $identity.Publisher -or $installed.Status -ne 'Ok') { throw 'Windows did not register the expected package.' }
@@ -161,10 +162,6 @@ try {
     if ((Get-FileHash -LiteralPath $icon).Hash -cne (Get-FileHash -LiteralPath $packedIcon).Hash) { throw 'Shortcut icon differs from the installed artwork.' }
     $links = New-Object -ComObject WScript.Shell
     if ($links.CreateShortcut($shortcuts[0]).IconLocation -ine ($icon + ',0')) { throw 'Desktop shortcut has no explicit crosshair icon.' }
-    Run-Setup '/S /STARTMENU=1'
-    if (!(Test-Path -LiteralPath $shortcuts[1])) { throw 'An explicit legacy Start shortcut request failed.' }
-    Run-Setup '/S /STARTMENU=0'
-    if (Test-Path -LiteralPath $shortcuts[1]) { throw 'Explicitly clearing the legacy Start link failed.' }
     $custom = $links.CreateShortcut($shortcuts[0])
     $custom.Description = 'Custom crosshair shortcut'
     $custom.IconLocation = ',0'
@@ -246,8 +243,13 @@ try {
         $info = $engine.StandardOutput.ReadToEnd() | ConvertFrom-Json
         if ($engine.ExitCode -or $info.version -ne $build.version) { throw 'Installed engine version mismatch.' }
     } finally { $engine.Dispose() }
+    # Older installers created Start links with the same target and identity as the desktop link.
+    Copy-Item -LiteralPath $shortcuts[0] -Destination $shortcuts[1]
+    $startHash = (Get-FileHash -LiteralPath $shortcuts[1]).Hash
     Run-Setup '/S /DESKTOP=0 /STARTMENU=0'
-    foreach ($shortcut in $shortcuts) { if (Test-Path -LiteralPath $shortcut) { throw 'Explicitly clearing a shortcut option did not remove its owned shortcut.' } }
+    if (Test-Path -LiteralPath $shortcuts[0]) { throw 'Clearing the desktop option did not remove its shortcut.' }
+    if ((Get-FileHash -LiteralPath $shortcuts[1]).Hash -cne $startHash) { throw 'Setup changed an existing Start shortcut.' }
+    Remove-Item -LiteralPath $shortcuts[1]
     Assert-ShortcutDefaults 0
     Run-Setup '/S /DESKTOP=1'
     Assert-ShortcutDefaults 1
@@ -262,7 +264,7 @@ try {
     }
     Assert-ShortcutDefaults 0
     $unrelatedHashes = @($shortcuts | ForEach-Object { (Get-FileHash -LiteralPath $_).Hash })
-    Run-Setup '/S /DESKTOP=0 /STARTMENU=0'
+    Run-Setup '/S /DESKTOP=0'
     for ($index = 0; $index -lt $shortcuts.Count; $index++) {
         if ((Get-FileHash -LiteralPath $shortcuts[$index]).Hash -cne $unrelatedHashes[$index]) { throw 'Setup changed an unrelated shortcut with the same name.' }
     }
