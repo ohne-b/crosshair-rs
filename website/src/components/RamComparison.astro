@@ -65,6 +65,26 @@ const comparison = createComparison(data);
   </div>
 </section>
 
+<script>
+  if ('IntersectionObserver' in window && matchMedia('(prefers-reduced-motion: no-preference)').matches) {
+    const observer = new IntersectionObserver((entries) => {
+      for (const { target, isIntersecting } of entries) {
+        if (!isIntersecting) continue;
+        target.closest('.ram-columns')?.classList.replace('ram-pending', 'ram-revealed');
+        observer.unobserve(target);
+      }
+    }, { rootMargin: '0px 0px 128px' });
+
+    for (const chart of document.querySelectorAll('.ram-columns')) {
+      // Start shortly before the bars' baseline reaches the viewport.
+      const label = chart.querySelector('.ram-label');
+      if (!label) continue;
+      chart.classList.add('ram-pending');
+      observer.observe(label);
+    }
+  }
+</script>
+
 <style>
   .ram-comparison {
     --ram-open: #81858a;
@@ -208,35 +228,19 @@ const comparison = createComparison(data);
     margin: 0 0 8px;
   }
   @media (prefers-reduced-motion: no-preference) {
-    @supports ((animation-timeline: view()) and (animation-range: entry)) {
-      .ram-columns {
-        view-timeline: --ram-chart block;
-      }
-      .ram-bar {
-        transform-origin: bottom;
-        /* Longhands prevent the build from folding the timeline into unsupported shorthand. */
-        animation-name: ram-grow;
-        animation-timing-function: ease-out;
-        animation-fill-mode: both;
-        animation-timeline: --ram-chart;
-        animation-range: entry 20% entry 90%;
-      }
-      .ram-amount {
-        animation-name: ram-amount-enter;
-        animation-timing-function: ease-out;
-        animation-fill-mode: both;
-        animation-timeline: --ram-chart;
-        animation-range: entry 55% entry 95%;
-      }
+    .ram-pending .ram-bar {
+      clip-path: inset(100% 0 0);
     }
-  }
-  @keyframes ram-grow {
-    from { transform: scaleY(0); }
-    to { transform: scaleY(1); }
-  }
-  @keyframes ram-amount-enter {
-    from { opacity: 0; }
-    to { opacity: 1; }
+    .ram-revealed .ram-bar {
+      clip-path: inset(0);
+      transition: clip-path 850ms cubic-bezier(.22, .61, .36, 1);
+    }
+    .ram-pending .ram-amount {
+      opacity: 0;
+    }
+    .ram-revealed .ram-amount {
+      transition: opacity 300ms ease-out 350ms;
+    }
   }
   @media (width >= 980px) {
     .ram-amount-side {
