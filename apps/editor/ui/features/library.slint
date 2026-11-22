@@ -5,6 +5,7 @@ import { Theme } from "../shared/tokens.slint";
 import { ActionButton, EditField, RenameField, Divider } from "../shared/controls.slint";
 
 export component Library inherits Rectangle {
+    callback import-requested;
     background: Theme.canvas; border-top-left-radius: 12px;
     property <int> columns: clamp(floor((root.width - (Store.browsing ? 40px : 220px)) / 210px), 2, 20);
     changed columns => { Store.action("library-columns", root.columns); }
@@ -25,7 +26,10 @@ export component Library inherits Rectangle {
                 }
                 Rectangle { horizontal-stretch: 1; }
                 if !Store.browsing: Rectangle { width: import-button.preferred-width;
-                    import-button := ActionButton { y: (parent.height - self.height) / 2; text: "Import"; quiet: true; icon: @image-url("../../../../assets/icons/download.svg"); clicked => { Store.action("import", ""); } }
+                    import-button := ActionButton {
+                        y: (parent.height - self.height) / 2; text: "Import"; quiet: true; icon: @image-url("../../../../assets/icons/download.svg");
+                        clicked => { Store.menu-x = (self.absolute-position.x + self.width) / 1px; root.import-requested(); }
+                    }
                 }
                 if !Store.browsing: Rectangle { width: new-button.preferred-width;
                     new-button := ActionButton { y: (parent.height - self.height) / 2; text: "New"; primary: true; icon: @image-url("../../../../assets/icons/plus.svg"); clicked => { Store.action("new-preset", ""); } }

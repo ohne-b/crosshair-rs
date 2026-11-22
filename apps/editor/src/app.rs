@@ -440,6 +440,7 @@ pub fn run() -> Result<()> {
         slint::CloseRequestResponse::KeepWindowShown
     });
     use slint::winit_030::{EventResult, WinitWindowAccessor};
+    let drop_ui = ui.as_weak();
     let mut frame_ready = false;
     // A zero-delay timer may run before Winit has created its native window.
     ui.window().on_winit_window_event(move |window, event| {
@@ -450,11 +451,10 @@ pub fn run() -> Result<()> {
         ) {
             ui_event(UiEvent::Action("animation-stop".into(), String::new()));
         }
-        if let slint::winit_030::winit::event::WindowEvent::DroppedFile(path) = event {
-            ui_event(UiEvent::Action(
-                "drop-image".into(),
-                path.to_string_lossy().into_owned(),
-            ));
+        if let slint::winit_030::winit::event::WindowEvent::DroppedFile(path) = event
+            && let Some(ui) = drop_ui.upgrade()
+        {
+            ui.invoke_file_dropped(path.to_string_lossy().as_ref().into());
         }
         if !frame_ready && window.has_winit_window() {
             frame_ready = true;

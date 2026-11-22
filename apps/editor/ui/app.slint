@@ -1,7 +1,7 @@
 import "../../../assets/fonts/Manrope.ttf";
 import { Store } from "shared/models.slint";
 import { Theme } from "shared/tokens.slint";
-import { ActionButton } from "shared/controls.slint";
+import { ActionButton, ImportPanel } from "shared/controls.slint";
 import { ScrollView } from "std-widgets.slint";
 import { TitleBar } from "shell/titlebar.slint";
 import { Navigation } from "shell/navigation.slint";
@@ -23,6 +23,17 @@ export component AppWindow inherits Window {
     default-font-family: "Manrope"; default-font-size: 13px * Theme.text-scale;
     forward-focus: keys;
     public function finish-input() { keys.focus(); }
+    property <bool> saved-library: Store.page == 0 && !Store.browsing && Store.modal-kind == 0 && !Store.read-only;
+    changed saved-library => { if !root.saved-library { preset-import.close(); } }
+    public function file-dropped(path: string) {
+        if Store.modal-kind != 0 || Store.read-only { return; }
+        if root.saved-library {
+            preset-import.close();
+            Store.action("import", path);
+        } else if Store.page == 1 {
+            Store.action("drop-image", path);
+        }
+    }
     property <int> modal-kind: Store.modal-kind;
     property <bool> menu-open: menu.is-open;
     property <bool> help-open: help.is-open;
@@ -34,6 +45,17 @@ export component AppWindow inherits Window {
     }
     changed menu-open => { if !root.menu-open && Store.modal-kind == 3 { Store.action("modal-cancel", ""); } }
     changed help-open => { if !root.help-open && Store.modal-kind == 5 { Store.action("modal-cancel", ""); } }
+    preset-import := PopupWindow {
+        x: clamp(Store.menu-x * 1px - self.width, 8px, root.width - self.width - 8px);
+        y: clamp(Store.menu-y * 1px, 8px, root.height - self.height - 8px);
+        width: min(280px * Theme.text-scale, root.width - 16px); height: max(176px, preset-panel.min-height);
+        close-policy: close-on-click-outside; forward-focus: preset-panel;
+        preset-panel := ImportPanel {
+            icon: @image-url("../../../assets/icons/folder.svg");
+            instruction: "Drop a crosshair file into your library"; formats: ".json or .crosshair";
+            browse => { preset-import.close(); Store.action("import", ""); }
+        }
+    }
     menu := PopupWindow {
         x: clamp(Store.menu-x * 1px, 8px, root.width - self.width - 8px);
         y: clamp(Store.menu-y * 1px, 48px, root.height - self.height - 8px);
@@ -88,7 +110,7 @@ export component AppWindow inherits Window {
                     }
                 }
                 Rectangle { background: Store.error != "" ? #382821 : transparent;
-                if Store.page == 0: Library {}
+                if Store.page == 0: Library { import-requested => { preset-import.show(); } }
                 if Store.page == 1: Designer {}
                 if Store.page == 2: Keybinds {}
                 if Store.page == 3: Settings {}

@@ -5,7 +5,7 @@ import { NumericField } from "../shared/numeric-field.slint";
 import { ColorField } from "../shared/color-field.slint";
 import { PresetPicker } from "../shared/preset-picker.slint";
 import { Theme } from "../shared/tokens.slint";
-import { ActionButton, EditField, RenameField, Switch, Divider } from "../shared/controls.slint";
+import { ActionButton, EditField, RenameField, Switch, Divider, ImportPanel } from "../shared/controls.slint";
 
 component PreviewTrigger inherits ActionButton {
     in property <string> trigger;
@@ -418,13 +418,10 @@ export component Designer inherits Rectangle {
                         x: (parent.width - self.width) / 2; y: -self.height - 8px; width: 280px; height: 176px;
                         close-policy: close-on-click-outside; forward-focus: image-keys;
                         image-keys := FocusScope { key-pressed(event) => { if event.text == Key.Escape { image-popup.close(); return accept; } return reject; }
-                            Rectangle { background: Theme.panel; border-radius: 10px; border-width: 1px; border-color: Theme.border;
-                                VerticalLayout { padding: 16px; spacing: 12px;
-                                    Image { source: @image-url("../../../../assets/icons/photo.svg"); colorize: Theme.muted; width: 24px; height: 24px; }
-                                    Text { text: "Drop an image onto the canvas"; color: Theme.text; font-size: 12px * Theme.text-scale; horizontal-alignment: center; }
-                                    Text { text: "PNG, JPEG, SVG or the first GIF frame"; color: Theme.muted; font-size: 11px * Theme.text-scale; horizontal-alignment: center; wrap: word-wrap; }
-                                    ActionButton { text: "Browse files"; icon: @image-url("../../../../assets/icons/photo.svg"); clicked => { image-popup.close(); Store.action("add-image", ""); } }
-                                }
+                            ImportPanel {
+                                icon: @image-url("../../../../assets/icons/photo.svg");
+                                instruction: "Drop an image onto the canvas"; formats: "PNG, JPEG, SVG or the first GIF frame";
+                                browse => { image-popup.close(); Store.action("add-image", ""); }
                             }
                         }
                     }
