@@ -49,7 +49,6 @@ const comparison = createComparison(data);
         );
       })}
     </ul>
-    {data.status === 'reported' && <p class="ram-method">{data.basis}</p>}
     {data.status === 'measured' && (
       <div class="ram-method">
         <p>Overlay active in both tests. Measured on {data.testedOn}.</p>
@@ -80,7 +79,6 @@ const comparison = createComparison(data);
   }
   .ram-legend {
     display: flex;
-    justify-content: center;
     flex-wrap: wrap;
     gap: 6px 24px;
     color: var(--p-muted);
