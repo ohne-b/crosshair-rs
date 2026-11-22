@@ -667,7 +667,6 @@ impl App {
             global: true,
         }];
         if let Some(profile) = self.state.active_profile() {
-            store.set_action_profile(profile.name.clone().into());
             store.set_aim_action(match profile.actions.aim_action {
                 AimAction::None => 0,
                 AimAction::ToggleVisibility => 1,

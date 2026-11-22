@@ -218,7 +218,7 @@ export component Keybinds inherits Rectangle {
                 ActionButton { icon: @image-url("../../../../assets/icons/info-circle.svg"); label: "Shortcut help"; quiet: true; clicked => { Store.action("input-help", ""); } }
             }
             if Store.controller-error != "": Text { text: Store.controller-error; color: Theme.text; font-size: 12px * Theme.text-scale; wrap: word-wrap; }
-            SectionTitle { text: "ACTIONS · " + Store.action-profile; }
+            SectionTitle { text: "ACTIONS"; }
             Rectangle { vertical-stretch: 0; background: Theme.panel; border-radius: 10px; clip: true; border-width: 1px; border-color: Theme.border;
                 VerticalLayout { padding: 1px; spacing: 0px;
                     TableHeader { application: true; }
