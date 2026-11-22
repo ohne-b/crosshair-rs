@@ -16,6 +16,7 @@ export component ActionButton inherits Rectangle {
     in property <bool> align-left: false;
     in property <bool> hover-feedback: true;
     in property <color> hover-color: root.primary ? Theme.orange.brighter(0.18) : Theme.hover;
+    in property <length> background-width: root.width;
     in property <length> background-height: root.height;
     out property <bool> has-focus: focus.has-focus;
     out property <bool> focus-visible: root.has-focus && Store.keyboard-navigation;
@@ -48,7 +49,8 @@ export component ActionButton inherits Rectangle {
         }
     }
     Rectangle {
-        y: (root.height - self.height) / 2; height: root.background-height; width: root.width;
+        x: (root.width - self.width) / 2; width: root.background-width;
+        y: (root.height - self.height) / 2; height: root.background-height;
         border-radius: root.border-radius;
         background: !root.enabled ? transparent
             : root.danger && root.hover-feedback && touch.has-hover ? #B4232A

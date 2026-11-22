@@ -95,15 +95,14 @@ component RecordShortcut inherits ShortcutButton {
     in property <bool> controller;
     in property <bool> saving;
     property <string> prompt: !root.controller ? "Press a key" : root.binding.direction == "" ? "Press or move a control" : "Press or move";
-    property <string> prefix: root.binding.direction == "" ? "" : root.binding.direction + "  ";
     out property <string> value: root.controller ? root.binding.controller : root.binding.chord;
-    property <string> device-name: root.controller ? "Controller" : "Keyboard / mouse";
+    property <string> device-name: root.controller ? "Controller" : root.binding.direction != "" ? "Keyboard" : "Keyboard / mouse";
     property <string> target-name: root.binding.global ? root.binding.action : root.binding.name;
     property <string> display-value: root.value == "" ? "Unbound" : root.binding.enabled ? root.value : "Disabled: " + root.value;
     enabled: Store.connected && Store.interactive && !root.saving;
     selected: Store.capture-id == root.binding.id && Store.capture-controller == root.controller;
-    text: root.saving ? "Saving…" : root.selected ? root.prompt : root.prefix + root.display-value;
-    label: root.target-name + ", " + root.device-name + ": " + root.text;
+    text: root.saving ? "Saving…" : root.selected ? root.prompt : root.value == "" && root.binding.direction != "" ? "+" : root.display-value;
+    label: root.target-name + ", " + root.device-name + ": " + (root.saving || root.selected ? root.text : root.display-value);
     clicked => {
         if !root.selected {
             Store.capture-region(self.absolute-position.x / 1px, self.absolute-position.y / 1px, self.width / 1px, self.height / 1px);
@@ -118,7 +117,7 @@ component ClearShortcut inherits ShortcutButton {
     width: 32px;
     icon: @image-url("../../../../assets/icons/x.svg");
     enabled: Store.connected && Store.interactive && (root.controller ? root.binding.controller != "" : root.binding.chord != "");
-    label: "Clear " + (root.controller ? "controller" : "keyboard / mouse") + " shortcut for " + (root.binding.global ? root.binding.action : root.binding.name);
+    label: "Clear " + (root.controller ? "controller" : root.binding.direction != "" ? "keyboard" : "keyboard / mouse") + " shortcut for " + (root.binding.global ? root.binding.action : root.binding.name);
     clicked => { Store.action(root.controller ? "clear-controller" : "clear-keyboard", root.binding.id); }
 }
 
@@ -131,13 +130,15 @@ component ShortcutControls inherits TouchArea {
     property <bool> movement: root.binding.direction != "";
     property <bool> clearable: record.value != "";
     property <bool> highlighted: root.has-hover || record.focus-visible || clear.focus-visible;
+    out property <length> record-width: root.width - 2 * root.inset - (root.clearable || root.movement ? clear.width + 4px : 0px);
     forward-focus: record;
     record := RecordShortcut {
-        x: root.inset; y: (parent.height - self.height) / 2;
-        width: parent.width - 2 * root.inset - (root.clearable || root.movement ? clear.width + 4px : 0px);
+        x: root.inset; y: (parent.height - self.height) / 2; width: root.record-width;
+        background-width: root.movement ? min(self.width, max(32px, self.preferred-width)) : self.width;
+        background-height: root.movement ? self.height - 6px : self.height;
         binding: root.binding; controller: root.controller; saving: root.saving;
         icon: root.device-icon; align-left: !root.movement;
-        quiet: !root.highlighted;
+        quiet: !root.highlighted && !(root.movement && root.clearable);
     }
     clear := ClearShortcut {
         x: parent.width - root.inset - self.width; y: (parent.height - self.height) / 2;
@@ -152,24 +153,32 @@ component ShortcutCell inherits ShortcutControls {
     Rectangle { x: 0px; width: 1px; height: parent.height; background: Theme.border; }
 }
 
-component MovementRow inherits TableRow {
-    in property <bool> controller;
-    Rectangle { y: 0px; height: 1px; width: parent.width; background: Theme.border; }
-    Text {
-        x: 12px; width: controls.x - 44px; text: "Movement"; color: Theme.text; font-size: 12px * Theme.text-scale; vertical-alignment: center;
-        accessible-label: root.controller ? "Controller movement" : "Keyboard movement";
-    }
-    Image {
-        x: controls.x - 26px; y: (parent.height - self.height) / 2; width: 16px; height: 16px;
-        source: root.controller ? @image-url("../../../../assets/icons/device-gamepad-2.svg") : @image-url("../../../../assets/icons/keyboard.svg"); colorize: Theme.muted;
-    }
-    controls := HorizontalLayout {
-        x: root.width - self.width - 12px; width: min(688px, root.width * 0.82); height: parent.height; spacing: 6px;
-        for binding in Store.movement-bindings: ShortcutControls {
+component MovementGrid inherits Rectangle {
+    property <length> header-height: max(32px, 12px * Theme.text-scale + 12px);
+    property <length> row-height: max(38px, 12px * Theme.text-scale + 20px);
+    height: root.header-height + 2 * root.row-height; vertical-stretch: 0;
+    HorizontalLayout { padding-left: 12px; padding-right: 12px; spacing: 8px;
+        VerticalLayout {
+            width: 22%;
+            Text { height: root.header-height; text: "Movement"; color: Theme.text; font-size: 12px * Theme.text-scale; font-weight: 600; vertical-alignment: center; }
+            for controller in [false, true]: HorizontalLayout {
+                height: root.row-height; alignment: start; spacing: 8px;
+                Rectangle { width: 16px; Image {
+                    y: (parent.height - self.height) / 2; width: 16px; height: 16px; colorize: Theme.muted;
+                    source: controller ? @image-url("../../../../assets/icons/device-gamepad-2.svg") : @image-url("../../../../assets/icons/keyboard.svg");
+                } }
+                Text { text: controller ? "Controller" : "Keyboard"; color: Theme.muted; font-size: 12px * Theme.text-scale; vertical-alignment: center; }
+            }
+        }
+        for binding in Store.movement-bindings: VerticalLayout {
             min-width: 0px; preferred-width: 0px; horizontal-stretch: 1;
-            binding: binding; controller: root.controller;
+            Rectangle { height: root.header-height; Text { x: 0px; width: keyboard.record-width; text: binding.direction; color: Theme.muted; font-size: 11px * Theme.text-scale; horizontal-alignment: center; vertical-alignment: center; } }
+            keyboard := ShortcutControls { height: root.row-height; binding: binding; }
+            ShortcutControls { height: root.row-height; binding: binding; controller: true; }
         }
     }
+    Rectangle { y: 0px; height: 1px; width: parent.width; background: Theme.border; }
+    Rectangle { y: root.header-height; height: 1px; width: parent.width; background: Theme.border; }
 }
 
 component BindingItem inherits TableRow {
@@ -228,8 +237,7 @@ export component Keybinds inherits Rectangle {
                 VerticalLayout { padding: 1px; spacing: 0px;
                     TableHeader { application: true; }
                     for binding in Store.bindings: BindingItem { viewport-width: root.width + root.absolute-position.x; viewport-height: root.height + root.absolute-position.y; binding: binding; visible: binding.global; }
-                    if Store.movement-bindings.length > 0: MovementRow {}
-                    if Store.movement-bindings.length > 0: MovementRow { controller: true; }
+                    if Store.movement-bindings.length > 0: MovementGrid {}
                 }
             }
             SectionTitle { text: "CROSSHAIR SHORTCUTS"; }

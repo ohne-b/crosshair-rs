@@ -23,6 +23,13 @@ fn key(ui: &AppWindow, text: impl Into<SharedString>) {
         .dispatch_event(WindowEvent::KeyReleased { text });
 }
 
+// Center and right edge of a Movement column in the two rendered window sizes.
+fn movement_cell(width: f32, column: usize) -> (f32, f32) {
+    let pitch = if width == 1280.0 { 223.0 } else { 161.0 };
+    let right = width - 37.0 - (3 - column) as f32 * pitch;
+    (right - (pitch - 8.0) / 2.0, right)
+}
+
 fn snapshot(window: &MinimalSoftwareWindow, name: &str) -> Result<()> {
     if let Some(directory) = std::env::var_os("CROSSHAIR_UI_SNAPSHOT") {
         let size = window.window().size();
@@ -790,7 +797,7 @@ fn dropped_files_follow_the_active_import_target() -> Result<()> {
 
 #[test]
 fn action_shortcut_fields_and_clear_buttons_follow_hover_and_focus() -> Result<()> {
-    let (ui, _window) = timed_test_window(Rc::new(Cell::default()))?;
+    let (ui, window) = timed_test_window(Rc::new(Cell::default()))?;
     let store = ui.global::<Store>();
     store.set_connected(true);
     store.set_page(2);
@@ -865,10 +872,22 @@ fn action_shortcut_fields_and_clear_buttons_follow_hover_and_focus() -> Result<(
         );
 
         // Movement reveals only the hovered direction. An empty action only records.
-        let forward = width - 725.0 + 168.0;
-        move_to(forward - 70.0, 502.0);
-        assert_ne!(backgrounds(forward, 502)?[1], idle[1]);
-        assert_eq!(backgrounds(forward + 174.0, 502)?, idle);
+        let (center, edge) = movement_cell(width, 0);
+        let (_, next_edge) = movement_cell(width, 1);
+        move_to(center, 527.0);
+        assert_ne!(backgrounds(edge, 527)?[1], idle[1]);
+        assert_eq!(backgrounds(next_edge, 527)?[1], idle[1]);
+        move_to(1.0, 1.0);
+        if width == 1280.0 {
+            snapshot(&window, "movement-grid.png")?;
+        }
+        events.borrow_mut().clear();
+        // The empty controller cell records even when the click misses the small plus.
+        click(&ui, center - 40.0, 565.0);
+        assert_eq!(
+            *events.borrow(),
+            [("capture-controller".into(), "forward".into())]
+        );
         events.borrow_mut().clear();
         click(&ui, right - 24.0, 233.0);
         assert_eq!(
@@ -1370,17 +1389,17 @@ fn library_tabs_sort_picker_and_browse_actions_are_independent() -> Result<()> {
             ]
         );
         for (y, record, clear) in [
-            (502.0, "capture", "clear-keyboard"),
-            (556.0, "capture-controller", "clear-controller"),
+            (527.0, "capture", "clear-keyboard"),
+            (565.0, "capture-controller", "clear-controller"),
         ] {
             for (i, direction) in ["forward", "left", "backward", "right"]
                 .into_iter()
                 .enumerate()
             {
-                let chip = width - 725.0 + i as f32 * 174.0;
+                let (center, edge) = movement_cell(width, i);
                 events.borrow_mut().clear();
-                click(&ui, chip + 58.0, y);
-                click(&ui, chip + 152.0, y);
+                click(&ui, center, y);
+                click(&ui, edge - 16.0, y);
                 assert_eq!(
                     *events.borrow(),
                     [
