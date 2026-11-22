@@ -1035,6 +1035,20 @@ fn library_tabs_sort_picker_and_browse_actions_are_independent() -> Result<()> {
     ]));
     events.borrow_mut().clear();
     click(&ui, 1180.0, 130.0);
+    ui.window().dispatch_event(WindowEvent::PointerMoved {
+        position: slint::LogicalPosition::new(1210.0, 207.0),
+    });
+    snapshot(&window, "sort-picker-spacing.png")?;
+    let frame = ui.window().take_snapshot()?;
+    let pixel = |y: usize| frame.as_slice()[y * frame.width() as usize + 1210];
+    assert_ne!(pixel(188), pixel(189));
+    assert!((190..193).all(|y| pixel(y) == pixel(189)));
+    assert_ne!(pixel(193), pixel(192));
+    click(&ui, 1210.0, 190.0);
+    assert!(
+        events.borrow().is_empty(),
+        "The row gap must not select a sort order"
+    );
     key(&ui, Key::DownArrow);
     key(&ui, Key::Return);
     assert_eq!(store.get_sort(), 1, "events: {:?}", events.borrow());

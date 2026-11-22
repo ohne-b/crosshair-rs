@@ -42,7 +42,7 @@ export component Library inherits Rectangle {
                 if Store.browse-saved != "": Text { text: "Added to Saved"; color: Theme.muted; font-size: 12px * Theme.text-scale; vertical-alignment: center; }
                 if !Store.browsing: Text { text: "Sort"; color: Theme.muted; font-size: 11px * Theme.text-scale; vertical-alignment: center; }
                 if !Store.browsing: DropDown {
-                    compact: true; horizontal-stretch: 0;
+                    compact: true; horizontal-stretch: 0; item-spacing: 4px;
                     model: ["Manual", "Name", "Recently edited"];
                     icons: [@image-url("../../../../assets/icons/grip-vertical.svg"), @image-url("../../../../assets/icons/sort-ascending-letters.svg"), @image-url("../../../../assets/icons/clock.svg")];
                     current-index: Store.sort; accessible-label: "Sort crosshairs";
