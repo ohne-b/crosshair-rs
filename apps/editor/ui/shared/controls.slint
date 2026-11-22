@@ -16,6 +16,7 @@ export component ActionButton inherits Rectangle {
     in property <bool> align-left: false;
     in property <bool> hover-feedback: true;
     in property <color> hover-color: root.primary ? Theme.orange.brighter(0.18) : Theme.hover;
+    in property <length> background-height: root.height;
     out property <bool> has-focus: focus.has-focus;
     out property <bool> focus-visible: root.has-focus && Store.keyboard-navigation;
     callback clicked;
@@ -31,10 +32,6 @@ export component ActionButton inherits Rectangle {
     horizontal-stretch: 0;
     vertical-stretch: 0;
     border-radius: Theme.radius;
-    background: !root.enabled ? transparent
-        : root.danger && root.hover-feedback && touch.has-hover ? #B4232A
-        : (root.hover-feedback && touch.has-hover) || root.focus-visible ? root.hover-color
-        : root.primary ? Theme.orange : root.selected || !root.quiet ? Theme.raised : transparent;
     border-width: 0px;
     border-color: Theme.muted;
     opacity: root.enabled ? 1 : 0.4;
@@ -49,6 +46,14 @@ export component ActionButton inherits Rectangle {
             Store.menu-y = (root.absolute-position.y + root.height + 4px) / 1px;
             focus.focus(); Store.commit-focused-input(); root.clicked();
         }
+    }
+    Rectangle {
+        y: (root.height - self.height) / 2; height: root.background-height; width: root.width;
+        border-radius: root.border-radius;
+        background: !root.enabled ? transparent
+            : root.danger && root.hover-feedback && touch.has-hover ? #B4232A
+            : (root.hover-feedback && touch.has-hover) || root.focus-visible ? root.hover-color
+            : root.primary ? Theme.orange : root.selected || !root.quiet ? Theme.raised : transparent;
     }
     content := HorizontalLayout {
         padding-left: root.text == "" ? 7px : 10px; padding-right: root.text == "" ? 7px : 10px; spacing: 8px; alignment: root.align-left ? start : center;

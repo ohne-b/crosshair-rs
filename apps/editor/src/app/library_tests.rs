@@ -172,16 +172,8 @@ fn sidebar_update_link_opens_updates_and_shows_the_offered_version() -> Result<(
 }
 
 #[test]
-fn layer_eye_click_dispatches_visibility_toggle() -> Result<()> {
-    struct Headless(Rc<MinimalSoftwareWindow>);
-    impl Platform for Headless {
-        fn create_window_adapter(&self) -> Result<Rc<dyn WindowAdapter>, slint::PlatformError> {
-            Ok(self.0.clone())
-        }
-    }
-    let window = MinimalSoftwareWindow::new(RepaintBufferType::NewBuffer);
-    slint::platform::set_platform(Box::new(Headless(window.clone())))?;
-    let ui = AppWindow::new()?;
+fn layer_actions_center_their_highlight_and_keep_full_height_hit_targets() -> Result<()> {
+    let (ui, window) = pixel_test_window()?;
     ui.window().set_size(slint::LogicalSize::new(1280.0, 800.0));
     let store = ui.global::<Store>();
     store.set_connected(true);
@@ -204,17 +196,27 @@ fn layer_eye_click_dispatches_visibility_toggle() -> Result<()> {
     store.on_action(move |a, v| recorded.borrow_mut().push((a.to_string(), v.to_string())));
     ui.show()?;
     snapshot(&window, "layer-eye.png")?;
-    ui.window().dispatch_event(WindowEvent::PointerMoved {
-        position: slint::LogicalPosition::new(221.0, 176.0),
-    });
-    click(&ui, 221.0, 176.0);
-    assert!(
-        events
-            .borrow()
-            .contains(&("layer-visible".into(), "test".into())),
-        "{:?}",
-        events.borrow()
-    );
+    for (x, hit_y, action) in [(221, 158, "layer-visible"), (255, 193, "delete-layer")] {
+        ui.window().dispatch_event(WindowEvent::PointerMoved {
+            position: slint::LogicalPosition::new(x as f32, hit_y as f32),
+        });
+        let frame = ui.window().take_snapshot()?;
+        let pixel = |y| frame.as_slice()[y * frame.width() as usize + x];
+        // The 38 px selected row has 3 px of padding above and below the highlight.
+        assert_eq!(pixel(159), pixel(192), "{action} vertical padding");
+        assert_eq!(
+            pixel(159),
+            frame.as_slice()[159 * frame.width() as usize + 175]
+        );
+        assert_ne!(pixel(160), pixel(159), "{action} highlight top");
+        assert_eq!(pixel(191), pixel(160), "{action} highlight bottom");
+        if action == "delete-layer" {
+            snapshot(&window, "layer-action-hover.png")?;
+        }
+        events.borrow_mut().clear();
+        click(&ui, x as f32, hit_y as f32);
+        assert_eq!(*events.borrow(), [(action.into(), "test".into())]);
+    }
     ui.hide()?;
     Ok(())
 }
