@@ -49,13 +49,18 @@ component InputHeader inherits Rectangle {
     }
 }
 
+component ShortcutButton inherits ActionButton {
+    primary: Theme.high-contrast && self.focus-visible;
+    hover-color: self.primary ? Theme.orange : self.focus-visible ? Theme.hover : Theme.raised;
+}
+
 component DeleteColumn inherits Rectangle {
     in property <BindingRow> binding;
     in property <bool> pending;
     in property <bool> saving;
     width: 44px;
     Rectangle { x: 0px; width: 1px; height: parent.height; background: Theme.border; }
-    if root.binding.shortcut: ActionButton {
+    if root.binding.shortcut: ShortcutButton {
         x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2; width: 32px; quiet: true;
         enabled: Store.connected && Store.interactive && !root.saving;
         icon: @image-url("../../../../assets/icons/trash.svg");
@@ -85,7 +90,7 @@ component TableRow inherits Rectangle {
     vertical-stretch: 0;
 }
 
-component RecordShortcut inherits ActionButton {
+component RecordShortcut inherits ShortcutButton {
     in property <BindingRow> binding;
     in property <bool> controller;
     in property <bool> saving;
@@ -107,11 +112,11 @@ component RecordShortcut inherits ActionButton {
     }
 }
 
-component ClearShortcut inherits ActionButton {
+component ClearShortcut inherits ShortcutButton {
     in property <BindingRow> binding;
     in property <bool> controller;
     width: 32px;
-    icon: @image-url("../../../../assets/icons/trash.svg");
+    icon: @image-url("../../../../assets/icons/x.svg");
     enabled: Store.connected && Store.interactive && (root.controller ? root.binding.controller != "" : root.binding.chord != "");
     label: "Clear " + (root.controller ? "controller" : "keyboard / mouse") + " shortcut for " + (root.binding.global ? root.binding.action : root.binding.name);
     clicked => { Store.action(root.controller ? "clear-controller" : "clear-keyboard", root.binding.id); }
@@ -124,7 +129,7 @@ component ShortcutControls inherits TouchArea {
     in property <image> device-icon;
     in property <length> inset;
     property <bool> movement: root.binding.direction != "";
-    property <bool> clearable: !root.binding.shortcut && record.value != "";
+    property <bool> clearable: record.value != "";
     property <bool> highlighted: root.has-hover || record.focus-visible || clear.focus-visible;
     forward-focus: record;
     record := RecordShortcut {
@@ -132,7 +137,7 @@ component ShortcutControls inherits TouchArea {
         width: parent.width - 2 * root.inset - (root.clearable || root.movement ? clear.width + 4px : 0px);
         binding: root.binding; controller: root.controller; saving: root.saving;
         icon: root.device-icon; align-left: !root.movement;
-        quiet: !root.binding.shortcut && !root.highlighted;
+        quiet: !root.highlighted;
     }
     clear := ClearShortcut {
         x: parent.width - root.inset - self.width; y: (parent.height - self.height) / 2;

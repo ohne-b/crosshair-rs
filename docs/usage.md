@@ -46,10 +46,10 @@ them under **Settings > Data**.
 Open **Keybinds**. The monitor column shows keyboard and mouse shortcuts. The
 gamepad column shows controller shortcuts. Click a cell to record that input.
 To switch to a saved crosshair, choose **New**, pick the crosshair, and record
-the shortcut in its row. Each row can keep both assignments. The single trash
-button at the far right removes the saved shortcut. To clear just its keyboard
-or controller binding, click that cell and press Backspace. Escape cancels
-recording. Action and Movement bindings each have their own clear button.
+the shortcut in its row. Hover or tab to a binding to reveal its **×** button.
+Click **×** to clear that assignment, or press Backspace while recording.
+Escape cancels recording. A saved shortcut stays in the list even when both
+assignments are empty. Its far-right trash button deletes the shortcut.
 
 Controller bindings start empty. You can record a button, squeeze a trigger or
 push either stick in a direction. For example, bind **Hold to hide** to the

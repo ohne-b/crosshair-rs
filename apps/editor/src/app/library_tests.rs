@@ -813,7 +813,7 @@ fn action_shortcut_fields_and_clear_buttons_follow_hover_and_focus() -> Result<(
                 position: slint::LogicalPosition::new(x, y),
             });
         };
-        // Sample the field and trash backgrounds, away from the text and icon.
+        // Sample the field and clear button backgrounds, away from the text and icon.
         let backgrounds = |edge: f32, y: usize| -> Result<_> {
             let frame = ui.window().take_snapshot()?;
             Ok([edge - 60.0, edge - 24.0]
@@ -826,7 +826,7 @@ fn action_shortcut_fields_and_clear_buttons_follow_hover_and_focus() -> Result<(
         move_to(keyboard - 70.0, 341.0);
         let hovered = backgrounds(keyboard, 341)?;
         assert_ne!(hovered[0], idle[0]);
-        assert_ne!(hovered[1], idle[1]);
+        assert_eq!(hovered[0], hovered[1]);
         assert_eq!(backgrounds(right, 341)?, idle);
         move_to(keyboard - 24.0, 341.0);
         assert_ne!(backgrounds(keyboard, 341)?[0], idle[0]);
@@ -845,6 +845,16 @@ fn action_shortcut_fields_and_clear_buttons_follow_hover_and_focus() -> Result<(
         let focused = backgrounds(right, 341)?;
         assert_ne!(focused[0], idle[0]);
         assert_ne!(focused[1], idle[1]);
+        assert_ne!(focused[0], focused[1]);
+        let theme = ui.global::<crate::Theme>();
+        theme.set_high_contrast(true);
+        let focused_clear = backgrounds(right, 341)?[1];
+        let accent = theme.get_orange();
+        assert_eq!(
+            [focused_clear.r, focused_clear.g, focused_clear.b],
+            [accent.red(), accent.green(), accent.blue()]
+        );
+        theme.set_high_contrast(false);
         events.borrow_mut().clear();
         key(&ui, Key::Return);
         assert_eq!(
@@ -1179,22 +1189,55 @@ fn library_tabs_sort_picker_and_browse_actions_are_independent() -> Result<()> {
         snapshot(&window, image)?;
         let right = width - 24.0;
         let column_width = (width - 106.0) * 0.26;
-        if width == 1280.0 {
+        let keyboard_edge = right - column_width;
+        let controller_edge = right - 44.0;
+        let move_to = |x, y| {
             ui.window().dispatch_event(WindowEvent::PointerMoved {
-                position: slint::LogicalPosition::new(right - column_width - 70.0, 341.0),
+                position: slint::LogicalPosition::new(x, y),
             });
+        };
+        let fill_at = |x: f32, y: usize| -> Result<_> {
+            let frame = ui.window().take_snapshot()?;
+            Ok(frame.as_slice()[y * frame.width() as usize + x as usize])
+        };
+        let idle = fill_at(controller_edge - 24.0, 777)?;
+        move_to(keyboard_edge - 70.0, 341.0);
+        let hover = fill_at(keyboard_edge - 60.0, 351)?;
+        assert_ne!(hover, idle);
+        if width == 1280.0 {
             snapshot(&window, "shortcuts-hover.png")?;
         }
+        move_to(controller_edge - 70.0, 767.0);
+        assert_eq!(fill_at(controller_edge - 60.0, 777)?, hover);
+        assert_eq!(fill_at(controller_edge - 24.0, 777)?, hover);
+        assert_eq!(fill_at(right - 22.0, 777)?, idle);
+        if width == 1280.0 {
+            snapshot(&window, "shortcuts-crosshair-hover.png")?;
+        }
+        move_to(right - 22.0, 767.0);
+        assert_eq!(fill_at(right - 22.0, 777)?, hover);
+        assert_eq!(fill_at(controller_edge - 24.0, 777)?, idle);
+        if width == 1280.0 {
+            snapshot(&window, "shortcuts-delete-hover.png")?;
+        }
         events.borrow_mut().clear();
-        // Even at each cell's far edge, a click records. Only the last column deletes.
-        for x in [right - column_width - 16.0, right - 60.0, right - 22.0] {
+        for x in [
+            keyboard_edge - 70.0,
+            keyboard_edge - 24.0,
+            controller_edge - 70.0,
+            controller_edge - 24.0,
+            right - 22.0,
+        ] {
+            move_to(x, 767.0);
             click(&ui, x, 767.0);
         }
         assert_eq!(
             *events.borrow(),
             [
                 ("capture".into(), shortcut_id.clone()),
+                ("clear-keyboard".into(), shortcut_id.clone()),
                 ("capture-controller".into(), shortcut_id.clone()),
+                ("clear-controller".into(), shortcut_id.clone()),
                 ("binding-remove".into(), shortcut_id.clone()),
             ]
         );
