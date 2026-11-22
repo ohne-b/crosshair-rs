@@ -25,9 +25,26 @@ export component AppWindow inherits Window {
     public function finish-input() { keys.focus(); }
     property <bool> saved-library: Store.page == 0 && !Store.browsing && Store.modal-kind == 0 && !Store.read-only;
     changed saved-library => { if !root.saved-library { preset-import.close(); } }
+    in property <bool> dragging-preset-file;
+    callback file-pointer() -> { x: float, y: float };
+    property <length> import-width: min(280px * Theme.text-scale, root.width - 16px);
+    property <length> import-height: max(176px, 104px + 56px * Theme.text-scale);
+    property <length> import-left: clamp(Store.menu-x * 1px - root.import-width, 8px, root.width - root.import-width - 8px);
+    property <length> import-top: clamp(Store.menu-y * 1px, 8px, root.height - root.import-height - 8px);
+    function over-import() -> bool {
+        if !root.saved-library || !preset-import.is-open { return false; }
+        let p = root.file-pointer();
+        return p.x * 1px >= root.import-left && p.x * 1px < root.import-left + root.import-width
+            && p.y * 1px >= root.import-top && p.y * 1px < root.import-top + root.import-height;
+    }
+    property <bool> drop-hover;
+    property <bool> track-file: root.dragging-preset-file && root.saved-library && preset-import.is-open;
+    changed track-file => { root.drop-hover = root.track-file && root.over-import(); }
+    // Windows reports file enter/leave, but sends no pointer moves during an Explorer drag.
+    Timer { running: root.track-file; interval: 25ms; triggered => { root.drop-hover = root.over-import(); } }
     public function file-dropped(path: string) {
         if Store.modal-kind != 0 || Store.read-only { return; }
-        if root.saved-library {
+        if root.over-import() {
             preset-import.close();
             Store.action("import", path);
         } else if Store.page == 1 {
@@ -46,13 +63,12 @@ export component AppWindow inherits Window {
     changed menu-open => { if !root.menu-open && Store.modal-kind == 3 { Store.action("modal-cancel", ""); } }
     changed help-open => { if !root.help-open && Store.modal-kind == 5 { Store.action("modal-cancel", ""); } }
     preset-import := PopupWindow {
-        x: clamp(Store.menu-x * 1px - self.width, 8px, root.width - self.width - 8px);
-        y: clamp(Store.menu-y * 1px, 8px, root.height - self.height - 8px);
-        width: min(280px * Theme.text-scale, root.width - 16px); height: max(176px, preset-panel.min-height);
+        x: root.import-left; y: root.import-top; width: root.import-width; height: root.import-height;
         close-policy: close-on-click-outside; forward-focus: preset-panel;
         preset-panel := ImportPanel {
             icon: @image-url("../../../assets/icons/folder.svg");
-            instruction: "Drop a crosshair file into your library"; formats: ".json or .crosshair";
+            drop-target: true; highlighted: root.drop-hover;
+            instruction: root.drop-hover ? "Release to import" : "Drop a crosshair file here"; formats: ".json or .crosshair";
             browse => { preset-import.close(); Store.action("import", ""); }
         }
     }

@@ -361,9 +361,7 @@ impl App {
                 } else {
                     let path = std::path::PathBuf::from(value);
                     ensure!(
-                        path.extension()
-                            .is_some_and(|ext| ext.eq_ignore_ascii_case("json")
-                                || ext.eq_ignore_ascii_case("crosshair")),
+                        dialogs::is_document(&path),
                         "Choose a .json or .crosshair file to import"
                     );
                     Some(path)

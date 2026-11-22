@@ -5,8 +5,8 @@
 Create a crosshair in **Crosshairs**, then open it in **Designer**. Add crosshair,
 shape, image or drawing layers from the bottom palette. The Image tool opens an
 import picker. Rename crosshairs inline and star favorites to find them again.
-To import a crosshair, drop a `.json` or `.crosshair` file onto **Saved**,
-or choose **Import → Browse files**.
+In **Saved**, choose **Import** and drop a `.json` or `.crosshair` file inside
+the dotted border, or choose **Browse files**.
 
 Designer changes preview immediately. Choose **Save** or press **Ctrl+S** to save
 the design. Closing or opening another document with changes offers

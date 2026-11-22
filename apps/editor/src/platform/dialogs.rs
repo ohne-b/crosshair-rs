@@ -28,6 +28,12 @@ pub enum FileKind {
     Svg,
 }
 
+pub fn is_document(path: &std::path::Path) -> bool {
+    path.extension().is_some_and(|ext| {
+        ext.eq_ignore_ascii_case("json") || ext.eq_ignore_ascii_case("crosshair")
+    })
+}
+
 pub fn choose(owner: HWND, save: bool, kind: FileKind, suggested: &str) -> Result<Option<PathBuf>> {
     let (description, filter, extension) = match kind {
         FileKind::Document => ("crosshair-rs files", "*.json;*.crosshair", "json"),

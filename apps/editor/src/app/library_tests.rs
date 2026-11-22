@@ -712,6 +712,9 @@ fn dropped_files_follow_the_active_import_target() -> Result<()> {
 fn library_tabs_sort_picker_and_browse_actions_are_independent() -> Result<()> {
     let clock = Rc::new(Cell::default());
     let (ui, window) = timed_test_window(clock.clone())?;
+    let file_pointer = Rc::new(Cell::new((-1.0, -1.0)));
+    let pointer = file_pointer.clone();
+    ui.on_file_pointer(move || pointer.get());
     let store = ui.global::<Store>();
     store.set_connected(true);
     store.on_commit_focused_input(slint::platform::update_timers_and_animations);
@@ -931,7 +934,36 @@ fn library_tabs_sort_picker_and_browse_actions_are_independent() -> Result<()> {
     key(&ui, Key::Return);
     assert_eq!(*events.borrow(), [("import".into(), "".into())]);
     events.borrow_mut().clear();
+    file_pointer.set((1100.0, 145.0));
+    ui.invoke_file_dropped("closed.json".into());
+    assert!(events.borrow().is_empty());
     click(&ui, 1135.0, 72.0);
+    let orange_border_pixels = || -> Result<usize> {
+        let image = ui.window().take_snapshot()?;
+        let top = store.get_menu_y() as usize;
+        let right = store.get_menu_x() as usize;
+        Ok((top..top + 10)
+            .flat_map(|y| {
+                let row = y * image.width() as usize;
+                &image.as_slice()[row + right - 260..row + right - 20]
+            })
+            .filter(|p| p.r > p.g.saturating_add(45) && p.r > 115)
+            .count())
+    };
+    assert_eq!(orange_border_pixels()?, 0);
+    ui.set_dragging_preset_file(true);
+    clock.set(clock.get() + Duration::from_millis(50));
+    slint::platform::update_timers_and_animations();
+    assert!(orange_border_pixels()? > 15);
+    snapshot(&window, "library-import-hover.png")?;
+    file_pointer.set((650.0, 450.0));
+    clock.set(clock.get() + Duration::from_millis(50));
+    slint::platform::update_timers_and_animations();
+    assert_eq!(orange_border_pixels()?, 0);
+    ui.invoke_file_dropped("outside.json".into());
+    assert!(events.borrow().is_empty());
+    file_pointer.set((1100.0, 145.0));
+    ui.set_dragging_preset_file(false);
     ui.invoke_file_dropped("sample.crosshair".into());
     assert_eq!(
         *events.borrow(),
