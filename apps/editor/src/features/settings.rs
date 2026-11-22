@@ -46,7 +46,7 @@ fn bytes(value: u64) -> String {
 }
 
 pub const GAME_BAR_HELP: &str = "Choose Game Bar in Display mode, then Open widget if setup is needed. Press Win+G, pin the widget on your target display and enable click-through in the top toolbar. Dismiss Game Bar and click Use Game Bar when the widget is ready. Fullscreen support depends on the game and Game Bar.";
-pub const INPUT_HELP: &str = "Shortcuts work globally, including while typing in other apps. They observe input without blocking it. Click a cell in the Keyboard / mouse or Controller column to record that shortcut. Both inputs can trigger the same action. For a controller, release held controls, then press a button, squeeze a trigger or move a stick. Face buttons use their position on the controller. Escape cancels recording. Backspace clears the selected binding. Wheel bindings are press-only.";
+pub const INPUT_HELP: &str = "Shortcuts work globally, including while typing in other apps. They observe input without blocking it. Click a cell in the Keyboard / mouse or Controller column to record that shortcut. Both inputs can trigger the same action. For a controller, release held controls, then press a button, squeeze a trigger or move a stick. Face buttons use their position on the controller. During recording, Escape cancels and Backspace clears just that binding. The trash button at the end of a crosshair shortcut row deletes both assignments. Wheel bindings are press-only.";
 
 #[cfg(test)]
 mod tests {

@@ -919,7 +919,9 @@ fn replacing_and_clearing_controller_shortcuts_preserves_the_keyboard_slot() -> 
             && profiles[0].bindings[0].id == id && profiles[0].bindings[0].chord == key && profiles[0].bindings[0].controller.is_none())
     );
 
-    app.action("clear-controller", &id.to_string())?;
+    app.action("capture-controller", &id.to_string())?;
+    commands();
+    app.complete_capture(None)?;
     assert!(
         matches!(&commands()[..], [Command::SetBindings { profiles, .. }]
         if profiles[0].bindings[0].chord == key && profiles[0].bindings[0].controller.is_none())

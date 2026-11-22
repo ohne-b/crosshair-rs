@@ -1084,13 +1084,32 @@ fn library_tabs_sort_picker_and_browse_actions_are_independent() -> Result<()> {
     );
     shortcut.name = "Shotgun".into();
     shortcut.controller = Some(GamepadControl::DPadUp);
+    let shortcut_id = shortcut.id.to_string();
     profile.bindings.push(shortcut);
     app.refresh_bindings();
     store.set_profiles(Rc::new(slint::VecModel::from(vec!["Default".into()])).into());
     store.set_visible(true);
     for (width, image) in [(1280.0, "shortcuts.png"), (960.0, "shortcuts-narrow.png")] {
         ui.window().set_size(slint::LogicalSize::new(width, 800.0));
+        ui.window().dispatch_event(WindowEvent::PointerMoved {
+            position: slint::LogicalPosition::new(1.0, 1.0),
+        });
         snapshot(&window, image)?;
+        let right = width - 24.0;
+        let column_width = (width - 106.0) * 0.26;
+        events.borrow_mut().clear();
+        // Even at each cell's far edge, a click records. Only the last column deletes.
+        for x in [right - column_width - 16.0, right - 60.0, right - 22.0] {
+            click(&ui, x, 767.0);
+        }
+        assert_eq!(
+            *events.borrow(),
+            [
+                ("capture".into(), shortcut_id.clone()),
+                ("capture-controller".into(), shortcut_id.clone()),
+                ("binding-remove".into(), shortcut_id.clone()),
+            ]
+        );
         for (y, record, clear) in [
             (502.0, "capture", "clear-keyboard"),
             (556.0, "capture-controller", "clear-controller"),

@@ -849,12 +849,13 @@ mod tests {
             [("capture-controller".into(), "new-shortcut".into())]
         );
         assert!(store.get_capture_controller());
+        let delete_x = ui.window().size().width as f32 - 48.0;
         // Capture cancellation can arrive before the UI press or between press/release.
         for before_press in [true, false] {
             store.set_pending_shortcut("new-shortcut".into());
             store.set_capture_id("new-shortcut".into());
             events.borrow_mut().clear();
-            let position = slint::LogicalPosition::new(x - 28.0, y + height / 2.0);
+            let position = slint::LogicalPosition::new(delete_x, y + height / 2.0);
             if before_press {
                 store.set_capture_id("".into());
             }
@@ -877,7 +878,7 @@ mod tests {
         store.set_pending_shortcut("saving-binding-id".into());
         events.borrow_mut().clear();
         click(&ui, x + width / 2.0, y + height / 2.0);
-        click(&ui, x - 28.0, y + height / 2.0);
+        click(&ui, delete_x, y + height / 2.0);
         assert!(
             events.borrow().is_empty(),
             "saving must not resubmit or discard the row"

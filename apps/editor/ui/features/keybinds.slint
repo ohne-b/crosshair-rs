@@ -49,6 +49,21 @@ component InputHeader inherits Rectangle {
     }
 }
 
+component DeleteColumn inherits Rectangle {
+    in property <BindingRow> binding;
+    in property <bool> pending;
+    in property <bool> saving;
+    width: 44px;
+    Rectangle { x: 0px; width: 1px; height: parent.height; background: Theme.border; }
+    if root.binding.shortcut: ActionButton {
+        x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2; width: 32px; quiet: true;
+        enabled: Store.connected && Store.interactive && !root.saving;
+        icon: @image-url("../../../../assets/icons/trash.svg");
+        label: root.pending ? "Discard new shortcut" : "Delete shortcut for " + root.binding.name;
+        clicked => { Store.action(root.pending ? "discard-shortcut" : "binding-remove", root.binding.id); }
+    }
+}
+
 component TableHeader inherits Rectangle {
     in property <bool> application;
     height: 40px; vertical-stretch: 0; background: Theme.preview;
@@ -58,7 +73,10 @@ component TableHeader inherits Rectangle {
         if !root.application: Rectangle { width: 1px; background: Theme.border; }
         Rectangle { horizontal-stretch: 1; Text { x: 12px; text: root.application ? "Action" : "Shortcut name"; color: Theme.muted; font-size: 11px * Theme.text-scale; vertical-alignment: center; } }
         InputHeader { width: 26%; heading: true; }
-        InputHeader { width: 26%; heading: true; controller: true; }
+        HorizontalLayout { width: 26%; spacing: 0px;
+            InputHeader { horizontal-stretch: 1; heading: true; controller: true; }
+            if !root.application: DeleteColumn {}
+        }
     }
 }
 
@@ -93,6 +111,7 @@ component ClearShortcut inherits ActionButton {
     in property <BindingRow> binding;
     in property <bool> controller;
     quiet: true; width: 32px;
+    icon: @image-url("../../../../assets/icons/trash.svg");
     enabled: Store.connected && Store.interactive && (root.controller ? root.binding.controller != "" : root.binding.chord != "");
     label: "Clear " + (root.controller ? "controller" : "keyboard / mouse") + " shortcut for " + (root.binding.global ? root.binding.action : root.binding.name);
     clicked => { Store.action(root.controller ? "clear-controller" : "clear-keyboard", root.binding.id); }
@@ -102,17 +121,18 @@ component ShortcutCell inherits Rectangle {
     in property <BindingRow> binding;
     in property <bool> controller;
     in property <bool> saving;
+    property <bool> clearable: !root.binding.shortcut && record.value != "";
     forward-focus: record;
     Rectangle { x: 0px; width: 1px; height: parent.height; background: Theme.border; }
     record := RecordShortcut {
         x: 8px; y: (parent.height - self.height) / 2; align-left: true;
-        width: parent.width - 16px - (self.value != "" ? 32px : 0px);
+        width: parent.width - 16px - (root.clearable ? 32px : 0px);
         binding: root.binding; controller: root.controller; saving: root.saving;
         icon: root.controller ? @image-url("../../../../assets/icons/device-gamepad-2.svg") : root.binding.mouse ? @image-url("../../../../assets/icons/mouse.svg") : @image-url("../../../../assets/icons/keyboard.svg");
     }
-    if record.value != "": ClearShortcut {
+    if root.clearable: ClearShortcut {
         x: parent.width - 38px; y: (parent.height - self.height) / 2;
-        binding: root.binding; controller: root.controller; icon: @image-url("../../../../assets/icons/x.svg");
+        binding: root.binding; controller: root.controller;
     }
 }
 
@@ -135,7 +155,7 @@ component MovementRow inherits TableRow {
                 binding: binding; controller: root.controller; prefix: binding.direction + "  "; prompt: root.controller ? "Press or move" : "Press a key";
             }
             ClearShortcut { x: parent.width - self.width; y: (parent.height - self.height) / 2;
-                binding: binding; controller: root.controller; icon: @image-url("../../../../assets/icons/trash.svg");
+                binding: binding; controller: root.controller;
             }
         }
     }
@@ -167,17 +187,14 @@ component BindingItem inherits TableRow {
         }
         if root.binding.shortcut: Rectangle { width: 1px; background: Theme.border; }
         if root.binding.shortcut: Rectangle { horizontal-stretch: 1;
-            if root.pending: Text { x: 12px; width: parent.width - 52px; text: root.binding.name; color: Theme.text; font-size: 12px * Theme.text-scale; vertical-alignment: center; overflow: elide; }
-            if !root.pending: RenameField { x: 6px; y: (parent.height - self.height) / 2; width: parent.width - 50px; value: root.binding.name; label: "Rename shortcut"; committed(value) => { Store.action("binding-name", root.binding.id + ":" + value); } }
-            ActionButton { x: parent.width - 38px; y: (parent.height - self.height) / 2; width: 32px;
-                enabled: Store.connected && Store.interactive && !root.saving; quiet: true;
-                icon: root.pending ? @image-url("../../../../assets/icons/x.svg") : @image-url("../../../../assets/icons/trash.svg");
-                label: root.pending ? "Discard new shortcut" : "Delete shortcut for " + root.binding.name;
-                clicked => { Store.action(root.pending ? "discard-shortcut" : "binding-remove", root.binding.id); }
-            }
+            if root.pending: Text { x: 12px; width: parent.width - 24px; text: root.binding.name; color: Theme.text; font-size: 12px * Theme.text-scale; vertical-alignment: center; overflow: elide; }
+            if !root.pending: RenameField { x: 6px; y: (parent.height - self.height) / 2; width: parent.width - 12px; value: root.binding.name; label: "Rename shortcut"; committed(value) => { Store.action("binding-name", root.binding.id + ":" + value); } }
         }
         keyboard := ShortcutCell { width: 26%; binding: root.binding; saving: root.saving; }
-        ShortcutCell { width: 26%; binding: root.binding; controller: true; saving: root.saving; }
+        HorizontalLayout { width: 26%; spacing: 0px;
+            ShortcutCell { horizontal-stretch: 1; binding: root.binding; controller: true; saving: root.saving; }
+            if root.binding.shortcut: DeleteColumn { binding: root.binding; pending: root.pending; saving: root.saving; }
+        }
     }
     Rectangle { y: 0px; width: parent.width; height: 1px; background: Theme.border; }
 }
@@ -218,7 +235,10 @@ export component Keybinds inherits Rectangle {
                                 new-shortcut := ActionButton { x: 6px; y: (parent.height - self.height) / 2; width: 64px; text: "New"; label: "New crosshair shortcut"; align-left: true; quiet: true; clicked => { new-picker.show(); } }
                             }
                             InputHeader { width: 26%; }
-                            InputHeader { width: 26%; controller: true; }
+                            HorizontalLayout { width: 26%; spacing: 0px;
+                                InputHeader { horizontal-stretch: 1; }
+                                DeleteColumn {}
+                            }
                         }
                         Rectangle { y: 0px; width: parent.width; height: 1px; background: Theme.border; }
                     }
