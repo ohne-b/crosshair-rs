@@ -787,6 +787,88 @@ fn dropped_files_follow_the_active_import_target() -> Result<()> {
 }
 
 #[test]
+fn action_shortcut_fields_and_clear_buttons_follow_hover_and_focus() -> Result<()> {
+    let (ui, _window) = timed_test_window(Rc::new(Cell::default()))?;
+    let store = ui.global::<Store>();
+    store.set_connected(true);
+    store.set_page(2);
+    let mut app = super::gesture_tests::app(&ui);
+    app.state.profiles[0].actions.controller.fire = Some(GamepadControl::RightTrigger);
+    app.refresh_bindings();
+    let events = Rc::new(RefCell::new(Vec::new()));
+    let recorded = events.clone();
+    store.on_action(move |action, value| {
+        recorded
+            .borrow_mut()
+            .push((action.to_string(), value.to_string()));
+    });
+    ui.show()?;
+
+    for width in [1280.0, 960.0] {
+        ui.window().set_size(slint::LogicalSize::new(width, 800.0));
+        let right = width - 24.0;
+        let column_width = (width - 106.0) * 0.26;
+        let move_to = |x, y| {
+            ui.window().dispatch_event(WindowEvent::PointerMoved {
+                position: slint::LogicalPosition::new(x, y),
+            });
+        };
+        // Sample the field and trash backgrounds, away from the text and icon.
+        let backgrounds = |edge: f32, y: usize| -> Result<_> {
+            let frame = ui.window().take_snapshot()?;
+            Ok([edge - 60.0, edge - 24.0]
+                .map(|x| frame.as_slice()[(y + 10) * frame.width() as usize + x as usize]))
+        };
+        let keyboard = right - column_width;
+        move_to(1.0, 1.0);
+        let idle = backgrounds(keyboard, 341)?;
+        assert_eq!(idle[0], idle[1]);
+        move_to(keyboard - 70.0, 341.0);
+        let hovered = backgrounds(keyboard, 341)?;
+        assert_ne!(hovered[0], idle[0]);
+        assert_ne!(hovered[1], idle[1]);
+        assert_eq!(backgrounds(right, 341)?, idle);
+        move_to(keyboard - 24.0, 341.0);
+        assert_ne!(backgrounds(keyboard, 341)?[0], idle[0]);
+        events.borrow_mut().clear();
+        click(&ui, keyboard - 24.0, 341.0);
+        assert_eq!(*events.borrow(), [("clear-keyboard".into(), "fire".into())]);
+        move_to(right - 70.0, 341.0);
+        assert_eq!(backgrounds(keyboard, 341)?, idle);
+        assert_eq!(backgrounds(right, 341)?, hovered);
+
+        // Tab from the recording field onto its clear button with the pointer elsewhere.
+        click(&ui, right - 70.0, 341.0);
+        move_to(1.0, 1.0);
+        assert_eq!(backgrounds(right, 341)?, idle);
+        key(&ui, Key::Tab);
+        let focused = backgrounds(right, 341)?;
+        assert_ne!(focused[0], idle[0]);
+        assert_ne!(focused[1], idle[1]);
+        events.borrow_mut().clear();
+        key(&ui, Key::Return);
+        assert_eq!(
+            *events.borrow(),
+            [("clear-controller".into(), "fire".into())]
+        );
+
+        // Movement reveals only the hovered direction. An empty action only records.
+        let forward = width - 725.0 + 168.0;
+        move_to(forward - 70.0, 502.0);
+        assert_ne!(backgrounds(forward, 502)?[1], idle[1]);
+        assert_eq!(backgrounds(forward + 174.0, 502)?, idle);
+        events.borrow_mut().clear();
+        click(&ui, right - 24.0, 233.0);
+        assert_eq!(
+            *events.borrow(),
+            [("capture-controller".into(), "global".into())]
+        );
+    }
+    ui.hide()?;
+    Ok(())
+}
+
+#[test]
 fn library_tabs_sort_picker_and_browse_actions_are_independent() -> Result<()> {
     let clock = Rc::new(Cell::default());
     let (ui, window) = timed_test_window(clock.clone())?;
@@ -1097,6 +1179,12 @@ fn library_tabs_sort_picker_and_browse_actions_are_independent() -> Result<()> {
         snapshot(&window, image)?;
         let right = width - 24.0;
         let column_width = (width - 106.0) * 0.26;
+        if width == 1280.0 {
+            ui.window().dispatch_event(WindowEvent::PointerMoved {
+                position: slint::LogicalPosition::new(right - column_width - 70.0, 341.0),
+            });
+            snapshot(&window, "shortcuts-hover.png")?;
+        }
         events.borrow_mut().clear();
         // Even at each cell's far edge, a click records. Only the last column deletes.
         for x in [right - column_width - 16.0, right - 60.0, right - 22.0] {

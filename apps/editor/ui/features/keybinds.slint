@@ -89,8 +89,8 @@ component RecordShortcut inherits ActionButton {
     in property <BindingRow> binding;
     in property <bool> controller;
     in property <bool> saving;
-    in property <string> prompt: root.controller ? "Press or move a control" : "Press a key";
-    in property <string> prefix;
+    property <string> prompt: !root.controller ? "Press a key" : root.binding.direction == "" ? "Press or move a control" : "Press or move";
+    property <string> prefix: root.binding.direction == "" ? "" : root.binding.direction + "  ";
     out property <string> value: root.controller ? root.binding.controller : root.binding.chord;
     property <string> device-name: root.controller ? "Controller" : "Keyboard / mouse";
     property <string> target-name: root.binding.global ? root.binding.action : root.binding.name;
@@ -110,30 +110,41 @@ component RecordShortcut inherits ActionButton {
 component ClearShortcut inherits ActionButton {
     in property <BindingRow> binding;
     in property <bool> controller;
-    quiet: true; width: 32px;
+    width: 32px;
     icon: @image-url("../../../../assets/icons/trash.svg");
     enabled: Store.connected && Store.interactive && (root.controller ? root.binding.controller != "" : root.binding.chord != "");
     label: "Clear " + (root.controller ? "controller" : "keyboard / mouse") + " shortcut for " + (root.binding.global ? root.binding.action : root.binding.name);
     clicked => { Store.action(root.controller ? "clear-controller" : "clear-keyboard", root.binding.id); }
 }
 
-component ShortcutCell inherits Rectangle {
+component ShortcutControls inherits TouchArea {
     in property <BindingRow> binding;
     in property <bool> controller;
     in property <bool> saving;
+    in property <image> device-icon;
+    in property <length> inset;
+    property <bool> movement: root.binding.direction != "";
     property <bool> clearable: !root.binding.shortcut && record.value != "";
+    property <bool> highlighted: root.has-hover || record.focus-visible || clear.focus-visible;
     forward-focus: record;
-    Rectangle { x: 0px; width: 1px; height: parent.height; background: Theme.border; }
     record := RecordShortcut {
-        x: 8px; y: (parent.height - self.height) / 2; align-left: true;
-        width: parent.width - 16px - (root.clearable ? 32px : 0px);
+        x: root.inset; y: (parent.height - self.height) / 2;
+        width: parent.width - 2 * root.inset - (root.clearable || root.movement ? clear.width + 4px : 0px);
         binding: root.binding; controller: root.controller; saving: root.saving;
-        icon: root.controller ? @image-url("../../../../assets/icons/device-gamepad-2.svg") : root.binding.mouse ? @image-url("../../../../assets/icons/mouse.svg") : @image-url("../../../../assets/icons/keyboard.svg");
+        icon: root.device-icon; align-left: !root.movement;
+        quiet: !root.binding.shortcut && !root.highlighted;
     }
-    if root.clearable: ClearShortcut {
-        x: parent.width - 38px; y: (parent.height - self.height) / 2;
+    clear := ClearShortcut {
+        x: parent.width - root.inset - self.width; y: (parent.height - self.height) / 2;
+        visible: root.clearable; opacity: root.highlighted && self.enabled ? 1 : 0;
         binding: root.binding; controller: root.controller;
     }
+}
+
+component ShortcutCell inherits ShortcutControls {
+    inset: 8px;
+    device-icon: root.controller ? @image-url("../../../../assets/icons/device-gamepad-2.svg") : root.binding.mouse ? @image-url("../../../../assets/icons/mouse.svg") : @image-url("../../../../assets/icons/keyboard.svg");
+    Rectangle { x: 0px; width: 1px; height: parent.height; background: Theme.border; }
 }
 
 component MovementRow inherits TableRow {
@@ -149,14 +160,9 @@ component MovementRow inherits TableRow {
     }
     controls := HorizontalLayout {
         x: root.width - self.width - 12px; width: min(688px, root.width * 0.82); height: parent.height; spacing: 6px;
-        for binding in Store.movement-bindings: Rectangle {
+        for binding in Store.movement-bindings: ShortcutControls {
             min-width: 0px; preferred-width: 0px; horizontal-stretch: 1;
-            RecordShortcut { x: 0px; y: (parent.height - self.height) / 2; width: parent.width - 36px;
-                binding: binding; controller: root.controller; prefix: binding.direction + "  "; prompt: root.controller ? "Press or move" : "Press a key";
-            }
-            ClearShortcut { x: parent.width - self.width; y: (parent.height - self.height) / 2;
-                binding: binding; controller: root.controller;
-            }
+            binding: binding; controller: root.controller;
         }
     }
 }
