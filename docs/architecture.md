@@ -202,7 +202,9 @@ and viewport memory limits can reduce preview resolution. Magnified arc arms use
 cubic curves around the native pivot. Saved-preset validation, overlay and export
 retain the original arc geometry. The tile clip includes the filter support at
 the current zoom independently of the native selection dimensions.
-Drag moves a layer. Corner handles on rectangles, ellipses and triangles edit
+Canvas selection follows the painted pixels of the topmost unlocked layer.
+Transparent areas pass clicks through. A near miss picks the closest painted
+pixel within the handle tolerance. Drag moves a layer. Corner handles on rectangles, ellipses and triangles edit
 width and height along the layer axes and keep the opposite corner fixed. Shift
 preserves the aspect ratio. Crosshair handles resize an open gap proportionally
 in whole layer-pixel steps. An outward drag reopens a closed gap in the same

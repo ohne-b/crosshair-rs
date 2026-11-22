@@ -10,7 +10,7 @@ mod svg;
 mod text;
 
 pub use assets::{AssetData, AssetInfo, AssetSource, inspect_asset};
-pub use canvas::{CanvasBounds, CanvasFrame, CanvasView};
+pub use canvas::{CanvasBounds, CanvasFrame, CanvasHitMap, CanvasView};
 pub use geometry::LayerBounds;
 
 use std::{collections::VecDeque, sync::Arc};
@@ -265,22 +265,57 @@ impl Renderer {
             self.rasters.push_back(item);
             return Ok(raster);
         }
+        let (output, _) = self.render_native(preset, scale, assets, false, &cancelled)?;
+        let raster = Arc::new(output);
+        self.raster_bytes += raster.pixels.len();
+        self.rasters.push_back((key, raster.clone()));
+        while self.raster_bytes > RASTER_CACHE_BYTES {
+            if let Some((_, old)) = self.rasters.pop_front() {
+                self.raster_bytes -= old.pixels.len();
+            }
+        }
+        Ok(raster)
+    }
+
+    pub fn render_native(
+        &mut self,
+        preset: &Preset,
+        scale: f32,
+        assets: &impl AssetSource,
+        pick_layers: bool,
+        cancelled: impl Fn() -> bool,
+    ) -> Result<(Raster, CanvasHitMap)> {
         let (layers, bounds) = self.prepare(preset, scale, false, &cancelled)?;
         let origin = [bounds.left as i32, bounds.top as i32];
         let width = bounds.width() as u32;
         let height = bounds.height() as u32;
         let mut output = Pixmap::new(width, height)
             .ok_or_else(|| anyhow::anyhow!("Could not allocate crosshair pixels"))?;
-        for layer in layers {
+        let mut hits = if pick_layers {
+            CanvasHitMap::new(&layers, origin, width, height, scale)
+        } else {
+            CanvasHitMap::default()
+        };
+        for (index, layer) in layers.iter().enumerate() {
             ensure!(!cancelled(), "Rendering cancelled");
             let raster = composite::render_layer(
-                &layer,
+                layer,
                 origin,
                 [width, height],
                 &mut self.assets,
                 assets,
                 &cancelled,
             )?;
+            if pick_layers {
+                hits.paint(
+                    index,
+                    &raster,
+                    [0, 0],
+                    origin,
+                    width as usize,
+                    height as usize,
+                );
+            }
             output.draw_pixmap(
                 0,
                 0,
@@ -291,19 +326,14 @@ impl Renderer {
             );
         }
         ensure!(!cancelled(), "Rendering cancelled");
-        let raster = Arc::new(Raster {
-            width,
-            height,
-            origin,
-            pixels: output.take(),
-        });
-        self.raster_bytes += raster.pixels.len();
-        self.rasters.push_back((key, raster.clone()));
-        while self.raster_bytes > RASTER_CACHE_BYTES {
-            if let Some((_, old)) = self.rasters.pop_front() {
-                self.raster_bytes -= old.pixels.len();
-            }
-        }
-        Ok(raster)
+        Ok((
+            Raster {
+                width,
+                height,
+                origin,
+                pixels: output.take(),
+            },
+            hits,
+        ))
     }
 }

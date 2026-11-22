@@ -1,6 +1,6 @@
 use super::{AssetSource, LayerBounds, MAX_DIMENSION, Raster, Renderer, composite};
 use anyhow::{Context, Result, ensure};
-use crosshair_core::Preset;
+use crosshair_core::{Id, Point, Preset};
 use tiny_skia::{Pixmap, PixmapPaint, Transform};
 
 /// Physical screen pixels per design pixel and the visible rectangle in design pixels.
@@ -36,6 +36,97 @@ pub struct CanvasFrame {
     pub view: CanvasView,
     pub scale: f32,
     pub tiles: Vec<Raster>,
+    pub hits: CanvasHitMap,
+}
+
+/// One byte per displayed pixel identifies the topmost unlocked layer that painted it.
+#[derive(Default)]
+pub struct CanvasHitMap {
+    layers: Vec<Option<Id>>,
+    origin: [i32; 2],
+    width: usize,
+    scale: f32,
+    pixels: Vec<u8>,
+}
+
+impl CanvasHitMap {
+    pub(super) fn new(
+        layers: &[super::geometry::PreparedLayer],
+        origin: [i32; 2],
+        width: u32,
+        height: u32,
+        scale: f32,
+    ) -> Self {
+        Self {
+            layers: layers.iter().map(|layer| layer.pick_id).collect(),
+            origin,
+            width: width as usize,
+            scale,
+            pixels: vec![0; width as usize * height as usize],
+        }
+    }
+
+    pub(super) fn paint(
+        &mut self,
+        index: usize,
+        raster: &Pixmap,
+        source: [usize; 2],
+        origin: [i32; 2],
+        width: usize,
+        height: usize,
+    ) {
+        if self.layers[index].is_none() {
+            return;
+        }
+        let left = (origin[0] - self.origin[0]) as usize;
+        let top = (origin[1] - self.origin[1]) as usize;
+        for y in 0..height {
+            let src = (source[1] + y) * raster.width() as usize + source[0];
+            let dst = (top + y) * self.width + left;
+            for (id, pixel) in self.pixels[dst..dst + width]
+                .iter_mut()
+                .zip(&raster.pixels()[src..src + width])
+            {
+                if pixel.alpha() > 0 {
+                    *id = (index + 1) as u8;
+                }
+            }
+        }
+    }
+
+    pub fn layer_at(&self, point: Point, tolerance: f32) -> Option<Id> {
+        if self.pixels.is_empty() {
+            return None;
+        }
+        let x = point.x * self.scale - self.origin[0] as f32;
+        let y = point.y * self.scale - self.origin[1] as f32;
+        let height = self.pixels.len() / self.width;
+        if x >= 0.0 && y >= 0.0 && x < self.width as f32 && y < height as f32 {
+            let id = self.pixels[y as usize * self.width + x as usize];
+            if id != 0 {
+                return self.layers[id as usize - 1];
+            }
+        }
+        let radius = tolerance * self.scale;
+        let mut closest = radius * radius;
+        let mut best = 0;
+        for row in
+            (y - radius).floor().max(0.0) as usize..((y + radius).ceil() as usize).min(height)
+        {
+            for col in (x - radius).floor().max(0.0) as usize
+                ..((x + radius).ceil() as usize).min(self.width)
+            {
+                let id = self.pixels[row * self.width + col];
+                let distance = (row as f32 + 0.5 - y).powi(2) + (col as f32 + 0.5 - x).powi(2);
+                if id != 0 && (distance < closest || (distance == closest && id > best)) {
+                    best = id;
+                    closest = distance;
+                }
+            }
+        }
+        best.checked_sub(1)
+            .and_then(|index| self.layers[index as usize])
+    }
 }
 
 impl CanvasView {
@@ -116,6 +207,17 @@ impl Renderer {
         assets: &impl AssetSource,
         cancelled: impl Fn() -> bool,
     ) -> Result<CanvasFrame> {
+        self.render_canvas_frame(preset, view, assets, false, cancelled)
+    }
+
+    pub fn render_canvas_frame(
+        &mut self,
+        preset: &Preset,
+        view: CanvasView,
+        assets: &impl AssetSource,
+        pick_layers: bool,
+        cancelled: impl Fn() -> bool,
+    ) -> Result<CanvasFrame> {
         let (mut layers, bounds) = self.prepare(preset, 1.0, view.scale > 1.0, &cancelled)?;
         let v = view.visible;
         ensure!(
@@ -185,6 +287,7 @@ impl Renderer {
             view,
             scale,
             tiles: Vec::new(),
+            hits: CanvasHitMap::default(),
             painted: LayerBounds {
                 left: doc_x as f32 / scale,
                 top: doc_y as f32 / scale,
@@ -204,6 +307,10 @@ impl Renderer {
             "Magnified canvas exceeds its pixel budget"
         );
         let side = side as i32;
+        if pick_layers {
+            frame.hits =
+                CanvasHitMap::new(&layers, [x0, y0], (x1 - x0) as u32, (y1 - y0) as u32, scale);
+        }
         let tile_x = doc_x + (x0 - doc_x).div_euclid(side) * side;
         let tile_y = doc_y + (y0 - doc_y).div_euclid(side) * side;
         for y in (tile_y..y1).step_by(side as usize) {
@@ -219,7 +326,7 @@ impl Renderer {
                     (doc_right - x).min(side) as u32 + 2 * gutter,
                     (doc_bottom - y).min(side) as u32 + 2 * gutter,
                 ];
-                for layer in &layers {
+                for (index, layer) in layers.iter().enumerate() {
                     ensure!(!cancelled(), "Rendering cancelled");
                     let raster = composite::render_layer(
                         layer,
@@ -229,6 +336,19 @@ impl Renderer {
                         assets,
                         &cancelled,
                     )?;
+                    if pick_layers {
+                        frame.hits.paint(
+                            index,
+                            &raster,
+                            [
+                                (origin[0] - padded_origin[0]) as usize,
+                                (origin[1] - padded_origin[1]) as usize,
+                            ],
+                            origin,
+                            width as usize,
+                            height as usize,
+                        );
+                    }
                     output.draw_pixmap(
                         padded_origin[0] - origin[0],
                         padded_origin[1] - origin[1],

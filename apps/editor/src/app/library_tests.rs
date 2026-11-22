@@ -402,6 +402,7 @@ fn canvas_alignment_dots_only_appear_during_layer_moves() -> Result<()> {
     let mut renderer = crosshair_renderer::Renderer::new()?;
     app.bounds = vec![(layer.id, renderer.canvas_layer_bounds(layer)?)];
     app.anchors.insert(layer.id, renderer.anchor_point(layer)?);
+    app.hits = super::gesture_tests::test_pick_map(&preset)?;
     app.document.open(preset)?;
     app.refresh_document();
     let app = RefCell::new(app);

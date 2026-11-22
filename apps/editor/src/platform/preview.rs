@@ -82,7 +82,7 @@ struct Pending {
     anchor: Mutex<Option<(Preset, Vec<Id>, Anchor)>>,
     recovery: Mutex<Option<(Preset, RecoveryAction)>>,
     recovering: AtomicBool,
-    bitmap: Mutex<Option<(u64, Preset, CanvasView)>>,
+    bitmap: Mutex<Option<(u64, Preset, CanvasView, bool)>>,
     bitmap_generation: AtomicU64,
 }
 
@@ -91,7 +91,7 @@ pub struct Preview {
 }
 
 impl Preview {
-    pub fn bitmap(&self, document: Preset, view: CanvasView) -> u64 {
+    pub fn bitmap(&self, document: Preset, view: CanvasView, pick_layers: bool) -> u64 {
         let _request = self.pending.request.lock();
         let generation = self
             .pending
@@ -99,7 +99,7 @@ impl Preview {
             .fetch_add(1, Ordering::AcqRel)
             + 1;
         if let Ok(mut pending) = self.pending.bitmap.lock() {
-            *pending = Some((generation, document, view));
+            *pending = Some((generation, document, view, pick_layers));
         }
         self.pending.ready.notify_one();
         generation
@@ -250,7 +250,7 @@ fn worker(
             }
         }
         let Some((generation, mut request)) = render_job else {
-            if let Some((generation, document, view)) =
+            if let Some((generation, document, view, pick_layers)) =
                 pending.bitmap.lock().ok().and_then(|mut job| job.take())
             {
                 let cancelled = || {
@@ -265,8 +265,15 @@ fn worker(
                         .or_else(|| client.cached_asset(id))
                         .context("Preview image is not ready")
                 };
-                let result = canvas_preview(&mut renderer, &document, view, &source, cancelled)
-                    .map_err(|error| error.to_string());
+                let result = canvas_preview(
+                    &mut renderer,
+                    &document,
+                    view,
+                    &source,
+                    pick_layers,
+                    cancelled,
+                )
+                .map_err(|error| error.to_string());
                 if !cancelled() {
                     events(Event::Bitmap {
                         generation,
@@ -344,8 +351,14 @@ fn worker(
                     let thumbnail = renderer
                         .render_cancellable(document, 1.0, &source, cancelled)?
                         .thumbnail(24, 1.0)?;
-                    let frame =
-                        canvas_preview(&mut renderer, document, request.view, &source, cancelled)?;
+                    let frame = canvas_preview(
+                        &mut renderer,
+                        document,
+                        request.view,
+                        &source,
+                        true,
+                        cancelled,
+                    )?;
                     Ok((frame, thumbnail))
                 });
             match rendered {
@@ -463,12 +476,13 @@ fn canvas_preview(
     document: &Preset,
     mut view: CanvasView,
     source: &impl crosshair_renderer::AssetSource,
+    pick_layers: bool,
     cancelled: impl Fn() -> bool,
 ) -> Result<CanvasFrame> {
     let requested = view;
     // A filtered SVG can fit its native output budget but exceed it at display scale.
     loop {
-        match renderer.render_canvas(document, view, source, &cancelled) {
+        match renderer.render_canvas_frame(document, view, source, pick_layers, &cancelled) {
             Ok(mut frame) => {
                 frame.view = requested;
                 return Ok(frame);
@@ -476,7 +490,8 @@ fn canvas_preview(
             Err(_) if view.scale > 2.0 && !cancelled() => view.scale /= 2.0,
             Err(error) if cancelled() => return Err(error),
             Err(_) => {
-                let native = renderer.render_cancellable(document, 1.0, source, &cancelled)?;
+                let (native, hits) =
+                    renderer.render_native(document, 1.0, source, pick_layers, &cancelled)?;
                 let bounds = crosshair_renderer::LayerBounds {
                     left: native.origin[0] as f32,
                     top: native.origin[1] as f32,
@@ -491,7 +506,8 @@ fn canvas_preview(
                         ..requested
                     },
                     scale: 1.0,
-                    tiles: vec![Arc::unwrap_or_clone(native)],
+                    tiles: vec![native],
+                    hits,
                 });
             }
         }
@@ -677,7 +693,7 @@ mod preview_tests {
                 .render_canvas(&preset, view, &source, || false)
                 .is_err()
         );
-        let frame = canvas_preview(&mut renderer, &preset, view, &source, || false).unwrap();
+        let frame = canvas_preview(&mut renderer, &preset, view, &source, true, || false).unwrap();
         assert_eq!(frame.view, view);
         assert!(frame.scale < view.scale);
         assert!(
@@ -686,7 +702,7 @@ mod preview_tests {
                 .iter()
                 .any(|t| t.pixels.chunks_exact(4).any(|p| p[3] > 0))
         );
-        assert!(canvas_preview(&mut renderer, &preset, view, &source, || true).is_err());
+        assert!(canvas_preview(&mut renderer, &preset, view, &source, true, || true).is_err());
     }
 
     #[test]

@@ -48,6 +48,7 @@ pub(super) fn app(ui: &AppWindow) -> App {
         browse: Vec::new(),
         browse_save_feedback_timer: slint::Timer::default(),
         bounds: Vec::new(),
+        hits: Default::default(),
         inverses: BTreeMap::new(),
         anchors: BTreeMap::new(),
         preview_generation: 0,
@@ -234,6 +235,7 @@ fn test_frame(view: CanvasView, x: f32, y: f32) -> CanvasFrame {
         bounds,
         painted: bounds,
         scale: 1.0,
+        hits: Default::default(),
         tiles: vec![crosshair_renderer::Raster {
             width: 1,
             height: 1,
@@ -1020,17 +1022,78 @@ fn hidden_layers_remain_editable_and_visibility_is_undoable() -> Result<()> {
     Ok(())
 }
 
+pub(super) fn test_pick_map(preset: &Preset) -> Result<crosshair_renderer::CanvasHitMap> {
+    let visible = LayerBounds {
+        left: -64.0,
+        top: -64.0,
+        right: 64.0,
+        bottom: 64.0,
+    };
+    Ok(crosshair_renderer::Renderer::new()?
+        .render_canvas_frame(
+            preset,
+            CanvasView {
+                visible,
+                scale: 8.0,
+            },
+            &|_| anyhow::bail!("Unexpected image"),
+            true,
+            || false,
+        )?
+        .hits)
+}
+
+#[test]
+fn canvas_picks_the_visible_marks_through_an_arc_layers_empty_center() -> Result<()> {
+    let ui = window();
+    let mut app = app(&ui);
+    let mut preset = crate::features::browse::presets()
+        .into_iter()
+        .find(|p| p.name == "Shotgun")
+        .unwrap();
+    let arcs = crate::features::presets::presets()
+        .into_iter()
+        .find(|p| p.name == "Arcs")
+        .unwrap()
+        .layers
+        .remove(0);
+    preset.layers.push(arcs);
+    app.hits = test_pick_map(&preset)?;
+    app.document.open(preset.clone())?;
+    for (point, name) in [
+        (Point::default(), Some("Center dot")),
+        (Point { x: -19.0, y: -19.0 }, Some("Diagonal marks")),
+        (Point { x: 22.0, y: 14.0 }, Some("Lower right outer")),
+        (Point { x: 9.0, y: 9.0 }, None),
+    ] {
+        app.canvas_event(0, point, 1, false)?;
+        let selected = app
+            .document
+            .selected_layer()
+            .map(|layer| layer.name.as_str());
+        assert_eq!(selected, name);
+        app.canvas_event(2, point, 1, false)?;
+    }
+    Ok(())
+}
+
 #[test]
 fn canvas_draws_and_hits_one_group_box_and_preserves_a_tiny_move_target() -> Result<()> {
     let ui = window();
     let mut app = app(&ui);
     let store = ui.global::<Store>();
     let mut preset = app.state.presets[0].clone();
+    preset.layers[0].content = Content::Ellipse(Shape {
+        width: 1.0,
+        height: 1.0,
+        ..Default::default()
+    });
     let first = preset.layers[0].id;
     let mut second = preset.layers[0].duplicate();
     second.transform.x = 20.0;
     let id = second.id;
     preset.layers.push(second);
+    app.hits = test_pick_map(&preset)?;
     let small = LayerBounds {
         left: -0.5,
         top: -0.5,
@@ -1098,6 +1161,7 @@ fn one_pixel_handle_follows_the_painted_cell_and_keeps_the_opposite_edge_fixed()
     let mut renderer = crosshair_renderer::Renderer::new()?;
     app.bounds = vec![(layer.id, renderer.canvas_layer_bounds(layer)?)];
     app.anchors.insert(layer.id, renderer.anchor_point(layer)?);
+    app.hits = test_pick_map(&doc)?;
     app.document.open(doc)?;
     app.refresh_bounds();
     let shown = ui.global::<Store>().get_selection_bounds();
@@ -1360,7 +1424,9 @@ fn rotated_shape_handles_keep_the_opposite_corner_on_scaled_anchored_shapes() ->
 fn undo_and_keyboard_edits_stop_the_previous_canvas_drag() -> Result<()> {
     let ui = window();
     let mut app = app(&ui);
-    let preset = app.state.presets[0].clone();
+    let mut preset = app.state.presets[0].clone();
+    preset.layers[0].content = Content::Ellipse(Shape::default());
+    app.hits = test_pick_map(&preset)?;
     let layer = &preset.layers[0];
     app.bounds = vec![(
         layer.id,
@@ -1378,6 +1444,7 @@ fn undo_and_keyboard_edits_stop_the_previous_canvas_drag() -> Result<()> {
     ));
     app.action("redo", "")?;
     complete_preview(&mut app, None)?;
+    app.hits = test_pick_map(app.document.draft.as_ref().unwrap())?;
     assert_eq!(
         app.document.draft.as_ref().unwrap().layers[0].transform.x,
         2.0

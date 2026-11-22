@@ -9,6 +9,50 @@ fn no_assets(_: Id) -> anyhow::Result<AssetData> {
 }
 
 #[test]
+fn canvas_picking_skips_locked_layers_and_empty_pixels_across_tiles() -> anyhow::Result<()> {
+    let mut doc = preset(Content::Rectangle(Rectangle {
+        width: 150.0,
+        height: 4.0,
+        ..Default::default()
+    }));
+    let base = doc.layers[0].id;
+    let mut top = Layer::new(
+        "Dot",
+        Content::Ellipse(Shape {
+            width: 3.0,
+            height: 3.0,
+            ..Default::default()
+        }),
+    );
+    top.transform.x = 60.0;
+    let dot = top.id;
+    doc.layers.push(top);
+    let mut locked = doc.layers[0].duplicate();
+    locked.locked = true;
+    doc.layers.push(locked);
+    let mut renderer = Renderer::new()?;
+    let view = CanvasView {
+        scale: 8.0,
+        visible: LayerBounds {
+            left: -70.0,
+            right: 74.0,
+            top: -10.0,
+            bottom: 10.0,
+        },
+    };
+    let frame = renderer.render_canvas_frame(&doc, view, &no_assets, true, || false)?;
+    assert!(frame.tiles.len() > 1);
+    let (_, native) = renderer.render_native(&doc, 1.0, &no_assets, true, || false)?;
+    for hits in [&frame.hits, &native] {
+        assert_eq!(hits.layer_at(Point { x: 60.0, y: 0.0 }, 1.0), Some(dot));
+        assert_eq!(hits.layer_at(Point { x: -65.0, y: 0.0 }, 0.0), Some(base));
+        assert_eq!(hits.layer_at(Point { x: 0.0, y: 2.5 }, 1.5), Some(base));
+        assert_eq!(hits.layer_at(Point { x: 0.0, y: 5.0 }, 1.5), None);
+    }
+    Ok(())
+}
+
+#[test]
 fn thumbnails_preserve_aspect_and_premultiplied_color() -> anyhow::Result<()> {
     let raster = Raster {
         width: 48,
