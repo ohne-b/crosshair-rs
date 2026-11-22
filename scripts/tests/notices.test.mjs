@@ -25,6 +25,10 @@ test('notices preserve actual files deterministically without local paths', () =
     writeFileSync(join(directory, 'README.md'), 'Not license material.');
     const pkg = { name: 'fixture', version: '1.2.3', license: 'MIT', repository: 'https://example.com/fixture', source: 'registry+fixture', manifest_path: join(directory, 'Cargo.toml') };
     assert.deepEqual(licenseFiles(directory).map(path => relative(directory, path).replaceAll('\\', '/')), ['LICENSE-MIT', 'LICENSES/extra.txt']);
+    mkdirSync(join(directory, 'native'));
+    writeFileSync(join(directory, 'native/LICENSE'), 'Vendored native library terms.');
+    assert(licenseFiles(directory, undefined, ['native/LICENSE']).includes(join(directory, 'native/LICENSE')));
+    assert.throws(() => licenseFiles(directory, undefined, ['native/missing']));
     const text = renderNotices([pkg]);
     assert(text.includes('Copyright fixture authors\nFixture license text.'));
     assert(text.includes('````text\nAdditional fixture terms with ``` literal fences.'));

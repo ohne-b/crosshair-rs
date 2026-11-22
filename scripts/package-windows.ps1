@@ -27,6 +27,8 @@ $pathMappings = @(@($profilePath, '/build-user'), @($cargoPath, '/cargo'), @($ru
 if (!$SkipBuild) {
     Push-Location $repoRoot
     $previousFlags = $env:CARGO_ENCODED_RUSTFLAGS
+    $previousCFlags = $env:CFLAGS
+    $previousCxxFlags = $env:CXXFLAGS
     try {
         $flags = @(if ($previousFlags) { $previousFlags.Split([char]31) } elseif ($env:RUSTFLAGS) { $env:RUSTFLAGS -split '\s+' | Where-Object { $_ } })
         foreach ($mapping in $pathMappings) {
@@ -36,12 +38,20 @@ if (!$SkipBuild) {
         }
         $flags += '-Clink-arg=/PDBALTPATH:%_PDB%'
         $env:CARGO_ENCODED_RUSTFLAGS = $flags -join [char]31
+        # SDL assertions would otherwise embed the CMake source directory in the engine.
+        $env:CFLAGS = "$previousCFlags -DSDL_FILE=__FUNCTION__".Trim()
+        $env:CXXFLAGS = "$previousCxxFlags -DSDL_FILE=__FUNCTION__".Trim()
         $cargoArgs = @('build', '--locked', '--workspace')
         if ($Configuration -eq 'Release') { $cargoArgs += '--release' }
         if ($Offline) { $cargoArgs += '--offline' }
         & cargo @cargoArgs
         if ($LASTEXITCODE -ne 0) { throw 'Rust build failed.' }
-    } finally { $env:CARGO_ENCODED_RUSTFLAGS = $previousFlags; Pop-Location }
+    } finally {
+        $env:CARGO_ENCODED_RUSTFLAGS = $previousFlags
+        $env:CFLAGS = $previousCFlags
+        $env:CXXFLAGS = $previousCxxFlags
+        Pop-Location
+    }
     & (Join-Path $PSScriptRoot 'build-gamebar.ps1') -Configuration $Configuration -Test -Offline:$Offline
 }
 $gamebarOutput = Join-Path $repoRoot "target/gamebar/$($Configuration.ToLowerInvariant())"

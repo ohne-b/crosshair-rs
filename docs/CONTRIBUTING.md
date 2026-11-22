@@ -81,7 +81,9 @@ sign-in require an installed package. Unpackaged builds store their data in
 ## Validation
 
 Use x64 Windows, the Rust toolchain in `rust-toolchain.toml`, Node 24, Visual
-Studio 2022 C++ build tools and Windows SDK 10.0.26100. The Game Bar build restores
+Studio 2022 C++ build tools and Windows SDK 10.0.26100. Put CMake on PATH or set
+`CMAKE` to the path of `cmake.exe` from Visual Studio’s C++ CMake tools. Cargo
+uses it to build the locked SDL sources into the engine. The Game Bar build restores
 hash-pinned SDK/C++WinRT packages into ignored `target/`; it does not need the
 Visual Studio XAML designer workload. Run the checks relevant to the change:
 

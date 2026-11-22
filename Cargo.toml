@@ -29,3 +29,7 @@ unsafe_op_in_unsafe_fn = "deny"
 lto = "thin"
 codegen-units = 1
 strip = "debuginfo"
+
+# Build SDL with the same MSVC runtime as Rust's debug binaries.
+[profile.dev.package.sdl3-sys]
+opt-level = 1
