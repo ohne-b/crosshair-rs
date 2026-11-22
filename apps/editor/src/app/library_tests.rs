@@ -23,11 +23,46 @@ fn key(ui: &AppWindow, text: impl Into<SharedString>) {
         .dispatch_event(WindowEvent::KeyReleased { text });
 }
 
-// Center and right edge of a Movement column in the two rendered window sizes.
-fn movement_cell(width: f32, column: usize) -> (f32, f32) {
-    let pitch = if width == 1280.0 { 223.0 } else { 161.0 };
-    let right = width - 37.0 - (3 - column) as f32 * pitch;
-    (right - (pitch - 8.0) / 2.0, right)
+fn movement_binding_x(width: f32, column: usize) -> f32 {
+    let (first, pitch) = if width == 1280.0 {
+        (438.0, 226.0)
+    } else {
+        (336.0, 164.0)
+    };
+    first + column as f32 * pitch
+}
+
+// Find the clear button beside the hovered label and check both painted bounds.
+fn movement_clear_x(ui: &AppWindow, binding_x: f32, y: usize, size: usize) -> Result<f32> {
+    let frame = ui.window().take_snapshot()?;
+    let stride = frame.width() as usize;
+    let row = &frame.as_slice()[y * stride..(y + 1) * stride];
+    let panel = row[84];
+    let binding_x = binding_x as usize;
+    let binding_end = binding_x + row[binding_x..].iter().take_while(|&&p| p != panel).count();
+    let gap = row[binding_end..]
+        .iter()
+        .take_while(|&&p| p == panel)
+        .count();
+    assert_eq!(gap, 4, "gap after the movement binding");
+    let clear_left = binding_end + gap;
+    assert_eq!(
+        row[clear_left..]
+            .iter()
+            .take_while(|&&p| p != panel)
+            .count(),
+        size
+    );
+    let clear_x = clear_left + size / 2;
+    let top = y - size / 2;
+    for x in [binding_x, clear_x] {
+        let painted = |y: usize| frame.as_slice()[y * stride + x] != panel;
+        assert_eq!(
+            [top - 1, top, top + size - 1, top + size].map(painted),
+            [false, true, true, false]
+        );
+    }
+    Ok(clear_x as f32)
 }
 
 fn snapshot(window: &MinimalSoftwareWindow, name: &str) -> Result<()> {
@@ -811,6 +846,9 @@ fn action_shortcut_fields_and_clear_buttons_follow_hover_and_focus() -> Result<(
             .borrow_mut()
             .push((action.to_string(), value.to_string()));
     });
+    let capture_right = Rc::new(Cell::new(0.0));
+    let right_edge = capture_right.clone();
+    store.on_capture_region(move |x, _, width, _| right_edge.set(x + width));
     ui.show()?;
 
     for width in [1280.0, 960.0] {
@@ -872,11 +910,18 @@ fn action_shortcut_fields_and_clear_buttons_follow_hover_and_focus() -> Result<(
         );
 
         // Movement reveals only the hovered direction. An empty action only records.
-        let (center, edge) = movement_cell(width, 0);
-        let (_, next_edge) = movement_cell(width, 1);
+        let center = movement_binding_x(width, 0);
+        let next = movement_binding_x(width, 1);
         move_to(center, 527.0);
-        assert_ne!(backgrounds(edge, 527)?[1], idle[1]);
-        assert_eq!(backgrounds(next_edge, 527)?[1], idle[1]);
+        let frame = ui.window().take_snapshot()?;
+        let fill = |x: f32| frame.as_slice()[537 * frame.width() as usize + x as usize];
+        assert_eq!(fill(center), hovered[0]);
+        assert_eq!(fill(next), idle[0]);
+        click(&ui, center, 527.0);
+        store.set_capture_id("forward".into());
+        let clear_x = movement_clear_x(&ui, center, 527, 26)?;
+        assert!(clear_x - 16.0 >= capture_right.get());
+        store.set_capture_id("".into());
         move_to(1.0, 1.0);
         if width == 1280.0 {
             snapshot(&window, "movement-grid.png")?;
@@ -1392,9 +1437,8 @@ fn library_tabs_sort_picker_and_browse_actions_are_independent() -> Result<()> {
             (527.0, "capture", "clear-keyboard"),
             (565.0, "capture-controller", "clear-controller"),
         ] {
-            let (center, _) = movement_cell(width, 3);
-            // Sample the Right binding below its text, excluding the 36 px clear slot.
-            let binding_fill = || fill_at(center - 18.0, y as usize + 10);
+            let center = movement_binding_x(width, 3);
+            let binding_fill = || fill_at(center, y as usize + 10);
             move_to(center, y);
             assert_eq!(binding_fill()?, hover);
             if width == 1280.0 && record == "capture-controller" {
@@ -1406,10 +1450,12 @@ fn library_tabs_sort_picker_and_browse_actions_are_independent() -> Result<()> {
                 .into_iter()
                 .enumerate()
             {
-                let (center, edge) = movement_cell(width, i);
+                let center = movement_binding_x(width, i);
+                move_to(center, y);
+                let clear_x = movement_clear_x(&ui, center, y as usize, 26)?;
                 events.borrow_mut().clear();
                 click(&ui, center, y);
-                click(&ui, edge - 16.0, y);
+                click(&ui, clear_x, y);
                 assert_eq!(
                     *events.borrow(),
                     [
@@ -1422,14 +1468,15 @@ fn library_tabs_sort_picker_and_browse_actions_are_independent() -> Result<()> {
         }
     }
     ui.global::<crate::Theme>().set_text_scale(2.0);
-    let (center, edge) = movement_cell(960.0, 3);
+    let center = movement_binding_x(960.0, 3);
     ui.window().dispatch_event(WindowEvent::PointerMoved {
         position: slint::LogicalPosition::new(center, 597.0),
     });
     snapshot(&window, "movement-grid-large-text.png")?;
+    let clear_x = movement_clear_x(&ui, center, 597, 34)?;
     events.borrow_mut().clear();
     click(&ui, center, 597.0);
-    click(&ui, edge - 16.0, 597.0);
+    click(&ui, clear_x, 597.0);
     assert_eq!(
         *events.borrow(),
         [
