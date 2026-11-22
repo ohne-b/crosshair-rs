@@ -356,9 +356,17 @@ impl App {
             "export-draft" => self.export_draft(DraftFormat::Preset)?,
             "export-all" => self.export(ExportKind::All)?,
             "import" => {
-                if let Some(path) =
+                let path = if value.is_empty() {
                     dialogs::choose(self.hwnd()?, false, dialogs::FileKind::Document, "")?
-                {
+                } else {
+                    let path = std::path::PathBuf::from(value);
+                    ensure!(
+                        dialogs::FileKind::Document.accepts(&path),
+                        "Choose a .json or .crosshair file to import"
+                    );
+                    Some(path)
+                };
+                if let Some(path) = path {
                     self.client.stage_file(
                         path,
                         StagingPurpose::Import { replace: false },
