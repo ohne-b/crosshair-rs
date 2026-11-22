@@ -519,6 +519,8 @@ pub struct Settings {
     #[serde(default)]
     pub discord_style: DiscordStyle,
     pub global_toggle: Option<InputChord>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub controller_toggle: Option<GamepadControl>,
 }
 
 fn discord_presence_default() -> bool {
@@ -536,6 +538,7 @@ impl Default for Settings {
             allow_prereleases: false,
             discord_presence: discord_presence_default(),
             discord_style: DiscordStyle::Simple,
+            controller_toggle: None,
             global_toggle: Some(InputChord {
                 trigger: InputKey::Keyboard {
                     scan_code: 0x2c,
@@ -718,9 +721,66 @@ pub enum InputKey {
     Mouse { button: u8 },
     Wheel { up: bool },
     Pause,
+    Gamepad { control: GamepadControl },
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum InputSource {
+    KeyboardMouse,
+    Controller,
+}
+
+/// Standard SDL gamepad positions, independent of a device's printed labels.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum GamepadControl {
+    North,
+    East,
+    South,
+    West,
+    Back,
+    Guide,
+    Start,
+    LeftStick,
+    RightStick,
+    LeftShoulder,
+    RightShoulder,
+    DPadUp,
+    DPadDown,
+    DPadLeft,
+    DPadRight,
+    Misc1,
+    Misc2,
+    Misc3,
+    Misc4,
+    Misc5,
+    Misc6,
+    RightPaddle1,
+    LeftPaddle1,
+    RightPaddle2,
+    LeftPaddle2,
+    Touchpad,
+    LeftTrigger,
+    RightTrigger,
+    LeftStickUp,
+    LeftStickDown,
+    LeftStickLeft,
+    LeftStickRight,
+    RightStickUp,
+    RightStickDown,
+    RightStickLeft,
+    RightStickRight,
 }
 
 impl InputKey {
+    pub fn source(self) -> InputSource {
+        match self {
+            Self::Gamepad { .. } => InputSource::Controller,
+            _ => InputSource::KeyboardMouse,
+        }
+    }
+
     pub fn is_pulse(self) -> bool {
         matches!(self, Self::Wheel { .. } | Self::Pause)
     }
@@ -751,6 +811,13 @@ pub struct InputChord {
 }
 
 impl InputChord {
+    pub fn gamepad(control: GamepadControl) -> Self {
+        Self {
+            trigger: InputKey::Gamepad { control },
+            modifiers: Vec::new(),
+        }
+    }
+
     pub fn key(scan_code: u16) -> Self {
         Self {
             trigger: InputKey::Keyboard {
@@ -785,17 +852,24 @@ pub struct Binding {
     #[serde(default)]
     pub name: String,
     pub enabled: bool,
-    pub chord: InputChord,
+    pub chord: Option<InputChord>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub controller: Option<GamepadControl>,
     pub action: BindingAction,
 }
 
 impl Binding {
     pub fn new(chord: InputChord, action: BindingAction) -> Self {
+        let (chord, controller) = match chord.trigger {
+            InputKey::Gamepad { control } => (None, Some(control)),
+            _ => (Some(chord), None),
+        };
         Self {
             id: Id::new_v4(),
             name: String::new(),
             enabled: true,
             chord,
+            controller,
             action,
         }
     }
@@ -821,10 +895,17 @@ fn deserialize_bindings<'de, D: serde::Deserializer<'de>>(
         #[serde(default)]
         name: String,
         enabled: bool,
-        chord: InputChord,
+        chord: Option<InputChord>,
+        controller: Option<GamepadControl>,
         action: StoredAction,
     }
     let bindings = Vec::<StoredBinding>::deserialize(deserializer)?;
+    if bindings
+        .iter()
+        .any(|b| b.chord.is_none() && b.controller.is_none())
+    {
+        return Err(serde::de::Error::custom("A shortcut needs an assignment"));
+    }
     Ok(bindings
         .into_iter()
         .filter_map(|binding| {
@@ -843,6 +924,7 @@ fn deserialize_bindings<'de, D: serde::Deserializer<'de>>(
                 name: binding.name,
                 enabled: binding.enabled,
                 chord: binding.chord,
+                controller: binding.controller,
                 action,
             })
         })

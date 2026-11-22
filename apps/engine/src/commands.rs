@@ -263,6 +263,7 @@ impl App {
             Command::SetBindings {
                 profiles,
                 global_toggle,
+                controller_toggle,
                 expected_revision,
             } => {
                 self.expect_revision(expected_revision)?;
@@ -282,6 +283,7 @@ impl App {
                     profile.actions = set.actions;
                 }
                 next.settings.global_toggle = global_toggle;
+                next.settings.controller_toggle = controller_toggle;
                 self.commit(next)?;
             }
             Command::DeleteProfile {
@@ -307,7 +309,8 @@ impl App {
             } => {
                 self.expect_revision(expected_revision)?;
                 ensure!(
-                    settings.global_toggle == self.state.settings.global_toggle,
+                    settings.global_toggle == self.state.settings.global_toggle
+                        && settings.controller_toggle == self.state.settings.controller_toggle,
                     "Change visibility shortcuts through the keybinding editor"
                 );
                 let mut next = self.state.clone();
@@ -317,12 +320,12 @@ impl App {
                 self.replace_state(next);
                 self.bump()?;
             }
-            Command::BeginCapture { token } => {
+            Command::BeginCapture { token, source } => {
                 ensure!(
                     self.capture_owner.is_none(),
                     "Another shortcut capture is active"
                 );
-                self.input.begin_capture(self.elapsed_ms());
+                self.input.begin_capture(self.elapsed_ms(), source);
                 self.reset_playback();
                 self.capture_owner = Some((owner, token));
             }

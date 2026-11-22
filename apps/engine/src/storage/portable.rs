@@ -27,7 +27,7 @@ use super::{
 };
 
 const FORMAT: &str = "crosshair-rs";
-const VERSION: u32 = 4;
+const VERSION: u32 = crosshair_core::SCHEMA_VERSION;
 const RECORD_LIMIT: u64 = MAX_ASSET_BYTES.div_ceil(3) * 4 + 1024;
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize)]
@@ -537,7 +537,7 @@ impl<'de> Visitor<'de> for PortableSeed<'_> {
                 }
             }
         }
-        if format.as_deref() != Some(FORMAT) || !matches!(version, Some(1 | 2 | 3 | VERSION)) {
+        if format.as_deref() != Some(FORMAT) || !matches!(version, Some(1..=VERSION)) {
             return Err(de::Error::custom(
                 "Unsupported portable document format or version",
             ));

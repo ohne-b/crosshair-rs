@@ -455,7 +455,8 @@ impl Runtime {
             } => {
                 self.app.expect_revision(expected_revision)?;
                 ensure!(
-                    settings.global_toggle == self.app.state.settings.global_toggle,
+                    settings.global_toggle == self.app.state.settings.global_toggle
+                        && settings.controller_toggle == self.app.state.settings.controller_toggle,
                     "Change visibility shortcuts through Keybinds"
                 );
                 let mut candidate = self.app.state.clone();

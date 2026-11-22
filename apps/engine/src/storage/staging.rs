@@ -215,6 +215,7 @@ impl Store {
                     snapshot.profiles = vec![crosshair_core::Profile::new("Export", id)];
                     snapshot.active_profile = snapshot.profiles[0].id;
                     snapshot.settings.global_toggle = None;
+                    snapshot.settings.controller_toggle = None;
                     super::prune_asset_index(&mut snapshot, &Default::default());
                     validate_state(&snapshot)?;
                     let kind = match format {

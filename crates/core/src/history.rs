@@ -383,6 +383,7 @@ fn same_preset(a: &Preset, b: &Preset) -> bool {
 
 fn same_content(a: &AppState, b: &AppState) -> bool {
     a.settings.global_toggle == b.settings.global_toggle
+        && a.settings.controller_toggle == b.settings.controller_toggle
         && a.assets == b.assets
         && a.presets.len() == b.presets.len()
         && a.presets
@@ -409,6 +410,7 @@ fn restore(
     let mut restored = source.clone();
     restored.settings = current.settings.clone();
     restored.settings.global_toggle = source.settings.global_toggle.clone();
+    restored.settings.controller_toggle = source.settings.controller_toggle;
     restored.base_visible = current.base_visible;
     restored.revision = next_revision(current.revision)?;
     if restored
@@ -703,16 +705,22 @@ mod tests {
         let before = AppState::default();
         let mut state = before.clone();
         state.settings.global_toggle = Some(crate::InputChord::key(0x12));
+        state.settings.controller_toggle = Some(crate::GamepadControl::Back);
         let mut history = History::default();
         history.record(&before, &state).unwrap();
         state.settings.show_on_launch = false;
         history.undo(&mut state).unwrap();
         assert_eq!(state.settings.global_toggle, before.settings.global_toggle);
+        assert_eq!(state.settings.controller_toggle, None);
         assert!(!state.settings.show_on_launch);
         history.redo(&mut state).unwrap();
         assert_eq!(
             state.settings.global_toggle,
             Some(crate::InputChord::key(0x12))
+        );
+        assert_eq!(
+            state.settings.controller_toggle,
+            Some(crate::GamepadControl::Back)
         );
     }
 

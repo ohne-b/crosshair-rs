@@ -3,7 +3,10 @@ use std::io::{self, Read, Write};
 
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
-use crate::{Binding, Id, InputChord, PROTOCOL_VERSION, Preset, Profile, Settings};
+use crate::{
+    Binding, GamepadControl, Id, InputChord, InputSource, PROTOCOL_VERSION, Preset, Profile,
+    Settings,
+};
 
 pub const MAX_FRAME_BYTES: usize = 1024 * 1024;
 pub const CHUNK_BYTES: usize = 64 * 1024;
@@ -95,6 +98,7 @@ pub enum Command {
     SetBindings {
         profiles: Vec<BindingSet>,
         global_toggle: Option<InputChord>,
+        controller_toggle: Option<GamepadControl>,
         expected_revision: u64,
     },
     SelectProfile {
@@ -114,6 +118,7 @@ pub enum Command {
     },
     BeginCapture {
         token: Id,
+        source: InputSource,
     },
     CancelCapture {
         token: Id,
@@ -306,6 +311,7 @@ pub struct EngineStatus {
     pub can_redo: bool,
     pub save_error: Option<String>,
     pub render_error: Option<String>,
+    pub controller_error: Option<String>,
     pub update: UpdateStatus,
 }
 
