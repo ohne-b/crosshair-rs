@@ -466,16 +466,22 @@ pub fn run() -> Result<()> {
         }
         if let Some(ui) = drop_ui.upgrade() {
             use slint::winit_030::winit::event::WindowEvent;
+            let accepts = |path: &std::path::Path| {
+                let kind = if ui.global::<Store>().get_page() == 1 {
+                    dialogs::FileKind::Image
+                } else {
+                    dialogs::FileKind::Document
+                };
+                kind.accepts(path)
+            };
             match event {
-                WindowEvent::HoveredFile(path) if dialogs::is_document(path) => {
-                    ui.set_dragging_preset_file(true)
+                WindowEvent::HoveredFile(path) if accepts(path) => {
+                    ui.set_dragging_import_file(true)
                 }
-                WindowEvent::HoveredFileCancelled => ui.set_dragging_preset_file(false),
+                WindowEvent::HoveredFileCancelled => ui.set_dragging_import_file(false),
                 WindowEvent::DroppedFile(path) => {
-                    ui.set_dragging_preset_file(false);
-                    if ui.global::<Store>().get_page() == 1 || dialogs::is_document(path) {
-                        ui.invoke_file_dropped(path.to_string_lossy().as_ref().into());
-                    }
+                    ui.set_dragging_import_file(false);
+                    ui.invoke_file_dropped(path.to_string_lossy().as_ref().into(), accepts(path));
                 }
                 _ => {}
             }

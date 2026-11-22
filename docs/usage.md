@@ -3,8 +3,9 @@
 ## Crosshairs
 
 Create a crosshair in **Crosshairs**, then open it in **Designer**. Add crosshair,
-shape, image or drawing layers from the bottom palette. The Image tool opens an
-import picker. Rename crosshairs inline and star favorites to find them again.
+shape, image or drawing layers from the bottom palette. Open the **Image** tool
+to drop an image into its popover or choose **Browse files**. Rename crosshairs
+inline and star favorites to find them again.
 In **Saved**, choose **Import** and drop a `.json` or `.crosshair` file onto
 the popover, or choose **Browse files**.
 

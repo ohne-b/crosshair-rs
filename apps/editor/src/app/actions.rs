@@ -361,7 +361,7 @@ impl App {
                 } else {
                     let path = std::path::PathBuf::from(value);
                     ensure!(
-                        dialogs::is_document(&path),
+                        dialogs::FileKind::Document.accepts(&path),
                         "Choose a .json or .crosshair file to import"
                     );
                     Some(path)
