@@ -942,6 +942,55 @@ fn saved_card_actions_hide_after_favorite_clicks_and_show_for_keyboard_focus() -
 }
 
 #[test]
+fn profile_picker_leaves_a_gap_between_selectable_rows() -> Result<()> {
+    let (ui, window) = timed_test_window(Rc::new(Cell::default()))?;
+    let store = ui.global::<Store>();
+    store.set_connected(true);
+    store.set_profiles(
+        Rc::new(slint::VecModel::from(vec![
+            "Default".into(),
+            "Practice".into(),
+        ]))
+        .into(),
+    );
+    let selected = Rc::new(Cell::new(None));
+    let result = selected.clone();
+    store.on_action(move |action, value| {
+        if action == "select-profile" {
+            result.set(value.parse::<usize>().ok());
+        }
+    });
+    ui.show()?;
+    click(&ui, 910.0, 24.0);
+    ui.window().dispatch_event(WindowEvent::PointerMoved {
+        position: slint::LogicalPosition::new(950.0, 133.0),
+    });
+    snapshot(&window, "profile-picker-spacing.png")?;
+    let frame = ui.window().take_snapshot()?;
+    let pixel = |y: usize| frame.as_slice()[y * frame.width() as usize + 950];
+    assert_ne!(pixel(113), pixel(114));
+    assert!((115..118).all(|y| pixel(y) == pixel(114)));
+    assert_ne!(pixel(118), pixel(117));
+    click(&ui, 950.0, 116.0);
+    assert_eq!(selected.get(), None);
+    click(&ui, 950.0, 133.0);
+    assert_eq!(selected.get(), Some(1));
+
+    // Keyboard navigation scrolls the last eight profiles into view.
+    let profiles = (1..=10)
+        .map(|n| format!("Profile {n}").into())
+        .collect::<Vec<_>>();
+    store.set_profiles(Rc::new(slint::VecModel::from(profiles)).into());
+    click(&ui, 910.0, 24.0);
+    key(&ui, Key::End);
+    key(&ui, Key::UpArrow);
+    click(&ui, 950.0, 336.0);
+    assert_eq!(selected.get(), Some(9));
+    ui.hide()?;
+    Ok(())
+}
+
+#[test]
 fn library_tabs_sort_picker_and_browse_actions_are_independent() -> Result<()> {
     let clock = Rc::new(Cell::default());
     let (ui, window) = timed_test_window(clock.clone())?;

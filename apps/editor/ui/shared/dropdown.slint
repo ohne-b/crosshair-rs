@@ -10,6 +10,7 @@ export component DropDown inherits Rectangle {
     in property <bool> compact: false;
     in property <string> placeholder;
     in property <string> menu-title;
+    in property <length> item-spacing;
     in property <string> footer-text;
     in property <image> footer-icon;
     in property <bool> enabled: Store.interactive;
@@ -19,6 +20,7 @@ export component DropDown inherits Rectangle {
     property <int> highlighted: root.current-index;
     property <bool> expanded: popup.is-open;
     property <length> item-height: max(32px, 12px * Theme.text-scale + 16px);
+    property <length> item-stride: root.item-height + root.item-spacing;
     min-width: 0px; preferred-width: root.compact ? selected-label.preferred-width + 40px + (root.icons.length > 0 ? 24px : 0px) : 150px;
     height: root.item-height; vertical-stretch: 0;
     background: touch.has-hover || root.expanded || (focus.has-focus && Store.keyboard-navigation) ? Theme.hover : Theme.field;
@@ -61,7 +63,7 @@ export component DropDown inherits Rectangle {
     touch := TouchArea { enabled: root.enabled; clicked => { Store.keyboard-navigation = false; focus.focus(); root.open(); } }
     popup := PopupWindow {
         x: 0; y: root.height + 4px; width: max(root.width, root.footer-text != "" ? 220px : 180px);
-        height: min(8, root.model.length) * root.item-height + 8px + (root.menu-title != "" ? 32px : 0px) + (root.footer-text != "" ? root.item-height + 13px : 0px);
+        height: min(8, root.model.length) * root.item-stride + 8px + (root.menu-title != "" ? 32px : 0px) + (root.footer-text != "" ? root.item-height + 13px : 0px);
         close-policy: close-on-click-outside;
         forward-focus: popup-focus;
         popup-focus := FocusScope {
@@ -84,16 +86,19 @@ export component DropDown inherits Rectangle {
                 background: Theme.panel; border-width: 1px; border-color: Theme.border; border-radius: 10px;
                 if root.menu-title != "": Text { x: 12px; y: 4px; width: parent.width - 24px; height: 32px; text: root.menu-title; color: Theme.muted; font-size: 10px * Theme.text-scale; font-weight: 600; vertical-alignment: center; }
                 ListView {
-                    x: 4px; y: 4px + (root.menu-title != "" ? 32px : 0px); width: parent.width - 8px; height: min(8, root.model.length) * root.item-height;
-                    content-y: -max(0, min(root.highlighted, root.model.length - 1) - 7) * root.item-height;
-                    for value[index] in root.model: ActionButton {
-                        thumbnail: root.thumbnails[index];
-                        icon: root.icons[index];
-                        text: value; height: root.item-height; align-left: true; quiet: true;
-                        selected: index == root.highlighted; enabled: root.enabled;
-                        accent-icon: index == root.current-index;
-                        changed has-focus => { if self.has-focus { root.highlighted = index; } }
-                        clicked => { root.choose(index); root.close(); }
+                    x: 4px; y: 4px + (root.menu-title != "" ? 32px : 0px); width: parent.width - 8px; height: min(8, root.model.length) * root.item-stride;
+                    content-y: -max(0, min(root.highlighted, root.model.length - 1) - 7) * root.item-stride;
+                    for value[index] in root.model: Rectangle {
+                        height: root.item-stride;
+                        ActionButton {
+                            y: root.item-spacing / 2; width: parent.width; height: root.item-height;
+                            thumbnail: root.thumbnails[index]; icon: root.icons[index];
+                            text: value; align-left: true; quiet: true;
+                            selected: index == root.highlighted; enabled: root.enabled;
+                            accent-icon: index == root.current-index;
+                            changed has-focus => { if self.has-focus { root.highlighted = index; } }
+                            clicked => { root.choose(index); root.close(); }
+                        }
                     }
                 }
                 if root.footer-text != "": Rectangle {
