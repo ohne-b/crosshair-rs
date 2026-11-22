@@ -16,31 +16,35 @@ const comparison = createComparison(data);
     <div class="ram-legend">
       {states.map((state) => <span class={state.id}>{state.name}</span>)}
     </div>
-    <ul class="ram-columns" role="list">
+    <ul class="ram-columns" role="list" style={`--app-count: ${comparison.bars.length}`}>
       {comparison.bars.map((bar) => {
         const { menuOpen, menuClosed } = bar;
-        const closedHigher = menuClosed.percent > menuOpen.percent;
-        const equalHeight = menuOpen.percent === menuClosed.percent;
-        const sharedLabel = equalHeight && menuOpen.label === menuClosed.label;
+        const openHeight = menuOpen?.percent ?? 0;
+        const closedHigher = menuOpen !== null && menuClosed.percent > openHeight;
+        const equalHeight = menuOpen?.percent === menuClosed.percent;
+        const sharedLabel = equalHeight && menuOpen?.label === menuClosed.label;
         return (
           <li
-            class:list={['ram-column', { ours: bar.ours, equal: equalHeight, 'closed-higher': closedHigher }]}
-            style={`--open: ${menuOpen.percent}; --closed: ${menuClosed.percent}`}
+            class:list={['ram-column', { ours: bar.ours, striped: equalHeight || !menuOpen, 'closed-higher': closedHigher }]}
+            style={`--open: ${openHeight}; --closed: ${menuClosed.percent}`}
           >
             <a class="ram-label" href={bar.url} target="_blank" rel="noopener noreferrer">
               {bar.name}
             </a>
             <div class="ram-bar" aria-hidden="true"></div>
             <span class:list={['ram-amount', { 'ram-amount-side': closedHigher }]}>
-              <span class="ram-sr-only">{sharedLabel ? 'Menu open and closed: ' : 'Menu open: '}</span>
-              {menuOpen.label}
+              {menuOpen && (
+                <span class="ram-sr-only">{sharedLabel ? 'Menu open and closed: ' : 'Menu open: '}</span>
+              )}
+              {(menuOpen ?? menuClosed).label}
             </span>
-            {!sharedLabel && (
+            {menuOpen && !sharedLabel && (
               <span class:list={['ram-amount ram-amount-closed', { 'ram-amount-side': !closedHigher }]}>
                 <span class="ram-sr-only">Menu closed: </span>
                 {menuClosed.label}
               </span>
             )}
+            {!menuOpen && <span class="ram-overlay-only">Overlay only</span>}
           </li>
         );
       })}
@@ -61,11 +65,35 @@ const comparison = createComparison(data);
   </div>
 </section>
 
+<script>
+  if ('IntersectionObserver' in window && matchMedia('(prefers-reduced-motion: no-preference)').matches) {
+    const observer = new IntersectionObserver((entries) => {
+      for (const { target, isIntersecting } of entries) {
+        if (!isIntersecting) continue;
+        target.closest('.ram-columns')?.classList.replace('ram-pending', 'ram-revealed');
+        observer.unobserve(target);
+      }
+    }, { rootMargin: '0px 0px 128px' });
+
+    for (const chart of document.querySelectorAll('.ram-columns')) {
+      // Start shortly before the bars' baseline reaches the viewport.
+      const label = chart.querySelector('.ram-label');
+      if (!label) continue;
+      chart.classList.add('ram-pending');
+      observer.observe(label);
+    }
+  }
+</script>
+
 <style>
   .ram-comparison {
     --ram-open: #81858a;
     --ram-closed: var(--p-accent);
-    padding: 32px 0 96px;
+    --ram-padding: clamp(24px, 4svh, 48px);
+    display: grid;
+    align-content: center;
+    min-height: 100dvh;
+    padding-block: calc(var(--header-clearance) + var(--ram-padding)) var(--ram-padding);
   }
   h2 {
     font-size: 28px;
@@ -75,7 +103,6 @@ const comparison = createComparison(data);
   }
   .ram-legend {
     display: flex;
-    justify-content: center;
     flex-wrap: wrap;
     gap: 6px 24px;
     color: var(--p-muted);
@@ -97,10 +124,10 @@ const comparison = createComparison(data);
     background: var(--ram-closed);
   }
   .ram-columns {
-    --plot-height: clamp(12.5rem, 43vw, 30rem);
+    --plot-height: clamp(12.5rem, min(43vw, calc(var(--section-height) - 2 * var(--ram-padding) - 14rem)), 30rem);
     --bar-width: min(38%, 8.5rem);
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(var(--app-count), minmax(0, 1fr));
     list-style: none;
     padding: 56px 0 0;
     margin: 0;
@@ -129,7 +156,7 @@ const comparison = createComparison(data);
     border-radius: 6px 6px 0 0;
     background: linear-gradient(to top, var(--lower-color) var(--split), var(--upper-color) var(--split));
   }
-  .ram-column.equal .ram-bar {
+  .ram-column.striped .ram-bar {
     background: repeating-linear-gradient(
       135deg,
       var(--ram-open) 0 8px,
@@ -147,6 +174,12 @@ const comparison = createComparison(data);
   }
   .ram-amount-closed {
     color: var(--ram-closed);
+  }
+  .ram-overlay-only {
+    grid-row: 3;
+    color: var(--p-muted);
+    text-align: center;
+    font-size: .875rem;
   }
   .ram-label {
     grid-row: 2;
@@ -199,55 +232,43 @@ const comparison = createComparison(data);
     margin: 0 0 8px;
   }
   @media (prefers-reduced-motion: no-preference) {
-    @supports ((animation-timeline: view()) and (animation-range: entry)) {
-      .ram-columns {
-        view-timeline: --ram-chart block;
-      }
-      .ram-bar {
-        transform-origin: bottom;
-        /* Longhands prevent the build from folding the timeline into unsupported shorthand. */
-        animation-name: ram-grow;
-        animation-timing-function: ease-out;
-        animation-fill-mode: both;
-        animation-timeline: --ram-chart;
-        animation-range: entry 20% entry 90%;
-      }
-      .ram-amount {
-        animation-name: ram-amount-enter;
-        animation-timing-function: ease-out;
-        animation-fill-mode: both;
-        animation-timeline: --ram-chart;
-        animation-range: entry 55% entry 95%;
-      }
+    .ram-pending .ram-bar {
+      clip-path: inset(100% 0 0);
+    }
+    .ram-revealed .ram-bar {
+      clip-path: inset(0);
+      transition: clip-path 850ms cubic-bezier(.22, .61, .36, 1);
+    }
+    .ram-pending .ram-amount {
+      opacity: 0;
+    }
+    .ram-revealed .ram-amount {
+      transition: opacity 300ms ease-out 350ms;
     }
   }
-  @keyframes ram-grow {
-    from { transform: scaleY(0); }
-    to { transform: scaleY(1); }
-  }
-  @keyframes ram-amount-enter {
-    from { opacity: 0; }
-    to { opacity: 1; }
-  }
-  @media (min-width: 640px) {
+  @media (width >= 980px) {
     .ram-amount-side {
       top: calc(var(--plot-height) * (100 - var(--lower)) / 100);
       left: calc(50% + var(--bar-width) / 2 + .75rem);
       transform: translateY(-50%);
     }
   }
-  @media (width < 640px) {
-    .ram-comparison {
-      padding-block: 24px 64px;
-    }
-    h2 {
-      font-size: 24px;
-      margin-bottom: 20px;
-    }
+  @media (width < 980px) {
     .ram-amount-closed {
       grid-row: 3;
       position: static;
       transform: none;
+    }
+  }
+  @media (width < 640px) {
+    h2 {
+      font-size: 24px;
+      margin-bottom: 20px;
+    }
+    .ram-label,
+    .ram-amount,
+    .ram-overlay-only {
+      font-size: .75rem;
     }
   }
 </style>

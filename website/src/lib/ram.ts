@@ -4,6 +4,8 @@ export const applications = [
     name: 'crosshair-rs',
     url: 'https://github.com/ohne-b/crosshair-rs',
   },
+  { id: 'crosshair-v2', name: 'Crosshair V2', url: 'https://centerpointgaming.com/crosshairv2.html' },
+  { id: 'opencrosshair', name: 'OpenCrosshair', url: 'https://github.com/Tu2525/OpenCrosshair' },
   {
     id: 'crossover',
     name: 'CrossOver',
@@ -21,7 +23,7 @@ type AppId = (typeof applications)[number]['id'];
 type StateId = (typeof states)[number]['id'];
 interface Readings {
   id: AppId;
-  menuOpen: number;
+  menuOpen: number | null;
   menuClosed: number;
   bounds?: Partial<Record<StateId, 'lessThan'>>;
 }
@@ -47,7 +49,7 @@ export type ComparisonData =
 export function createComparison(data: ComparisonData) {
   const estimated = data.status === 'illustrative';
   if (data.apps.length !== applications.length)
-    throw new Error('Expected exactly three apps.');
+    throw new Error(`Expected exactly ${applications.length} apps.`);
   if (estimated) {
     if (data.unit !== 'MB' || !data.basis.trim())
       throw new Error('Estimates need MB units and provenance.');
@@ -84,25 +86,24 @@ export function createComparison(data: ComparisonData) {
       throw new Error(`Expected one entry for ${app.id}.`);
     const row = matches[0]!;
     if (
-      states.some(
-        (state) => !Number.isFinite(row[state.id]) || row[state.id] <= 0,
-      )
+      !Number.isFinite(row.menuClosed) ||
+      row.menuClosed <= 0 ||
+      (row.menuOpen !== null && (!Number.isFinite(row.menuOpen) || row.menuOpen <= 0))
     ) {
       throw new Error(`Invalid RAM reading for ${app.id}.`);
     }
     return row;
   });
-  // One maximum across all six readings. A less-than bar plots its stated upper bound.
+  // A less-than bar plots its stated upper bound on the shared scale.
   const maximum = Math.max(
-    ...readings.flatMap((row) => states.map((state) => row[state.id])),
+    ...readings.flatMap((row) => [row.menuOpen ?? 0, row.menuClosed]),
   );
   const rounded = data.status === 'reported';
   return {
     heading: estimated ? 'Estimated RAM usage' : 'RAM usage',
     bars: applications.map((app, index) => {
       const row = readings[index]!;
-      function reading(state: StateId) {
-        const value = row[state];
+      function reading(state: StateId, value: number) {
         const prefix =
           estimated || rounded
             ? row.bounds?.[state] === 'lessThan'
@@ -117,8 +118,8 @@ export function createComparison(data: ComparisonData) {
       return {
         ...app,
         ours: app.id === 'crosshair-rs',
-        menuOpen: reading('menuOpen'),
-        menuClosed: reading('menuClosed'),
+        menuOpen: row.menuOpen === null ? null : reading('menuOpen', row.menuOpen),
+        menuClosed: reading('menuClosed', row.menuClosed),
       };
     }),
   };

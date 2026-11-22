@@ -7,30 +7,38 @@ const screens = [
 ---
 
 <section id="screenshots" class="screenshots wrap" aria-label="Inside crosshair-rs">
-  <fieldset aria-label="Screenshot view">
-    {screens.map((screen, index) => (
-      <label>
-        <input type="radio" name="screenshot" value={screen.id} checked={index === 0} />
-        <span>{screen.label}</span>
-      </label>
+  <div class="screenshots-content">
+    <fieldset aria-label="Screenshot view">
+      {screens.map((screen, index) => (
+        <label>
+          <input type="radio" name="screenshot" value={screen.id} checked={index === 0} />
+          <span>{screen.label}</span>
+        </label>
+      ))}
+    </fieldset>
+    {screens.map((screen) => (
+      <figure class={screen.id}>
+        <img
+          src={`${import.meta.env.BASE_URL}assets/screenshots/${screen.id}.webp`}
+          width="2424"
+          height="1544"
+          alt={screen.alt}
+          loading="lazy"
+          decoding="async"
+        />
+      </figure>
     ))}
-  </fieldset>
-  {screens.map((screen) => (
-    <figure class={screen.id}>
-      <img
-        src={`${import.meta.env.BASE_URL}assets/screenshots/${screen.id}.webp`}
-        width="2424"
-        height="1544"
-        alt={screen.alt}
-        loading="lazy"
-        decoding="async"
-      />
-    </figure>
-  ))}
+  </div>
 </section>
 
 <style>
-  .screenshots { padding-block: 48px 104px; }
+  .screenshots {
+    --preview-padding: clamp(24px, 4svh, 48px);
+    display: grid;
+    align-content: center;
+    min-height: 100dvh;
+    padding-block: calc(var(--header-clearance) + var(--preview-padding)) var(--preview-padding);
+  }
   fieldset { display: flex; justify-content: center; gap: 8px; border: 0; padding: 0; margin: 0 0 32px; }
   label { position: relative; cursor: pointer; }
   input { position: absolute; opacity: 0; width: 1px; height: 1px; }
@@ -42,16 +50,24 @@ const screens = [
   .screenshots:has(input[value='browse']:checked) .browse,
   .screenshots:has(input[value='designer']:checked) .designer,
   .screenshots:has(input[value='shortcuts']:checked) .shortcuts { display: block; }
-  img { width: 100%; height: auto; }
+  img {
+    width: 100%;
+    height: auto;
+    max-height: max(14rem, calc(var(--section-height) - 2 * var(--preview-padding) - 5rem));
+    object-fit: contain;
+  }
   @media (prefers-reduced-motion: no-preference) {
     figure { animation: screenshot-switch 0.3s ease-out; }
     @supports ((animation-timeline: view()) and (animation-range: entry)) {
       .screenshots {
+        view-timeline: --screenshots block;
+      }
+      .screenshots-content {
         /* Longhands prevent the build from folding the timeline into unsupported shorthand. */
         animation-name: screenshots-enter;
         animation-timing-function: linear;
         animation-fill-mode: both;
-        animation-timeline: view();
+        animation-timeline: --screenshots;
         animation-range: entry 0% entry 70%;
       }
     }
@@ -65,7 +81,6 @@ const screens = [
     to { opacity: 1; transform: translateY(0); }
   }
   @media (max-width: 639px) {
-    .screenshots { padding-block: 32px 64px; }
     fieldset { gap: 4px; margin-bottom: 20px; }
     span { padding: 10px 14px; font-size: 13px; }
   }
