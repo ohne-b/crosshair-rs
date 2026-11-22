@@ -1,38 +1,38 @@
 {
-    "accesskit@0.24.1":  {
+    "accesskit@0.25.2":  {
                              "files":  [
                                            "assets/licenses/accesskit/LICENSE-APACHE",
                                            "assets/licenses/accesskit/LICENSE-MIT",
                                            "assets/licenses/accesskit/LICENSE.chromium"
                                        ],
-                             "source":  "https://github.com/AccessKit/accesskit/tree/a55d3e1a18bb9ef0e4bccc9083fb13c3e0ad8969",
+                             "source":  "https://github.com/AccessKit/accesskit/tree/f3026222559c7f5f46d8f25cb7404de68eb149f0",
                              "reason":  "Published crate omits the upstream repository license files; recovered from its recorded source commit."
                          },
-    "accesskit_consumer@0.38.0":  {
+    "accesskit_consumer@0.39.2":  {
                                       "files":  [
                                                     "assets/licenses/accesskit/LICENSE-APACHE",
                                                     "assets/licenses/accesskit/LICENSE-MIT",
                                                     "assets/licenses/accesskit/LICENSE.chromium"
                                                 ],
-                                      "source":  "https://github.com/AccessKit/accesskit/tree/c88605b96d04431f9c3c792464a0f2f253480e94",
+                                      "source":  "https://github.com/AccessKit/accesskit/tree/f3026222559c7f5f46d8f25cb7404de68eb149f0",
                                       "reason":  "Published crate omits the upstream repository license files; recovered from its recorded source commit."
                                   },
-    "accesskit_windows@0.34.0":  {
+    "accesskit_windows@0.35.2":  {
                                      "files":  [
                                                    "assets/licenses/accesskit/LICENSE-APACHE",
                                                    "assets/licenses/accesskit/LICENSE-MIT",
                                                    "assets/licenses/accesskit/LICENSE.chromium"
                                                ],
-                                     "source":  "https://github.com/AccessKit/accesskit/tree/c88605b96d04431f9c3c792464a0f2f253480e94",
+                                     "source":  "https://github.com/AccessKit/accesskit/tree/f3026222559c7f5f46d8f25cb7404de68eb149f0",
                                      "reason":  "Published crate omits the upstream repository license files; recovered from its recorded source commit."
                                  },
-    "accesskit_winit@0.33.2":  {
+    "accesskit_winit@0.34.2":  {
                                    "files":  [
                                                  "assets/licenses/accesskit/LICENSE-APACHE",
                                                  "assets/licenses/accesskit/LICENSE-MIT",
                                                  "assets/licenses/accesskit/LICENSE.chromium"
                                              ],
-                                   "source":  "https://github.com/AccessKit/accesskit/tree/c88605b96d04431f9c3c792464a0f2f253480e94",
+                                   "source":  "https://github.com/AccessKit/accesskit/tree/f3026222559c7f5f46d8f25cb7404de68eb149f0",
                                    "reason":  "Published crate omits the upstream repository license files; recovered from its recorded source commit."
                                },
     "clipboard-win@5.4.3":  {
@@ -81,11 +81,11 @@
                           "source":  "https://github.com/mondeja/rspolib/tree/8170d99ebad29d894712ccb3dc6d0be2198d3055",
                           "reason":  "Published crate omits the upstream repository license files; recovered from its recorded source commit."
                       },
-    "taffy@0.10.1":  {
+    "taffy@0.15.1":  {
                          "files":  [
                                        "assets/licenses/taffy/LICENSE.md"
                                    ],
-                         "source":  "https://github.com/DioxusLabs/taffy/tree/639f0acdd20f914f847abffbeaa903d66cae4882",
+                         "source":  "https://github.com/DioxusLabs/taffy/tree/0064bd54cbe38bf1d8bcd6ec6ab0704d45fb048a",
                          "reason":  "Published crate omits the upstream repository license files; recovered from its recorded source commit."
                      }
 }

@@ -29,8 +29,8 @@ applies. This project is not affiliated with or endorsed by the Rust Foundation.
 
 ## Slint and Rust dependencies
 
-The Windows editor uses Slint **1.18.1** under its
-[GNU GPL version 3 license](https://github.com/slint-ui/slint/blob/372cf0ee5577c3dfec309a45e7b778ba4e81b734/LICENSES/GPL-3.0-only.txt).
+The Windows editor uses Slint **1.19.0** under its
+[GNU GPL version 3 license](https://github.com/slint-ui/slint/blob/e436f546f71481d786cbc2a74316b1be1ef678c1/LICENSES/GPL-3.0-only.txt).
 Slint's other offered license texts remain intact in the bundled upstream
 notices. The README retains its public attribution badge.
 

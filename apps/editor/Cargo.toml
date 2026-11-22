@@ -15,7 +15,7 @@ crosshair-renderer.workspace = true
 crosshair-platform.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-slint = { version = "=1.18.1", default-features = false, features = ["std", "backend-winit", "renderer-software", "accessibility", "compat-1-18", "raw-window-handle-06", "unstable-winit-030"] }
+slint = { version = "=1.19.0", default-features = false, features = ["std", "backend-winit", "renderer-software", "accessibility", "compat-1-18", "raw-window-handle-06", "unstable-winit-030"] }
 raw-window-handle = "0.6.2"
 
 [target.'cfg(windows)'.dependencies]
@@ -28,7 +28,7 @@ windows = { workspace = true, features = [
 ] }
 
 [build-dependencies]
-slint-build = "=1.18.1"
+slint-build = "=1.19.0"
 
 [dev-dependencies]
 tempfile.workspace = true
