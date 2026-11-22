@@ -128,6 +128,8 @@ impl App {
                 let store = ui.global::<Store>();
                 if state.active_profile != self.state.active_profile {
                     self.pending_aim = None;
+                    store.set_request_shortcut(false);
+                    store.set_pending_shortcut("".into());
                     self.cancel_capture()?;
                 }
                 let pending = store.get_pending_shortcut();

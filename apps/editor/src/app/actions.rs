@@ -801,11 +801,28 @@ impl App {
                 self.render();
                 self.refresh_document();
             }
-            "capture" => self.begin_capture(match keybinds::Target::parse(value)? {
-                keybinds::Target::Global => Capture::Global,
-                keybinds::Target::Binding(id) => Capture::Existing(id),
-                role => Capture::Role(role),
-            })?,
+            "capture" | "capture-controller" => {
+                let source = if action == "capture" {
+                    InputSource::KeyboardMouse
+                } else {
+                    InputSource::Controller
+                };
+                let target = if value == "new-shortcut" {
+                    ensure!(
+                        store.get_pending_shortcut() == "new-shortcut",
+                        "Wait for the shortcut to finish saving"
+                    );
+                    let preset: Id = store.get_pending_preset().parse()?;
+                    ensure!(
+                        self.state.preset(preset).is_some(),
+                        "This crosshair was deleted"
+                    );
+                    Capture::New(preset)
+                } else {
+                    Capture::Existing(keybinds::Target::parse(value)?)
+                };
+                self.begin_capture(target, source)?;
+            }
             "aim-action" => {
                 let index = value.parse::<i32>()?;
                 ensure!((0..=5).contains(&index), "Choose a valid Aim action");
@@ -860,20 +877,6 @@ impl App {
                 store.set_pending_shortcut("".into());
                 store.set_request_shortcut(false);
             }
-            "new-binding" => {
-                ensure!(
-                    store.get_pending_shortcut() == "new-shortcut",
-                    "Wait for the shortcut to finish saving"
-                );
-                let index: usize = store.get_target_index().try_into()?;
-                let preset = self
-                    .state
-                    .presets
-                    .get(index)
-                    .context("Select a target crosshair")?
-                    .id;
-                self.begin_capture(Capture::New(keybinds::action(value.parse()?, preset)))?;
-            }
             "preset-keybind" => {
                 ensure!(
                     store.get_pending_shortcut().is_empty()
@@ -889,24 +892,28 @@ impl App {
                         .context("This crosshair was deleted")? as i32,
                 );
                 store.set_page(2);
+                store.set_pending_preset(preset.to_string().into());
                 store.set_pending_shortcut("new-shortcut".into());
                 store.set_request_shortcut(true);
             }
-            "binding-remove" => {
-                if value == "global" {
-                    self.set_global_toggle(None)?;
-                } else if matches!(
-                    value,
-                    "aim" | "fire" | "reload" | "hide" | "forward" | "left" | "backward" | "right"
-                ) {
-                    self.apply_capture(Capture::Role(keybinds::Target::parse(value)?), None, None)?;
+            "clear-keyboard" | "clear-controller" => {
+                let source = if action == "clear-keyboard" {
+                    InputSource::KeyboardMouse
                 } else {
-                    let mut profile = self.active_profile()?;
-                    profile
-                        .bindings
-                        .retain(|binding| binding.id.to_string() != value);
-                    self.profile_edit(profile)?;
-                }
+                    InputSource::Controller
+                };
+                self.apply_capture(
+                    Capture::Existing(keybinds::Target::parse(value)?),
+                    source,
+                    None,
+                    None,
+                )?;
+            }
+            "binding-remove" => {
+                let id: Id = value.parse()?;
+                let mut profile = self.active_profile()?;
+                profile.bindings.retain(|binding| binding.id != id);
+                self.profile_edit(profile)?;
             }
             "binding-target" => {
                 let (id, target) = value.split_once(':').context("Invalid shortcut target")?;
@@ -997,6 +1004,8 @@ fn requires_finished_edit(action: &str) -> bool {
             | "aim-action"
             | "aim-target"
             | "binding-remove"
+            | "clear-keyboard"
+            | "clear-controller"
             | "binding-target"
             | "install-update"
     )

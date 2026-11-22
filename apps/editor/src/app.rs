@@ -121,11 +121,10 @@ fn finish_input(ui: &AppWindow) {
 
 #[derive(Clone)]
 enum Capture {
-    Global,
-    Role(crate::features::keybinds::Target),
-    Existing(Id),
-    New(BindingAction),
+    Existing(crate::features::keybinds::Target),
+    New(Id),
 }
+
 enum Modal {
     None,
     Menu(Vec<(String, String)>),
@@ -232,7 +231,7 @@ pub(crate) struct App {
     deferred_ui: VecDeque<UiEvent>,
     image_target: Option<ImageTarget>,
     image_ready: Option<(Id, u32, u32)>,
-    capture: Option<Capture>,
+    capture: Option<(Capture, InputSource)>,
     capture_token: Option<Id>,
     capture_profile: Option<Id>,
     pending_aim: Option<(Id, i32)>,
@@ -781,7 +780,10 @@ mod tests {
                     store.set_pending_shortcut("new-shortcut".into());
                     store.set_request_shortcut(true);
                 }
-                "new-binding" => store.set_capture_id("new-shortcut".into()),
+                "capture" | "capture-controller" => {
+                    store.set_capture_id(value.clone());
+                    store.set_capture_controller(action == "capture-controller");
+                }
                 "discard-shortcut" => {
                     store.set_capture_id("".into());
                     store.set_pending_shortcut("".into());
@@ -807,6 +809,13 @@ mod tests {
         slint::platform::update_timers_and_animations();
         std::thread::sleep(Duration::from_millis(20));
         slint::platform::update_timers_and_animations();
+        assert!(store.get_capture_id().is_empty());
+        let enter = slint::SharedString::from(slint::platform::Key::Return);
+        ui.window().dispatch_event(WindowEvent::KeyPressed {
+            text: enter.clone(),
+        });
+        ui.window()
+            .dispatch_event(WindowEvent::KeyReleased { text: enter });
         assert_eq!(store.get_capture_id(), "new-shortcut");
         let [x, y, width, height] = region.borrow().unwrap();
         assert!(y > 420.0, "recording must be below the New row: {y}");
@@ -829,13 +838,23 @@ mod tests {
         assert!(events.borrow().is_empty());
         store.set_capture_id("".into());
         click(&ui, x + width / 2.0, y + height / 2.0);
-        assert_eq!(*events.borrow(), [("new-binding".into(), "5".into())]);
+        assert_eq!(
+            *events.borrow(),
+            [("capture".into(), "new-shortcut".into())]
+        );
+        events.borrow_mut().clear();
+        click(&ui, x + width + 50.0, y + height / 2.0);
+        assert_eq!(
+            *events.borrow(),
+            [("capture-controller".into(), "new-shortcut".into())]
+        );
+        assert!(store.get_capture_controller());
         // Capture cancellation can arrive before the UI press or between press/release.
         for before_press in [true, false] {
             store.set_pending_shortcut("new-shortcut".into());
             store.set_capture_id("new-shortcut".into());
             events.borrow_mut().clear();
-            let position = slint::LogicalPosition::new(x + width + 38.0, y + height / 2.0);
+            let position = slint::LogicalPosition::new(x - 28.0, y + height / 2.0);
             if before_press {
                 store.set_capture_id("".into());
             }
@@ -848,14 +867,17 @@ mod tests {
                 position,
                 button: slint::platform::PointerEventButton::Left,
             });
-            assert_eq!(*events.borrow(), [("discard-shortcut".into(), "".into())]);
+            assert_eq!(
+                *events.borrow(),
+                [("discard-shortcut".into(), "new-shortcut".into())]
+            );
             assert_eq!(store.get_pending_shortcut(), "");
             assert_eq!(store.get_bindings().row_count(), 2);
         }
         store.set_pending_shortcut("saving-binding-id".into());
         events.borrow_mut().clear();
         click(&ui, x + width / 2.0, y + height / 2.0);
-        click(&ui, x + width + 38.0, y + height / 2.0);
+        click(&ui, x - 28.0, y + height / 2.0);
         assert!(
             events.borrow().is_empty(),
             "saving must not resubmit or discard the row"

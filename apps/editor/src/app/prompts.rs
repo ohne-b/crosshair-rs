@@ -129,7 +129,7 @@ impl App {
                 }
             }
             Modal::Conflict(target, chord, conflict) => {
-                self.apply_capture(target, Some(chord), Some(conflict))?
+                self.apply_capture(target, chord.trigger.source(), Some(chord), Some(conflict))?
             }
             Modal::DraftConflict => {
                 if alternate {

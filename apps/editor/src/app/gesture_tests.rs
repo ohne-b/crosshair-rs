@@ -736,7 +736,7 @@ fn title_switch_reflects_master_state_and_clearing_its_key_only_unbinds() -> Res
     );
     app.action("toggle-visible", "")?;
     assert!(matches!(&commands()[..], [Command::ToggleVisibility]));
-    app.action("binding-remove", "global")?;
+    app.action("clear-keyboard", "global")?;
     assert!(
         matches!(&commands()[..], [Command::SetBindings { profiles, global_toggle: None, .. }] if profiles[0].actions == app.state.profiles[0].actions)
     );
@@ -753,7 +753,7 @@ fn captures_pin_profiles_reject_pulses_and_replace_roles_atomically() -> Result<
     let (client, commands) = Client::recording_for_test();
     app.client = client;
     let profile = app.state.active_profile;
-    app.begin_capture(Capture::Role(Target::Aim))?;
+    app.begin_capture(Capture::Existing(Target::Aim), InputSource::KeyboardMouse)?;
     commands();
     assert!(
         app.complete_capture(Some(InputChord {
@@ -763,7 +763,7 @@ fn captures_pin_profiles_reject_pulses_and_replace_roles_atomically() -> Result<
         .is_err()
     );
     assert!(commands().is_empty());
-    app.begin_capture(Capture::Role(Target::Fire))?;
+    app.begin_capture(Capture::Existing(Target::Fire), InputSource::KeyboardMouse)?;
     commands();
     app.state.active_profile = Id::new_v4();
     app.complete_capture(Some(InputChord::key(0x20)))?;
@@ -772,7 +772,10 @@ fn captures_pin_profiles_reject_pulses_and_replace_roles_atomically() -> Result<
     let mut second = app.state.profiles[0].clone();
     second.id = Id::new_v4();
     app.state.profiles.push(second);
-    app.begin_capture(Capture::Global)?;
+    app.begin_capture(
+        Capture::Existing(Target::Global),
+        InputSource::KeyboardMouse,
+    )?;
     commands();
     app.complete_capture(Some(InputChord::key(0x13)))?;
     assert!(matches!(app.modal, Modal::Conflict(..)));
@@ -781,6 +784,127 @@ fn captures_pin_profiles_reject_pulses_and_replace_roles_atomically() -> Result<
     let committed = commands();
     assert!(
         matches!(&committed[..], [Command::SetBindings { profiles, global_toggle: Some(chord), .. }] if *chord == InputChord::key(0x13) && profiles.len() == 2 && profiles.iter().all(|profile| profile.actions.reload.is_none()))
+    );
+    ui.hide()?;
+    Ok(())
+}
+
+#[test]
+fn recording_the_other_column_cancels_capture_and_rejects_its_late_result() -> Result<()> {
+    let ui = window();
+    let mut app = app(&ui);
+    let (client, commands) = Client::recording_for_test();
+    app.client = client;
+    app.action("capture", "fire")?;
+    let token = app.capture_token.unwrap();
+    app.action("capture-controller", "fire")?;
+    assert!(matches!(&commands()[..], [
+        Command::BeginCapture { source: InputSource::KeyboardMouse, .. },
+        Command::CancelCapture { token: old },
+        Command::BeginCapture { source: InputSource::Controller, .. }
+    ] if *old == token));
+    app.event(Event::Engine(
+        0,
+        client::Event::Message(ServerMessage::Captured {
+            token,
+            chord: Some(InputChord::key(0x13)),
+            cancelled: false,
+        }),
+    ))?;
+    assert!(commands().is_empty());
+    assert_eq!(ui.global::<Store>().get_capture_id(), "fire");
+    app.complete_capture(Some(InputChord::gamepad(GamepadControl::RightTrigger)))?;
+    assert!(
+        matches!(&commands()[..], [Command::SetBindings { profiles, .. }]
+        if profiles[0].actions.controller.fire == Some(GamepadControl::RightTrigger)
+            && profiles[0].actions.fire == app.state.profiles[0].actions.fire)
+    );
+    ui.hide()?;
+    Ok(())
+}
+
+#[test]
+fn new_controller_only_shortcut_keeps_its_preset_after_reordering() -> Result<()> {
+    let ui = window();
+    let mut app = app(&ui);
+    let (client, commands) = Client::recording_for_test();
+    app.client = client;
+    let preset = app.state.presets[0].id;
+    app.action("preset-keybind", &preset.to_string())?;
+    app.state.presets.swap(0, 1);
+    app.refresh_bindings();
+    assert_eq!(ui.global::<Store>().get_target_index(), 1);
+    app.action("capture-controller", "new-shortcut")?;
+    commands();
+    app.complete_capture(Some(InputChord::gamepad(GamepadControl::LeftShoulder)))?;
+    assert!(
+        matches!(&commands()[..], [Command::SetBindings { profiles, .. }]
+        if profiles[0].bindings[0].action.target() == Some(preset)
+            && profiles[0].bindings[0].controller == Some(GamepadControl::LeftShoulder)
+            && profiles[0].bindings[0].chord.is_none())
+    );
+    ui.hide()?;
+    Ok(())
+}
+
+#[test]
+fn replacing_and_clearing_controller_shortcuts_preserves_the_keyboard_slot() -> Result<()> {
+    let ui = window();
+    let mut app = app(&ui);
+    let (client, commands) = Client::recording_for_test();
+    app.client = client;
+    let mut binding = Binding::new(
+        InputChord::key(0x22),
+        BindingAction::SelectPreset {
+            preset: app.state.presets[0].id,
+        },
+    );
+    let key = binding.chord.clone();
+    binding.controller = Some(GamepadControl::DPadUp);
+    let id = binding.id;
+    app.state.profiles[0].bindings.push(binding);
+    app.refresh_bindings();
+    let row = ui
+        .global::<Store>()
+        .get_bindings()
+        .iter()
+        .find(|row| row.id == id.to_string())
+        .unwrap();
+    assert_eq!(row.controller, "D-pad up");
+
+    app.action("capture-controller", "forward")?;
+    commands();
+    app.complete_capture(Some(InputChord::gamepad(GamepadControl::DPadUp)))?;
+    app.confirm_modal("", false)?;
+    assert!(
+        matches!(&commands()[..], [Command::SetBindings { profiles, .. }]
+        if profiles[0].actions.controller.movement[0] == Some(GamepadControl::DPadUp)
+            && profiles[0].actions.movement == app.state.profiles[0].actions.movement
+            && profiles[0].bindings[0].id == id && profiles[0].bindings[0].chord == key && profiles[0].bindings[0].controller.is_none())
+    );
+
+    app.action("clear-controller", &id.to_string())?;
+    assert!(
+        matches!(&commands()[..], [Command::SetBindings { profiles, .. }]
+        if profiles[0].bindings[0].chord == key && profiles[0].bindings[0].controller.is_none())
+    );
+    app.state.profiles[0].bindings[0].enabled = false;
+    app.state.profiles[0].actions.reload = key.clone();
+    app.action("capture-controller", &id.to_string())?;
+    commands();
+    app.complete_capture(Some(InputChord::gamepad(GamepadControl::DPadDown)))?;
+    assert!(matches!(app.modal, Modal::Conflict(..)) && commands().is_empty());
+    app.confirm_modal("", false)?;
+    assert!(
+        matches!(&commands()[..], [Command::SetBindings { profiles, .. }]
+        if profiles[0].actions.reload.is_none() && profiles[0].bindings[0].enabled
+            && profiles[0].bindings[0].chord == key
+            && profiles[0].bindings[0].controller == Some(GamepadControl::DPadDown))
+    );
+    app.state.profiles[0].bindings[0].chord = None;
+    app.action("clear-controller", &id.to_string())?;
+    assert!(
+        matches!(&commands()[..], [Command::SetBindings { profiles, .. }] if profiles[0].bindings.is_empty())
     );
     ui.hide()?;
     Ok(())
@@ -797,12 +921,18 @@ fn hold_to_hide_capture_binds_clears_and_replaces_conflicts() -> Result<()> {
     let row = store
         .get_bindings()
         .iter()
-        .filter(|row| row.global)
-        .last()
+        .find(|row| row.id == "hide")
         .unwrap();
     assert_eq!(row.action, "Hold to hide");
-    assert_eq!(row.chord, "Unbound");
-    assert_eq!(store.get_movement_bindings().row_count(), 4);
+    assert!(row.chord.is_empty() && row.controller.is_empty());
+    assert_eq!(
+        store
+            .get_bindings()
+            .iter()
+            .filter(|row| row.movement)
+            .count(),
+        4
+    );
 
     app.action("capture", "hide")?;
     assert_eq!(store.get_capture_id(), "hide");
@@ -828,7 +958,7 @@ fn hold_to_hide_capture_binds_clears_and_replaces_conflicts() -> Result<()> {
             && profiles[0].actions.movement[0].is_none())
     );
 
-    app.action("binding-remove", "hide")?;
+    app.action("clear-keyboard", "hide")?;
     assert!(
         matches!(&commands()[..], [Command::SetBindings { profiles, .. }]
         if profiles[0].actions.hold_to_hide.is_none())
@@ -844,7 +974,10 @@ fn movement_capture_rebinds_clears_and_replaces_conflicts() -> Result<()> {
     let mut app = app(&ui);
     let (client, commands) = Client::recording_for_test();
     app.client = client;
-    app.begin_capture(Capture::Role(Target::Forward))?;
+    app.begin_capture(
+        Capture::Existing(Target::Forward),
+        InputSource::KeyboardMouse,
+    )?;
     commands();
     app.complete_capture(Some(InputChord::key(0x21)))?;
     assert!(matches!(
@@ -852,7 +985,7 @@ fn movement_capture_rebinds_clears_and_replaces_conflicts() -> Result<()> {
         if profiles[0].actions.movement[0] == Some(InputChord::key(0x21))
             && profiles[0].actions.movement[1..] == app.state.profiles[0].actions.movement[1..]
     ));
-    app.begin_capture(Capture::Role(Target::Left))?;
+    app.begin_capture(Capture::Existing(Target::Left), InputSource::KeyboardMouse)?;
     commands();
     assert!(
         app.complete_capture(Some(InputChord {
@@ -862,12 +995,12 @@ fn movement_capture_rebinds_clears_and_replaces_conflicts() -> Result<()> {
         .is_err()
     );
     assert!(commands().is_empty());
-    app.action("binding-remove", "right")?;
+    app.action("clear-keyboard", "right")?;
     assert!(matches!(
         &commands()[..], [Command::SetBindings { profiles, .. }]
         if profiles[0].actions.movement[3].is_none()
     ));
-    app.begin_capture(Capture::Role(Target::Fire))?;
+    app.begin_capture(Capture::Existing(Target::Fire), InputSource::KeyboardMouse)?;
     commands();
     app.complete_capture(Some(InputChord::key(0x11)))?;
     assert!(matches!(app.modal, Modal::Conflict(..)));

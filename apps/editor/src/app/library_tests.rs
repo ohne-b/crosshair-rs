@@ -1060,39 +1060,33 @@ fn library_tabs_sort_picker_and_browse_actions_are_independent() -> Result<()> {
     store.set_preset_thumbnails(
         Rc::new(slint::VecModel::from(vec![rows[0].thumbnail.clone()])).into(),
     );
-    store.set_bindings(
-        Rc::new(slint::VecModel::from(vec![crate::BindingRow {
-            id: "shortcut".into(),
-            shortcut: true,
-            name: "Shotgun".into(),
-            chord: "J".into(),
-            enabled: true,
-            ..Default::default()
-        }]))
-        .into(),
+    let raster = renderer.render(&crate::features::browse::presets()[0], 1.0, &|_| {
+        anyhow::bail!("Unexpected image")
+    })?;
+    store.set_active_thumbnail(preview::image(&raster.thumbnail(24, 1.0)?));
+    store.on_scale_thumbnail(preview::scale_thumbnail);
+    let mut app = super::gesture_tests::app(&ui);
+    let profile = &mut app.state.profiles[0];
+    profile.actions.controller.fire = Some(GamepadControl::RightTrigger);
+    profile.actions.controller.reload = Some(GamepadControl::West);
+    profile.actions.controller.movement[0] = Some(GamepadControl::LeftStickUp);
+    let mut shortcut = Binding::new(
+        InputChord::key(0x24),
+        BindingAction::SelectPreset {
+            preset: app.state.presets[0].id,
+        },
     );
-    let movement = [
-        ("forward", "W", "\u{2191}"),
-        ("left", "A", "\u{2190}"),
-        ("backward", "S", "\u{2193}"),
-        ("right", "D", "\u{2192}"),
-    ];
-    store.set_movement_bindings(
-        Rc::new(slint::VecModel::from(
-            movement
-                .map(|(id, chord, direction)| crate::BindingRow {
-                    id: id.into(),
-                    action: id.into(),
-                    chord: chord.into(),
-                    direction: direction.into(),
-                    enabled: true,
-                    ..Default::default()
-                })
-                .to_vec(),
-        ))
-        .into(),
-    );
+    shortcut.name = "Shotgun".into();
+    shortcut.controller = Some(GamepadControl::DPadUp);
+    profile.bindings.push(shortcut);
+    app.refresh_bindings();
+    store.set_profiles(Rc::new(slint::VecModel::from(vec!["Default".into()])).into());
+    store.set_visible(true);
+    ui.window().set_size(slint::LogicalSize::new(1280.0, 880.0));
     snapshot(&window, "shortcuts.png")?;
+    ui.window().set_size(slint::LogicalSize::new(960.0, 880.0));
+    snapshot(&window, "shortcuts-narrow.png")?;
+    ui.window().set_size(slint::LogicalSize::new(1280.0, 800.0));
     store.set_modal_kind(1);
     store.set_modal_title("Delete crosshair?".into());
     store.set_modal_message("Delete Shotgun from your saved crosshairs?".into());

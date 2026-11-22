@@ -3,7 +3,7 @@ export struct PresetGroup { items: [PresetRow] }
 export struct LayerRow { id: string, name: string, kind: string, selected: bool, shown: bool, locked: bool }
 export struct FieldRow { selection: string, key: string, label: string, value: string, kind: int, minimum: float, maximum: float, step: float, pixel-size: bool, numeric: float, checked: bool, choices: [string], selected: int, swatch: color, reset: bool }
 export struct FieldGroup { first: FieldRow, second: FieldRow, paired: bool }
-export struct BindingRow { direction: string, id: string, name: string, action: string, target: string, target-index: int, chord: string, enabled: bool, shortcut: bool, global: bool }
+export struct BindingRow { movement: bool, id: string, name: string, action: string, target: string, target-index: int, chord: string, controller: string, enabled: bool, shortcut: bool, global: bool }
 export struct CanvasViewport { left: float, top: float, right: float, bottom: float, scale: float }
 export struct CanvasTile { x: float, y: float, width: float, height: float, bitmap: image }
 export struct SelectionBounds { x: float, y: float, width: float, height: float, rotation: float, active: bool }
@@ -33,6 +33,7 @@ export global Store {
     in-out property <string> activity;
     in-out property <bool> request-shortcut: false;
     in-out property <string> pending-shortcut;
+    in-out property <string> pending-preset;
     in-out property <bool> dirty: false;
     in-out property <bool> save-paused: false;
     in-out property <bool> can-undo: false;
@@ -107,14 +108,14 @@ export global Store {
     in-out property <string> brush-color: "#F97316FF";
     in-out property <color> brush-swatch: #F97316;
     in-out property <[BindingRow]> bindings;
-    in-out property <[BindingRow]> movement-bindings;
+    in-out property <bool> capture-controller;
+    in-out property <string> controller-error;
     in-out property <string> capture-id;
     in-out property <int> aim-action: 0;
     in-out property <string> aim-target;
     in-out property <string> aim-target-name;
     in-out property <int> aim-target-index: -1;
     in-out property <string> action-profile;
-    in-out property <int> action-type: 0;
     in-out property <[string]> preset-names;
     in-out property <[image]> preset-thumbnails;
     in-out property <int> target-index: 0;
