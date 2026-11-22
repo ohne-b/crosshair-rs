@@ -1,8 +1,9 @@
 # Changelog
 
-## Unreleased
+## [v0.4.0-rc.1](https://github.com/ohne-b/crosshair-rs/releases/tag/v0.4.0-rc.1) 2026-11-22
 
-- Bind a controller button, trigger or stick direction alongside the keyboard or mouse shortcut for any action or saved crosshair.
+- Bind a controller button, trigger or stick direction alongside a keyboard or mouse shortcut for any action or saved crosshair. ([#47](https://github.com/ohne-b/crosshair-rs/pull/47))
+- Edit both bindings side by side in Keybinds, with a separate Movement row for each device. Clearing a binding keeps the saved crosshair shortcut available to rebind. ([#47](https://github.com/ohne-b/crosshair-rs/pull/47))
 
 ## [v0.3.0](https://github.com/ohne-b/crosshair-rs/releases/tag/v0.3.0) 2026-11-22
 
