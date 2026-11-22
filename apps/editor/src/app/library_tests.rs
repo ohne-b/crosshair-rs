@@ -1392,6 +1392,16 @@ fn library_tabs_sort_picker_and_browse_actions_are_independent() -> Result<()> {
             (527.0, "capture", "clear-keyboard"),
             (565.0, "capture-controller", "clear-controller"),
         ] {
+            let (center, _) = movement_cell(width, 3);
+            // Sample the Right binding below its text, excluding the 36 px clear slot.
+            let binding_fill = || fill_at(center - 18.0, y as usize + 10);
+            move_to(center, y);
+            assert_eq!(binding_fill()?, hover);
+            if width == 1280.0 && record == "capture-controller" {
+                snapshot(&window, "movement-grid-hover.png")?;
+            }
+            move_to(1.0, 1.0);
+            assert_eq!(binding_fill()?, idle);
             for (i, direction) in ["forward", "left", "backward", "right"]
                 .into_iter()
                 .enumerate()

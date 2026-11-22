@@ -138,7 +138,7 @@ component ShortcutControls inherits TouchArea {
         background-height: root.movement ? self.height - 6px : self.height;
         binding: root.binding; controller: root.controller; saving: root.saving;
         icon: root.device-icon; align-left: !root.movement;
-        quiet: !root.highlighted && !(root.movement && root.clearable);
+        quiet: !root.highlighted;
     }
     clear := ClearShortcut {
         x: parent.width - root.inset - self.width; y: (parent.height - self.height) / 2;
