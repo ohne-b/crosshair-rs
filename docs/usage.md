@@ -105,9 +105,9 @@ Releasing either trigger leaves the other effect active. Colors blend with Fire
 above Aim above Movement. New animations start disabled.
 
 For an effect while moving, open the **Movement** tab, enable it and choose Activation **Hold**,
-then increase the Animated gap. **Move forward/left/backward/right** in Keybinds
-use W/A/S/D by default. In the gamepad column, you can record the four directions
-of the left stick alongside those keys. The effect stays active
+then increase the Animated gap. In **Keybinds**, the keyboard Movement row shows
+W/A/S/D for forward, left, backward and right. Click the matching arrows in the
+controller Movement row to record the four directions of your stick. The effect stays active
 until every movement key is released; **Move** previews it in Designer. Opposing
 keys also keep it active. This responds to keys, not the game's actual movement
 speed or weapon accuracy.

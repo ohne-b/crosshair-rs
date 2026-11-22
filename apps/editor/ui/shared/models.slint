@@ -3,7 +3,7 @@ export struct PresetGroup { items: [PresetRow] }
 export struct LayerRow { id: string, name: string, kind: string, selected: bool, shown: bool, locked: bool }
 export struct FieldRow { selection: string, key: string, label: string, value: string, kind: int, minimum: float, maximum: float, step: float, pixel-size: bool, numeric: float, checked: bool, choices: [string], selected: int, swatch: color, reset: bool }
 export struct FieldGroup { first: FieldRow, second: FieldRow, paired: bool }
-export struct BindingRow { movement: bool, id: string, name: string, action: string, target: string, target-index: int, chord: string, controller: string, mouse: bool, enabled: bool, shortcut: bool, global: bool }
+export struct BindingRow { direction: string, id: string, name: string, action: string, target: string, target-index: int, chord: string, controller: string, mouse: bool, enabled: bool, shortcut: bool, global: bool }
 export struct CanvasViewport { left: float, top: float, right: float, bottom: float, scale: float }
 export struct CanvasTile { x: float, y: float, width: float, height: float, bitmap: image }
 export struct SelectionBounds { x: float, y: float, width: float, height: float, rotation: float, active: bool }
@@ -108,6 +108,7 @@ export global Store {
     in-out property <string> brush-color: "#F97316FF";
     in-out property <color> brush-swatch: #F97316;
     in-out property <[BindingRow]> bindings;
+    in-out property <[BindingRow]> movement-bindings;
     in-out property <bool> capture-controller;
     in-out property <string> controller-error;
     in-out property <string> capture-id;

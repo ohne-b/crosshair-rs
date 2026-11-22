@@ -814,7 +814,13 @@ fn mouse_icon_follows_the_trigger_in_each_keyboard_mouse_cell() -> Result<()> {
     let rows = ui.global::<Store>().get_bindings();
     let mouse = |id: &str| rows.iter().find(|row| row.id == id).unwrap().mouse;
     assert!(mouse("global") && mouse("aim") && mouse("fire") && mouse(&id));
-    assert!(!mouse("reload") && !mouse("hide") && !mouse("forward"));
+    assert!(!mouse("reload") && !mouse("hide"));
+    assert!(
+        ui.global::<Store>()
+            .get_movement_bindings()
+            .iter()
+            .all(|row| !row.mouse)
+    );
     ui.hide()?;
     Ok(())
 }
@@ -955,14 +961,7 @@ fn hold_to_hide_capture_binds_clears_and_replaces_conflicts() -> Result<()> {
         .unwrap();
     assert_eq!(row.action, "Hold to hide");
     assert!(row.chord.is_empty() && row.controller.is_empty());
-    assert_eq!(
-        store
-            .get_bindings()
-            .iter()
-            .filter(|row| row.movement)
-            .count(),
-        4
-    );
+    assert_eq!(store.get_movement_bindings().row_count(), 4);
 
     app.action("capture", "hide")?;
     assert_eq!(store.get_capture_id(), "hide");

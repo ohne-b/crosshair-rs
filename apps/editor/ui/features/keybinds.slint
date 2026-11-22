@@ -67,36 +67,77 @@ component TableRow inherits Rectangle {
     vertical-stretch: 0;
 }
 
+component RecordShortcut inherits ActionButton {
+    in property <BindingRow> binding;
+    in property <bool> controller;
+    in property <bool> saving;
+    in property <string> prompt: root.controller ? "Press or move a control" : "Press a key";
+    in property <string> prefix;
+    out property <string> value: root.controller ? root.binding.controller : root.binding.chord;
+    property <string> device-name: root.controller ? "Controller" : "Keyboard / mouse";
+    property <string> target-name: root.binding.global ? root.binding.action : root.binding.name;
+    property <string> display-value: root.value == "" ? "Unbound" : root.binding.enabled ? root.value : "Disabled: " + root.value;
+    enabled: Store.connected && Store.interactive && !root.saving;
+    selected: Store.capture-id == root.binding.id && Store.capture-controller == root.controller;
+    text: root.saving ? "Saving…" : root.selected ? root.prompt : root.prefix + root.display-value;
+    label: root.target-name + ", " + root.device-name + ": " + root.text;
+    clicked => {
+        if !root.selected {
+            Store.capture-region(self.absolute-position.x / 1px, self.absolute-position.y / 1px, self.width / 1px, self.height / 1px);
+            Store.action(root.controller ? "capture-controller" : "capture", root.binding.id);
+        }
+    }
+}
+
+component ClearShortcut inherits ActionButton {
+    in property <BindingRow> binding;
+    in property <bool> controller;
+    quiet: true; width: 32px;
+    enabled: Store.connected && Store.interactive && (root.controller ? root.binding.controller != "" : root.binding.chord != "");
+    label: "Clear " + (root.controller ? "controller" : "keyboard / mouse") + " shortcut for " + (root.binding.global ? root.binding.action : root.binding.name);
+    clicked => { Store.action(root.controller ? "clear-controller" : "clear-keyboard", root.binding.id); }
+}
+
 component ShortcutCell inherits Rectangle {
     in property <BindingRow> binding;
     in property <bool> controller;
     in property <bool> saving;
-    property <string> value: root.controller ? root.binding.controller : root.binding.chord;
-    property <string> device-name: root.controller ? "Controller" : "Keyboard / mouse";
-    property <string> target-name: root.binding.global ? root.binding.action : root.binding.name;
-    property <bool> recording: Store.capture-id == root.binding.id && Store.capture-controller == root.controller;
     forward-focus: record;
     Rectangle { x: 0px; width: 1px; height: parent.height; background: Theme.border; }
-    record := ActionButton {
-        x: 8px; y: (parent.height - self.height) / 2;
-        width: parent.width - 16px - (root.value != "" ? 32px : 0px); align-left: true;
-        enabled: Store.connected && Store.interactive && !root.saving;
-        text: root.saving ? "Saving…" : root.recording ? (root.controller ? "Press or move a control" : "Press a key") : root.value == "" ? "Unbound" : root.binding.enabled ? root.value : "Disabled: " + root.value;
+    record := RecordShortcut {
+        x: 8px; y: (parent.height - self.height) / 2; align-left: true;
+        width: parent.width - 16px - (self.value != "" ? 32px : 0px);
+        binding: root.binding; controller: root.controller; saving: root.saving;
         icon: root.controller ? @image-url("../../../../assets/icons/device-gamepad-2.svg") : root.binding.mouse ? @image-url("../../../../assets/icons/mouse.svg") : @image-url("../../../../assets/icons/keyboard.svg");
-        label: root.target-name + ", " + root.device-name + ": " + self.text; selected: root.recording;
-        clicked => {
-            if !root.recording {
-                Store.capture-region(self.absolute-position.x / 1px, self.absolute-position.y / 1px, self.width / 1px, self.height / 1px);
-                Store.action(root.controller ? "capture-controller" : "capture", root.binding.id);
+    }
+    if record.value != "": ClearShortcut {
+        x: parent.width - 38px; y: (parent.height - self.height) / 2;
+        binding: root.binding; controller: root.controller; icon: @image-url("../../../../assets/icons/x.svg");
+    }
+}
+
+component MovementRow inherits TableRow {
+    in property <bool> controller;
+    Rectangle { y: 0px; height: 1px; width: parent.width; background: Theme.border; }
+    Text {
+        x: 12px; width: controls.x - 44px; text: "Movement"; color: Theme.text; font-size: 12px * Theme.text-scale; vertical-alignment: center;
+        accessible-label: root.controller ? "Controller movement" : "Keyboard movement";
+    }
+    Image {
+        x: controls.x - 26px; y: (parent.height - self.height) / 2; width: 16px; height: 16px;
+        source: root.controller ? @image-url("../../../../assets/icons/device-gamepad-2.svg") : @image-url("../../../../assets/icons/keyboard.svg"); colorize: Theme.muted;
+    }
+    controls := HorizontalLayout {
+        x: root.width - self.width - 12px; width: min(688px, root.width * 0.82); height: parent.height; spacing: 6px;
+        for binding in Store.movement-bindings: Rectangle {
+            min-width: 0px; preferred-width: 0px; horizontal-stretch: 1;
+            RecordShortcut { x: 0px; y: (parent.height - self.height) / 2; width: parent.width - 36px;
+                binding: binding; controller: root.controller; prefix: binding.direction + "  "; prompt: root.controller ? "Press or move" : "Press a key";
+            }
+            ClearShortcut { x: parent.width - self.width; y: (parent.height - self.height) / 2;
+                binding: binding; controller: root.controller; icon: @image-url("../../../../assets/icons/trash.svg");
             }
         }
-    }
-    if root.value != "": ActionButton {
-        x: parent.width - 38px; y: (parent.height - self.height) / 2; width: 32px;
-        enabled: Store.connected && Store.interactive && !root.saving; quiet: true;
-        icon: @image-url("../../../../assets/icons/x.svg");
-        label: "Clear " + root.device-name + " shortcut for " + root.target-name;
-        clicked => { Store.action(root.controller ? "clear-controller" : "clear-keyboard", root.binding.id); }
     }
 }
 
@@ -107,7 +148,6 @@ component BindingItem inherits TableRow {
     in property <length> viewport-width;
     in property <length> viewport-height;
     public function focus-shortcut() { keyboard.focus(); }
-    height: !root.visible ? 0px : root.binding.movement ? max(40px, 12px * Theme.text-scale + 20px) : max(54px, 12px * Theme.text-scale + 32px);
     clip: true;
     HorizontalLayout { spacing: 0px;
         if root.binding.global: Rectangle { horizontal-stretch: 1;
@@ -160,6 +200,8 @@ export component Keybinds inherits Rectangle {
                 VerticalLayout { padding: 1px; spacing: 0px;
                     TableHeader { application: true; }
                     for binding in Store.bindings: BindingItem { viewport-width: root.width + root.absolute-position.x; viewport-height: root.height + root.absolute-position.y; binding: binding; visible: binding.global; }
+                    if Store.movement-bindings.length > 0: MovementRow {}
+                    if Store.movement-bindings.length > 0: MovementRow { controller: true; }
                 }
             }
             SectionTitle { text: "CROSSHAIR SHORTCUTS"; }

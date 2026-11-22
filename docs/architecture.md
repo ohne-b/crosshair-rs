@@ -358,14 +358,15 @@ image/video export, custom easing, game detection or recoil/ammunition tracking.
 ### Keybinds
 
 The Action keybinds table contains Global toggle, Aim, Fire, Reload, Hold to hide
-and a Movement row with four editable direction keys. Global toggle records the
+and two Movement rows, one per input source. Each Movement row groups four
+direction chips in forward, left, backward and right order. Global toggle records the
 shortcut for the title/tray master switch. Aim has an action dropdown and a target
 thumbnail when relevant. Fire triggers animation and Reload resets it. Initial
 chords are Shift+Alt+Z, Right mouse, Left mouse and R, respectively. Global toggle
 is application-wide. The other roles and preset shortcuts belong to the active
 profile. Hold to hide starts unbound, including in older profiles. The monitor
-and gamepad columns show independent assignments side by side. Each action
-and saved shortcut can have one of each.
+and gamepad columns show independent assignments side by side for the other
+actions and saved shortcuts.
 
 | Aim action | Behavior |
 | --- | --- |

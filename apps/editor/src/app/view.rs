@@ -642,9 +642,10 @@ impl App {
                 matches!(c.trigger, InputKey::Mouse { .. } | InputKey::Wheel { .. })
             })
         };
+        let mut movement = Vec::new();
         let mut rows = vec![BindingRow {
             id: "global".into(),
-            movement: false,
+            direction: Default::default(),
             name: SharedString::default(),
             action: "Global toggle".into(),
             mouse: mouse(&settings.global_toggle),
@@ -691,51 +692,50 @@ impl App {
             );
             let keys = &profile.actions;
             let pad = &keys.controller;
-            for (id, action, key, control, movement) in [
-                ("aim", "Aim", &keys.aim, pad.aim, false),
-                ("fire", "Fire", &keys.fire, pad.fire, false),
-                ("reload", "Reload", &keys.reload, pad.reload, false),
+            for (id, action, key, control, direction) in [
+                ("aim", "Aim", &keys.aim, pad.aim, ""),
+                ("fire", "Fire", &keys.fire, pad.fire, ""),
+                ("reload", "Reload", &keys.reload, pad.reload, ""),
                 (
                     "hide",
                     "Hold to hide",
                     &keys.hold_to_hide,
                     pad.hold_to_hide,
-                    false,
+                    "",
                 ),
                 (
                     "forward",
                     "Move forward",
                     &keys.movement[0],
                     pad.movement[0],
-                    true,
+                    "↑",
                 ),
-                (
-                    "left",
-                    "Move left",
-                    &keys.movement[1],
-                    pad.movement[1],
-                    true,
-                ),
+                ("left", "Move left", &keys.movement[1], pad.movement[1], "←"),
                 (
                     "backward",
                     "Move backward",
                     &keys.movement[2],
                     pad.movement[2],
-                    true,
+                    "↓",
                 ),
                 (
                     "right",
                     "Move right",
                     &keys.movement[3],
                     pad.movement[3],
-                    true,
+                    "→",
                 ),
             ] {
-                rows.push(BindingRow {
+                let group = if direction.is_empty() {
+                    &mut rows
+                } else {
+                    &mut movement
+                };
+                group.push(BindingRow {
                     id: id.into(),
                     action: action.into(),
                     mouse: mouse(key),
-                    movement,
+                    direction: direction.into(),
                     enabled: true,
                     chord: key
                         .as_ref()
@@ -790,7 +790,7 @@ impl App {
                         .and_then(|id| self.state.presets.iter().position(|preset| preset.id == id))
                         .map(|index| index as i32)
                         .unwrap_or(-1),
-                    movement: false,
+                    direction: Default::default(),
                     shortcut: matches!(binding.action, BindingAction::SelectPreset { .. }),
                     global: false,
                 }
@@ -809,6 +809,11 @@ impl App {
         let pending_saved = rows
             .iter()
             .any(|row| row.id == store.get_pending_shortcut());
+        if !update_rows(&store.get_movement_bindings(), &movement, |a, b| {
+            a.id == b.id
+        }) {
+            store.set_movement_bindings(model(movement));
+        }
         if !update_rows(&store.get_bindings(), &rows, |a, b| a.id == b.id) {
             store.set_bindings(model(rows));
         }

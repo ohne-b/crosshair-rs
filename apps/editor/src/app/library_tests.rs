@@ -1069,7 +1069,13 @@ fn library_tabs_sort_picker_and_browse_actions_are_independent() -> Result<()> {
     let profile = &mut app.state.profiles[0];
     profile.actions.controller.fire = Some(GamepadControl::RightTrigger);
     profile.actions.controller.reload = Some(GamepadControl::West);
-    profile.actions.controller.movement[0] = Some(GamepadControl::LeftStickUp);
+    profile.actions.controller.movement = [
+        GamepadControl::LeftStickUp,
+        GamepadControl::LeftStickLeft,
+        GamepadControl::LeftStickDown,
+        GamepadControl::LeftStickRight,
+    ]
+    .map(Some);
     let mut shortcut = Binding::new(
         InputChord::key(0x24),
         BindingAction::SelectPreset {
@@ -1082,10 +1088,32 @@ fn library_tabs_sort_picker_and_browse_actions_are_independent() -> Result<()> {
     app.refresh_bindings();
     store.set_profiles(Rc::new(slint::VecModel::from(vec!["Default".into()])).into());
     store.set_visible(true);
-    ui.window().set_size(slint::LogicalSize::new(1280.0, 880.0));
-    snapshot(&window, "shortcuts.png")?;
-    ui.window().set_size(slint::LogicalSize::new(960.0, 880.0));
-    snapshot(&window, "shortcuts-narrow.png")?;
+    for (width, image) in [(1280.0, "shortcuts.png"), (960.0, "shortcuts-narrow.png")] {
+        ui.window().set_size(slint::LogicalSize::new(width, 800.0));
+        snapshot(&window, image)?;
+        for (y, record, clear) in [
+            (502.0, "capture", "clear-keyboard"),
+            (556.0, "capture-controller", "clear-controller"),
+        ] {
+            for (i, direction) in ["forward", "left", "backward", "right"]
+                .into_iter()
+                .enumerate()
+            {
+                let chip = width - 725.0 + i as f32 * 174.0;
+                events.borrow_mut().clear();
+                click(&ui, chip + 58.0, y);
+                click(&ui, chip + 152.0, y);
+                assert_eq!(
+                    *events.borrow(),
+                    [
+                        (record.into(), direction.into()),
+                        (clear.into(), direction.into())
+                    ],
+                    "Movement controls at width {width}, direction {direction}, row {y}"
+                );
+            }
+        }
+    }
     ui.window().set_size(slint::LogicalSize::new(1280.0, 800.0));
     store.set_modal_kind(1);
     store.set_modal_title("Delete crosshair?".into());
