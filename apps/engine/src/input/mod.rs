@@ -1,3 +1,5 @@
+pub mod gamepad;
+
 use std::mem::size_of;
 
 use anyhow::{Result, ensure};
@@ -58,7 +60,7 @@ pub fn needs_mouse(state: &AppState, presets: &[&Preset], capture: bool, held: b
             profile
                 .bindings
                 .iter()
-                .any(|b| b.enabled && mouse(b.chord.trigger))
+                .any(|b| b.enabled && b.chord.as_ref().is_some_and(|c| mouse(c.trigger)))
                 || profile
                     .actions
                     .hold_to_hide
