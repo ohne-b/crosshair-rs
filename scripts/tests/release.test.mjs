@@ -30,6 +30,17 @@ test('notes have a single generated comparison and issue footer', () => {
   const first = notesFor('0.1.0-alpha.1', '# Changelog\n\n## [v0.1.0-alpha.1](https://github.com/ohne-b/crosshair-rs/releases/tag/v0.1.0-alpha.1) 2026-11-12\n\n- First alpha.\n');
   assert.ok(first.includes('Changelog: https://github.com/ohne-b/crosshair-rs/commits/v0.1.0-alpha.1'));
 });
+test('stable notes compare stable releases and prerelease notes compare adjacent releases', () => {
+  const history = ['0.2.0', '0.2.0-rc.2', '0.2.0-rc.1', '0.1.0', '0.1.0-beta.1']
+    .map(version => `## [v${version}](https://github.com/ohne-b/crosshair-rs/releases/tag/v${version}) 2026-11-21\n\n- Fixed.\n`)
+    .join('\n');
+  const footer = version => notesFor(version, history).split('\n').find(line => line.startsWith('Changelog:'));
+  const repo = 'Changelog: https://github.com/ohne-b/crosshair-rs';
+  assert.equal(footer('0.2.0'), `${repo}/compare/v0.1.0...v0.2.0`);
+  assert.equal(footer('0.2.0-rc.2'), `${repo}/compare/v0.2.0-rc.1...v0.2.0-rc.2`);
+  assert.equal(footer('0.2.0-rc.1'), `${repo}/compare/v0.1.0...v0.2.0-rc.1`);
+  assert.equal(footer('0.1.0'), `${repo}/commits/v0.1.0`);
+});
 test('artifact promotion binds clean source, compiled trust and package hash', () => {
   const build = { schemaVersion: 1, version: '1.2.3', packageVersion: '1.2.3.65535', commit: 'a'.repeat(40), dirty: false,
     platform: 'windows-x86_64-nsis', signed: false, releaseCandidate: true, sha256: 'b'.repeat(64),
