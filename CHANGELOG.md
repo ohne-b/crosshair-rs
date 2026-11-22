@@ -1,5 +1,13 @@
 # Changelog
 
+## [v0.4.0-rc.2](https://github.com/ohne-b/crosshair-rs/releases/tag/v0.4.0-rc.2) 2026-11-22
+
+- feat: Edit keyboard and controller Movement bindings in a shared direction grid. Click any empty cell to bind it. ([#49](https://github.com/ohne-b/crosshair-rs/pull/49))
+- fix: Show a Movement binding’s clear button beside its label on hover or keyboard focus, with matching highlight heights. ([#49](https://github.com/ohne-b/crosshair-rs/pull/49))
+- fix: Hide the star and trash buttons when the pointer leaves a saved crosshair after favoriting or unfavoriting it. Keyboard focus still reveals both buttons. ([#49](https://github.com/ohne-b/crosshair-rs/pull/49))
+- fix: Add space between entries in the profile picker and the library sort menu. ([#49](https://github.com/ohne-b/crosshair-rs/pull/49))
+- fix: Center the Designer layer visibility and delete highlights while keeping the full row height clickable. ([#49](https://github.com/ohne-b/crosshair-rs/pull/49))
+
 ## [v0.4.0-rc.1](https://github.com/ohne-b/crosshair-rs/releases/tag/v0.4.0-rc.1) 2026-11-22
 
 - Bind a controller button, trigger or stick direction alongside a keyboard or mouse shortcut for any action or saved crosshair. ([#47](https://github.com/ohne-b/crosshair-rs/pull/47))
