@@ -123,7 +123,10 @@ export function notesFor(value, content = readFileSync(join(root, 'CHANGELOG.md'
   const start = content.indexOf(heading);
   if (start < 0 || content.indexOf(heading, start + 1) >= 0) throw new Error('Exactly one changelog entry is required.');
   const following = content.slice(content.indexOf('\n', start) + 1).split(/^## /m);
-  const previous = following[1]?.match(/^\[v([^\]]+)\]/)?.[1];
+  const includePrereleases = Boolean(semver.prerelease(value));
+  const previous = following.slice(1)
+    .map(section => section.match(/^\[v([^\]]+)\]/)?.[1])
+    .find(tag => tag && (includePrereleases || !semver.prerelease(tag)));
   return releaseBody(following[0], value, previous);
 }
 
