@@ -33,7 +33,9 @@ impl App {
     }
 
     pub(super) fn request_bitmap(&mut self, preset: Preset) -> Result<()> {
-        self.playback_generation = self.preview.bitmap(preset, self.canvas_view());
+        self.playback_generation =
+            self.preview
+                .bitmap(preset, self.canvas_view(), !self.animate && !self.playing);
         Ok(())
     }
 

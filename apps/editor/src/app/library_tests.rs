@@ -402,6 +402,7 @@ fn canvas_alignment_dots_only_appear_during_layer_moves() -> Result<()> {
     let mut renderer = crosshair_renderer::Renderer::new()?;
     app.bounds = vec![(layer.id, renderer.canvas_layer_bounds(layer)?)];
     app.anchors.insert(layer.id, renderer.anchor_point(layer)?);
+    app.hits = super::gesture_tests::test_pick_map(&preset)?;
     app.document.open(preset)?;
     app.refresh_document();
     let app = RefCell::new(app);
@@ -677,10 +678,121 @@ fn header_crosshair_stays_centered_when_source_size_changes() -> Result<()> {
     Ok(())
 }
 
+fn assert_import_icon_hover(
+    idle: &slint::SharedPixelBuffer<slint::Rgba8Pixel>,
+    hover: &slint::SharedPixelBuffer<slint::Rgba8Pixel>,
+    left: usize,
+    top: usize,
+) {
+    let mut orange_pixels = 0;
+    for y in 0..176 {
+        for x in 0..280 {
+            let index = (top + y) * hover.width() as usize + left + x;
+            let pixel = hover.as_slice()[index];
+            if (128..152).contains(&x) && (16..40).contains(&y) {
+                if pixel.r > pixel.g.saturating_add(45) && pixel.r > 115 {
+                    orange_pixels += 1;
+                }
+            } else {
+                assert_eq!(
+                    pixel,
+                    idle.as_slice()[index],
+                    "Only the import icon changes on hover"
+                );
+            }
+        }
+    }
+    assert!(orange_pixels > 15);
+}
+
+#[test]
+fn designer_image_popover_highlights_supported_drops_and_keeps_the_prompt() -> Result<()> {
+    let clock = Rc::new(Cell::default());
+    let (ui, window) = timed_test_window(clock.clone())?;
+    let store = ui.global::<Store>();
+    store.set_page(1);
+    store.set_connected(true);
+    store.set_document_open(true);
+    store.set_document_name("Classic".into());
+    let pointer = Rc::new(Cell::new((-1.0, -1.0)));
+    let pos = pointer.clone();
+    ui.on_file_pointer(move || pos.get());
+    let actions = Rc::new(RefCell::new(Vec::new()));
+    let recorded = actions.clone();
+    store.on_action(move |name, value| recorded.borrow_mut().push((name, value)));
+    ui.show()?;
+    ui.window().take_snapshot()?;
+    click(&ui, 544.0, 730.0);
+    let center = store.get_menu_x() as usize;
+    let bottom = store.get_menu_y() as usize;
+    assert!((480..560).contains(&center) && (680..710).contains(&bottom));
+    snapshot(&window, "designer-image-import.png")?;
+    let idle = ui.window().take_snapshot()?;
+    pointer.set((center as f32, bottom as f32 - 80.0));
+    ui.invoke_file_dropped("preset.json".into(), false);
+    assert!(actions.borrow().is_empty());
+    ui.set_dragging_import_file(true);
+    clock.set(clock.get() + Duration::from_millis(50));
+    slint::platform::update_timers_and_animations();
+    let hover = ui.window().take_snapshot()?;
+    assert_import_icon_hover(&idle, &hover, center - 140, bottom - 176);
+    snapshot(&window, "designer-image-import-hover.png")?;
+    pointer.set((50.0, 50.0));
+    ui.invoke_file_dropped("outside.jpg".into(), true);
+    assert!(actions.borrow().is_empty());
+    pointer.set((center as f32, bottom as f32 - 80.0));
+    ui.set_dragging_import_file(false);
+    ui.invoke_file_dropped("layer.PNG".into(), true);
+    click(&ui, 544.0, 730.0);
+    key(&ui, Key::Return);
+    assert_eq!(
+        *actions.borrow(),
+        [
+            ("drop-image".into(), "layer.PNG".into()),
+            ("add-image".into(), "".into())
+        ]
+    );
+    ui.hide()?;
+    Ok(())
+}
+
+#[test]
+fn dropped_files_follow_the_active_import_target() -> Result<()> {
+    let (ui, _window) = timed_test_window(Rc::new(Cell::default()))?;
+    let store = ui.global::<Store>();
+    let actions = Rc::new(RefCell::new(Vec::new()));
+    let recorded = actions.clone();
+    store.on_action(move |name, value| recorded.borrow_mut().push((name, value)));
+    store.set_browsing(true);
+    ui.invoke_file_dropped("preset.json".into(), true);
+    store.set_browsing(false);
+    store.set_modal_kind(2);
+    ui.invoke_file_dropped("preset.json".into(), true);
+    store.set_modal_kind(0);
+    store.set_page(1);
+    ui.invoke_file_dropped("layer.png".into(), true);
+    assert_eq!(
+        *actions.borrow(),
+        [("drop-image".into(), "layer.png".into())]
+    );
+
+    let mut app = super::gesture_tests::app(&ui);
+    let (client, _commands) = Client::recording_for_test();
+    app.client = client;
+    app.action("import", "preset.JSON")?;
+    app.action("import", "preset.crosshair")?;
+    let error = app.action("import", "layer.png").unwrap_err();
+    assert!(error.to_string().contains(".json or .crosshair"));
+    Ok(())
+}
+
 #[test]
 fn library_tabs_sort_picker_and_browse_actions_are_independent() -> Result<()> {
     let clock = Rc::new(Cell::default());
     let (ui, window) = timed_test_window(clock.clone())?;
+    let file_pointer = Rc::new(Cell::new((-1.0, -1.0)));
+    let pointer = file_pointer.clone();
+    ui.on_file_pointer(move || pointer.get());
     let store = ui.global::<Store>();
     store.set_connected(true);
     store.on_commit_focused_input(slint::platform::update_timers_and_animations);
@@ -892,6 +1004,44 @@ fn library_tabs_sort_picker_and_browse_actions_are_independent() -> Result<()> {
     store.set_favorite_presets(1);
     events.borrow_mut().clear();
     snapshot(&window, "saved.png")?;
+    click(&ui, 1135.0, 72.0);
+    assert!(events.borrow().is_empty(), "Import first opens the popover");
+    snapshot(&window, "library-import.png")?;
+    key(&ui, Key::Escape);
+    key(&ui, Key::Return);
+    key(&ui, Key::Return);
+    assert_eq!(*events.borrow(), [("import".into(), "".into())]);
+    events.borrow_mut().clear();
+    file_pointer.set((1100.0, 145.0));
+    ui.invoke_file_dropped("closed.json".into(), true);
+    assert!(events.borrow().is_empty());
+    click(&ui, 1135.0, 72.0);
+    let idle = ui.window().take_snapshot()?;
+    let top = store.get_menu_y() as usize;
+    let left = store.get_menu_x() as usize - 280;
+    ui.set_dragging_import_file(true);
+    clock.set(clock.get() + Duration::from_millis(50));
+    slint::platform::update_timers_and_animations();
+    let hover = ui.window().take_snapshot()?;
+    assert_import_icon_hover(&idle, &hover, left, top);
+    snapshot(&window, "library-import-hover.png")?;
+    file_pointer.set((650.0, 450.0));
+    clock.set(clock.get() + Duration::from_millis(50));
+    slint::platform::update_timers_and_animations();
+    assert_eq!(ui.window().take_snapshot()?.as_slice(), idle.as_slice());
+    ui.invoke_file_dropped("outside.json".into(), true);
+    assert!(events.borrow().is_empty());
+    file_pointer.set((1100.0, 145.0));
+    ui.set_dragging_import_file(false);
+    ui.invoke_file_dropped("sample.crosshair".into(), true);
+    assert_eq!(
+        *events.borrow(),
+        [("import".into(), "sample.crosshair".into())]
+    );
+    events.borrow_mut().clear();
+    click(&ui, 1135.0, 72.0);
+    click(&ui, 700.0, 450.0);
+    assert!(events.borrow().is_empty());
     ui.window().dispatch_event(WindowEvent::PointerMoved {
         position: slint::LogicalPosition::new(330.0, 80.0),
     });

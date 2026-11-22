@@ -3,8 +3,11 @@
 ## Crosshairs
 
 Create a crosshair in **Crosshairs**, then open it in **Designer**. Add crosshair,
-shape, image or drawing layers from the bottom palette. The Image tool opens an
-import picker. Rename crosshairs inline and star favorites to find them again.
+shape, image or drawing layers from the bottom palette. Open the **Image** tool
+to drop an image into its popover or choose **Browse files**. Rename crosshairs
+inline and star favorites to find them again.
+In **Saved**, choose **Import** and drop a `.json` or `.crosshair` file onto
+the popover, or choose **Browse files**.
 
 Designer changes preview immediately. Choose **Save** or press **Ctrl+S** to save
 the design. Closing or opening another document with changes offers
@@ -19,9 +22,9 @@ Undo/redo groups each drag or stroke into one step.
 
 Drag a shape corner to change its width and height. The opposite corner stays
 in place, including on rotated shapes. Hold **Shift** to keep the proportions.
-On a crosshair, drag a corner to change the gap while keeping the arm length and
-thickness. If the arms already touch when you start dragging, the whole crosshair
-scales. On a dot-only crosshair, the same gesture changes the dot diameter.
+On a crosshair, drag a corner to change the gap in whole-pixel steps. If the arms
+touch, drag outward to reopen the gap. Arm length and thickness stay the same.
+On a dot-only crosshair, the same gesture changes the dot diameter.
 At 100% zoom, one design pixel is one screen pixel. At 800% and above, each
 grid cell marks one design pixel.
 

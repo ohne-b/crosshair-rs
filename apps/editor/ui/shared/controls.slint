@@ -89,6 +89,24 @@ export component ActionButton inherits Rectangle {
     }
 }
 
+export component ImportPanel inherits Rectangle {
+    in property <image> icon;
+    in property <string> instruction;
+    in property <string> formats;
+    in property <bool> highlighted;
+    callback browse;
+    forward-focus: browse-button;
+    background: Theme.panel; border-radius: 10px; border-width: 1px; border-color: Theme.border;
+    VerticalLayout { padding: 16px; spacing: 12px;
+        HorizontalLayout { alignment: center;
+            Image { source: root.icon; colorize: root.highlighted ? Theme.orange : Theme.muted; width: 24px; height: 24px; }
+        }
+        Text { text: root.instruction; color: Theme.text; font-size: 12px * Theme.text-scale; horizontal-alignment: center; wrap: word-wrap; }
+        Text { text: root.formats; color: Theme.muted; font-size: 11px * Theme.text-scale; horizontal-alignment: center; wrap: word-wrap; }
+        browse-button := ActionButton { text: "Browse files"; icon: root.icon; clicked => { root.browse(); } }
+    }
+}
+
 export component RenameField inherits Rectangle {
     in property <string> value;
     in property <string> label: "Rename crosshair";

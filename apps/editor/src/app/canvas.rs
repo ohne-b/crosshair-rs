@@ -46,6 +46,7 @@ impl App {
         let ui = self.window()?;
         let store = ui.global::<Store>();
         let scale = frame.scale;
+        self.hits = frame.hits;
         let tiles = frame
             .tiles
             .iter()
@@ -79,15 +80,11 @@ impl App {
 
     fn hit_layer(&self, point: Point, padding: f32) -> Option<Id> {
         let preset = self.document.draft.as_ref()?;
-        self.bounds.iter().rev().find_map(|(id, bounds)| {
-            let bounds = bounds.painted.outset(padding);
-            ((bounds.left..=bounds.right).contains(&point.x)
-                && (bounds.top..=bounds.bottom).contains(&point.y)
-                && preset
-                    .layers
-                    .iter()
-                    .any(|layer| layer.id == *id && layer.visible && !layer.locked))
-            .then_some(*id)
+        self.hits.layer_at(point, padding).filter(|id| {
+            preset
+                .layers
+                .iter()
+                .any(|layer| layer.id == *id && layer.visible && !layer.locked)
         })
     }
 
@@ -192,9 +189,7 @@ impl App {
         }
         let zoom = store.get_zoom() / ui.window().scale_factor();
         let tolerance = 7.0 / zoom;
-        let hit = self
-            .hit_layer(point, 0.0)
-            .or_else(|| self.hit_layer(point, tolerance));
+        let hit = self.hit_layer(point, tolerance);
         if button == 2 {
             if let Some(id) = hit
                 && !self.document.selected.contains(&id)

@@ -1167,13 +1167,15 @@ pub fn resize_shape(layer: &mut Layer, handle: Point, delta: Point, proportional
             let x = handle.x + corner.x * t.scale;
             let y = handle.y + corner.y * t.scale;
             let growth = (delta.x * x + delta.y * y) / (x * x + y * y);
-            if c.gap > 0.0 {
-                // Its gap spans both arms. Keep a matched pair on whole pixels.
-                let full_gap_change = (2.0 * c.gap * growth).round();
-                c.gap = (c.gap + (full_gap_change / 2.0).floor()).clamp(0.0, 512.0);
+            let radius = if c.gap > 0.0 {
+                c.gap
             } else {
-                layer.transform.scale = (t.scale * (1.0 + growth)).clamp(0.01, 100.0);
-            }
+                // Use the handle distance in layer pixels to open a closed gap.
+                x.abs().max(y.abs()) / t.scale
+            };
+            // The full gap spans both arms. Move each arm by a whole pixel.
+            let full_gap_change = (2.0 * radius * growth).round();
+            c.gap = (c.gap + (full_gap_change / 2.0).floor()).clamp(0.0, 512.0);
         } else if c.dot.enabled {
             let change = (delta.x * corner.x + delta.y * corner.y).round() / t.scale;
             c.dot.diameter = (c.dot.diameter + change).clamp(c.dot.diameter.min(1.0), 1024.0);
@@ -1888,6 +1890,36 @@ mod viewport_tests {
             false,
         );
         assert!((28.5 * scale - 29.5).abs() < 0.001);
+    }
+
+    #[test]
+    fn reopening_a_crosshair_gap_uses_layer_pixels_at_any_scale() {
+        for scale in [0.5, 1.0, 2.0] {
+            let mut layer = Layer::new(
+                "Crosshair",
+                Content::Crosshair(Crosshair {
+                    gap: 0.0,
+                    ..Default::default()
+                }),
+            );
+            layer.transform.scale = scale;
+            let mut expected = layer.clone();
+            let Content::Crosshair(c) = &mut expected.content else {
+                unreachable!()
+            };
+            c.gap = 2.0;
+
+            let corner = Point {
+                x: -10.0 * scale,
+                y: 10.0 * scale,
+            };
+            let delta = Point {
+                x: -1.6 * scale,
+                y: 1.6 * scale,
+            };
+            resize_shape(&mut layer, corner, delta, false);
+            assert_eq!(layer, expected);
+        }
     }
 
     #[test]

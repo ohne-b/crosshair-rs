@@ -208,6 +208,7 @@ pub(crate) struct App {
     browse: Vec<Preset>,
     browse_save_feedback_timer: slint::Timer,
     bounds: Vec<(Id, CanvasBounds)>,
+    hits: crosshair_renderer::CanvasHitMap,
     inverses: BTreeMap<Id, [Point; 3]>,
     anchors: BTreeMap<Id, Point>,
     preview_generation: u64,
@@ -319,6 +320,7 @@ pub fn run() -> Result<()> {
         browse: crate::features::browse::presets(),
         browse_save_feedback_timer: slint::Timer::default(),
         bounds: Vec::new(),
+        hits: Default::default(),
         inverses: BTreeMap::new(),
         anchors: BTreeMap::new(),
         preview_generation: 0,
@@ -440,6 +442,18 @@ pub fn run() -> Result<()> {
         slint::CloseRequestResponse::KeepWindowShown
     });
     use slint::winit_030::{EventResult, WinitWindowAccessor};
+    let drop_ui = ui.as_weak();
+    let pointer_ui = ui.as_weak();
+    ui.on_file_pointer(move || {
+        let Some(ui) = pointer_ui.upgrade() else {
+            return (-1.0, -1.0);
+        };
+        let window = ui.window();
+        let [x, y] = frame::handle(window)
+            .and_then(frame::pointer_position)
+            .unwrap_or([-1.0, -1.0]);
+        (x / window.scale_factor(), y / window.scale_factor())
+    });
     let mut frame_ready = false;
     // A zero-delay timer may run before Winit has created its native window.
     ui.window().on_winit_window_event(move |window, event| {
@@ -450,11 +464,27 @@ pub fn run() -> Result<()> {
         ) {
             ui_event(UiEvent::Action("animation-stop".into(), String::new()));
         }
-        if let slint::winit_030::winit::event::WindowEvent::DroppedFile(path) = event {
-            ui_event(UiEvent::Action(
-                "drop-image".into(),
-                path.to_string_lossy().into_owned(),
-            ));
+        if let Some(ui) = drop_ui.upgrade() {
+            use slint::winit_030::winit::event::WindowEvent;
+            let accepts = |path: &std::path::Path| {
+                let kind = if ui.global::<Store>().get_page() == 1 {
+                    dialogs::FileKind::Image
+                } else {
+                    dialogs::FileKind::Document
+                };
+                kind.accepts(path)
+            };
+            match event {
+                WindowEvent::HoveredFile(path) if accepts(path) => {
+                    ui.set_dragging_import_file(true)
+                }
+                WindowEvent::HoveredFileCancelled => ui.set_dragging_import_file(false),
+                WindowEvent::DroppedFile(path) => {
+                    ui.set_dragging_import_file(false);
+                    ui.invoke_file_dropped(path.to_string_lossy().as_ref().into(), accepts(path));
+                }
+                _ => {}
+            }
         }
         if !frame_ready && window.has_winit_window() {
             frame_ready = true;

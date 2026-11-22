@@ -121,6 +121,7 @@ pub(crate) struct DrawGroup {
 }
 
 pub(crate) struct PreparedLayer {
+    pub pick_id: Option<crosshair_core::Id>,
     pub groups: Vec<DrawGroup>,
     pub effects: Effects,
     pub opacity: f32,
@@ -221,6 +222,7 @@ pub(crate) fn prepare_layer(
     };
     crate::alignment::align_paths(&mut transformed, center, &effects, bounds)?;
     Ok(PreparedLayer {
+        pick_id: (!layer.locked).then_some(layer.id),
         groups: transformed,
         effects,
         opacity: layer.opacity,

@@ -159,6 +159,7 @@ component LayerList inherits Rectangle {
 }
 
 export component Designer inherits Rectangle {
+    callback import-requested;
     property <bool> show-layers: Store.wide;
     background: Theme.canvas; border-top-left-radius: 12px;
     VerticalLayout {
@@ -414,24 +415,14 @@ export component Designer inherits Rectangle {
                             }
                         }
                     }
-                    image-popup := PopupWindow {
-                        x: (parent.width - self.width) / 2; y: -self.height - 8px; width: 280px; height: 176px;
-                        close-policy: close-on-click-outside; forward-focus: image-keys;
-                        image-keys := FocusScope { key-pressed(event) => { if event.text == Key.Escape { image-popup.close(); return accept; } return reject; }
-                            Rectangle { background: Theme.panel; border-radius: 10px; border-width: 1px; border-color: Theme.border;
-                                VerticalLayout { padding: 16px; spacing: 12px;
-                                    Image { source: @image-url("../../../../assets/icons/photo.svg"); colorize: Theme.muted; width: 24px; height: 24px; }
-                                    Text { text: "Drop an image onto the canvas"; color: Theme.text; font-size: 12px * Theme.text-scale; horizontal-alignment: center; }
-                                    Text { text: "PNG, JPEG, SVG or the first GIF frame"; color: Theme.muted; font-size: 11px * Theme.text-scale; horizontal-alignment: center; wrap: word-wrap; }
-                                    ActionButton { text: "Browse files"; icon: @image-url("../../../../assets/icons/photo.svg"); clicked => { image-popup.close(); Store.action("add-image", ""); } }
-                                }
-                            }
-                        }
-                    }
                     tools-layout := HorizontalLayout { padding: 8px; spacing: 8px; alignment: center;
                         ActionButton { icon: @image-url("../../../../assets/icons/crosshair.svg"); label: "Crosshair layer"; quiet: true; clicked => { crosshair-popup.show(); } }
                         ActionButton { icon: @image-url("../../../../assets/icons/square.svg"); label: "Shape layer"; quiet: true; clicked => { shape-popup.show(); } }
-                        ActionButton { icon: @image-url("../../../../assets/icons/photo.svg"); label: "Image layer"; quiet: true; clicked => { image-popup.show(); } }
+                        ActionButton { icon: @image-url("../../../../assets/icons/photo.svg"); label: "Image layer"; quiet: true; clicked => {
+                            Store.menu-x = (tools.absolute-position.x + tools.width / 2) / 1px;
+                            Store.menu-y = (tools.absolute-position.y - 8px) / 1px;
+                            root.import-requested();
+                        } }
                         ActionButton { icon: @image-url("../../../../assets/icons/pencil.svg"); label: "Draw / erase"; selected: Store.drawing; quiet: true; clicked => { Store.action("draw", ""); } }
                     }
                 }

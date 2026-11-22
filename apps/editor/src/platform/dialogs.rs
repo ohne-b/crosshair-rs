@@ -28,15 +28,31 @@ pub enum FileKind {
     Svg,
 }
 
+impl FileKind {
+    fn filter(&self) -> (&'static str, &'static [&'static str]) {
+        match self {
+            Self::Document => ("crosshair-rs files", &["json", "crosshair"]),
+            Self::Image => ("Images", &["png", "jpg", "jpeg", "gif", "svg"]),
+            Self::Png => ("PNG image", &["png"]),
+            Self::Svg => ("SVG image", &["svg"]),
+        }
+    }
+
+    pub fn accepts(&self, path: &std::path::Path) -> bool {
+        let (_, extensions) = self.filter();
+        path.extension().is_some_and(|ext| {
+            extensions
+                .iter()
+                .any(|suffix| ext.eq_ignore_ascii_case(suffix))
+        })
+    }
+}
+
 pub fn choose(owner: HWND, save: bool, kind: FileKind, suggested: &str) -> Result<Option<PathBuf>> {
-    let (description, filter, extension) = match kind {
-        FileKind::Document => ("crosshair-rs files", "*.json;*.crosshair", "json"),
-        FileKind::Image => ("Images", "*.png;*.jpg;*.jpeg;*.gif;*.svg", "png"),
-        FileKind::Png => ("PNG image", "*.png", "png"),
-        FileKind::Svg => ("SVG image", "*.svg", "svg"),
-    };
+    let (description, extensions) = kind.filter();
+    let extension = extensions[0];
     let description = wide(description);
-    let filter = wide(filter);
+    let filter = wide(&format!("*.{}", extensions.join(";*.")));
     let types = [COMDLG_FILTERSPEC {
         pszName: PCWSTR(description.as_ptr()),
         pszSpec: PCWSTR(filter.as_ptr()),
