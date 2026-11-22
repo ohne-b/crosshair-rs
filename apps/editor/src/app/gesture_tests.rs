@@ -942,7 +942,8 @@ fn replacing_and_clearing_controller_shortcuts_preserves_the_keyboard_slot() -> 
     app.state.profiles[0].bindings[0].chord = None;
     app.action("clear-controller", &id.to_string())?;
     assert!(
-        matches!(&commands()[..], [Command::SetBindings { profiles, .. }] if profiles[0].bindings.is_empty())
+        matches!(&commands()[..], [Command::SetBindings { profiles, .. }]
+            if matches!(&profiles[0].bindings[..], [row] if row.id == id && row.chord.is_none() && row.controller.is_none()))
     );
     ui.hide()?;
     Ok(())

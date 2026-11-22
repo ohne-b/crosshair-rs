@@ -900,10 +900,11 @@ fn deserialize_bindings<'de, D: serde::Deserializer<'de>>(
         action: StoredAction,
     }
     let bindings = Vec::<StoredBinding>::deserialize(deserializer)?;
-    if bindings
-        .iter()
-        .any(|b| b.chord.is_none() && b.controller.is_none())
-    {
+    if bindings.iter().any(|b| {
+        !matches!(b.action, StoredAction::SelectPreset { .. })
+            && b.chord.is_none()
+            && b.controller.is_none()
+    }) {
         return Err(serde::de::Error::custom("A shortcut needs an assignment"));
     }
     Ok(bindings
@@ -935,6 +936,25 @@ fn deserialize_bindings<'de, D: serde::Deserializer<'de>>(
 mod binding_tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn saved_crosshair_without_assignments_survives_a_reload() {
+        let mut state = AppState::default();
+        let mut shortcut = Binding::new(
+            InputChord::key(0x12),
+            BindingAction::SelectPreset {
+                preset: state.presets[0].id,
+            },
+        );
+        shortcut.chord = None;
+        shortcut.name = "Shotgun".into();
+        state.profiles[0].bindings.push(shortcut);
+
+        let restored: AppState =
+            serde_json::from_slice(&serde_json::to_vec(&state).unwrap()).unwrap();
+        crate::validation::validate_state(&restored).unwrap();
+        assert_eq!(restored.profiles[0].bindings, state.profiles[0].bindings);
+    }
 
     #[test]
     fn legacy_actions_are_removed_without_resetting_profile_or_shortcuts() {

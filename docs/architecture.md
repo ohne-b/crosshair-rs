@@ -393,6 +393,7 @@ and cancelled when that profile changes.
 
 A separate full-width shortcut table has the crosshair, shortcut name, keyboard/mouse
 binding, controller binding and one trash button at the far right to remove the row.
+Clearing both assignments preserves the shortcut's name and target for rebinding.
 Headers and body share column borders. The first row always contains only the
 plus button and New; either opens the picker. Choosing a crosshair inserts a
 separate row below New with its thumbnail, name, key recording and cancellation.

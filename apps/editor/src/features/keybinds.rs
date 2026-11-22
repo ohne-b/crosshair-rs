@@ -33,7 +33,7 @@ impl Target {
             _ => Self::Binding(value.parse()?),
         })
     }
-    /// Change one input slot. A saved shortcut lives as long as either slot is bound.
+    /// Change one input slot without removing its saved crosshair shortcut.
     pub fn assign(
         self,
         profile: &mut Profile,
@@ -80,7 +80,9 @@ impl Target {
             && keyboard.is_none()
             && controller.is_none()
         {
-            profile.bindings.retain(|binding| binding.id != id);
+            profile
+                .bindings
+                .retain(|binding| binding.id != id || binding.action.target().is_some());
         }
         Ok(())
     }

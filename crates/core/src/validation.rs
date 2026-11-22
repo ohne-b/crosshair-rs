@@ -438,7 +438,9 @@ pub fn validate_state(state: &AppState) -> Result {
         for binding in &profile.bindings {
             unique_id(&mut ids, binding.id, "binding.id")?;
             require(
-                binding.chord.is_some() || binding.controller.is_some(),
+                binding.action.target().is_some()
+                    || binding.chord.is_some()
+                    || binding.controller.is_some(),
                 "binding",
                 "A shortcut needs a keyboard, mouse or controller assignment",
             )?;
@@ -724,6 +726,8 @@ mod tests {
         assert!(validate_state(&state).is_err());
         state.profiles[1].bindings[0].controller = None;
         state.profiles[1].bindings[0].chord = None;
+        validate_state(&state).unwrap();
+        state.profiles[1].bindings[0].action = BindingAction::ToggleVisibility;
         assert!(validate_state(&state).is_err());
         let chord = InputChord::gamepad(GamepadControl::South);
         state.profiles[1].bindings[0].chord = Some(chord);
