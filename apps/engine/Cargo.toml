@@ -21,6 +21,7 @@ semver = "1.0"
 windows-future = "0.3.2"
 
 [target.'cfg(windows)'.dependencies]
+sdl3 = { version = "0.22.1", features = ["build-from-source-static"] }
 windows = { workspace = true, features = [
   "Win32_Foundation",
   "Win32_Graphics_Gdi",

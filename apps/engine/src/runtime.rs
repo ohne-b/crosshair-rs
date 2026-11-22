@@ -10,7 +10,7 @@ use std::{
         Arc,
         mpsc::{self, Receiver, SyncSender},
     },
-    time::Instant,
+    time::{Duration, Instant},
 };
 
 use anyhow::{Result, ensure};
@@ -18,7 +18,7 @@ use crosshair_core::{protocol::*, *};
 use crosshair_platform::identity::{Identity, control_pipe_name};
 use windows::{
     Win32::{
-        Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, WPARAM},
+        Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, WAIT_FAILED, WPARAM},
         System::{
             Com::{COINIT_MULTITHREADED, CoInitializeEx, CoUninitialize},
             LibraryLoader::GetModuleHandleW,
@@ -118,6 +118,9 @@ struct Runtime {
     window: Window,
     overlay: DesktopOverlay,
     input: Option<input::Registration>,
+    gamepads: Option<input::gamepad::Gamepads>,
+    next_gamepad_poll: Option<Instant>,
+    gamepad_epoch: u64,
     tray: tray::Worker,
     server: ipc::Server,
     events: Receiver<Event>,
@@ -289,6 +292,9 @@ pub fn run(options: Options) -> Result<()> {
         window,
         overlay,
         input,
+        gamepads: None,
+        next_gamepad_poll: None,
+        gamepad_epoch: 0,
         tray,
         server,
         events,
@@ -336,9 +342,28 @@ pub fn run(options: Options) -> Result<()> {
     runtime.refresh();
     let mut message = MSG::default();
     while !runtime.stopped {
-        let result = unsafe { GetMessageW(&mut message, None, 0, 0) }.0;
-        ensure!(result != -1, "Windows message dispatch failed");
-        if result == 0 {
+        if let Some(deadline) = runtime.next_gamepad_poll {
+            let now = Instant::now();
+            if now >= deadline && runtime.poll_gamepads() {
+                runtime.refresh();
+            }
+            // Check the deadline even when high-rate Raw Input keeps the queue nonempty.
+            if !unsafe { PeekMessageW(&mut message, None, 0, 0, PM_REMOVE) }.as_bool() {
+                if let Some(deadline) = runtime.next_gamepad_poll {
+                    let wait = deadline.saturating_duration_since(Instant::now());
+                    let timeout = wait.as_millis().saturating_add(1) as u32;
+                    let result = unsafe {
+                        MsgWaitForMultipleObjectsEx(None, timeout, QS_ALLINPUT, MWMO_INPUTAVAILABLE)
+                    };
+                    ensure!(result != WAIT_FAILED, "Windows input wait failed");
+                }
+                continue;
+            }
+        } else {
+            let result = unsafe { GetMessageW(&mut message, None, 0, 0) }.0;
+            ensure!(result != -1, "Windows message dispatch failed");
+        }
+        if message.message == WM_QUIT {
             break;
         }
         if message.hwnd == runtime.window.0 {
@@ -358,16 +383,7 @@ pub fn run(options: Options) -> Result<()> {
                 WM_INPUT => {
                     let mut changed = false;
                     let _ = input::read(message.lParam, |event| {
-                        if runtime.frozen || runtime.suspended {
-                            let mouse_held = runtime.app.input.mouse_buttons_held();
-                            runtime.app.input.observe_suspended(event);
-                            runtime.app.reset_playback();
-                            runtime.sync_animation();
-                            changed |= mouse_held != runtime.app.input.mouse_buttons_held();
-                        } else {
-                            changed |= runtime.app.input(event);
-                            runtime.sync_animation();
-                        }
+                        changed |= runtime.input_event(event);
                     });
                     if changed {
                         runtime.refresh();
@@ -383,8 +399,10 @@ pub fn run(options: Options) -> Result<()> {
                 }
                 WM_INPUT_DEVICE_CHANGE => {
                     if message.wParam.0 == 2 {
-                        runtime.app.input.remove_device(message.lParam.0 as u64);
-                        runtime.app.reset_input();
+                        runtime.app.remove_input_device(
+                            InputSource::KeyboardMouse,
+                            message.lParam.0 as u64,
+                        );
                         runtime.refresh();
                     }
                 }
@@ -452,6 +470,62 @@ pub fn run(options: Options) -> Result<()> {
 }
 
 impl Runtime {
+    fn input_event(&mut self, event: InputEvent) -> bool {
+        let changed = if self.frozen || self.suspended {
+            let mouse_held = self.app.input.mouse_buttons_held();
+            self.app.input.observe_suspended(event);
+            self.app.reset_playback();
+            mouse_held != self.app.input.mouse_buttons_held()
+        } else {
+            self.app.input(event)
+        };
+        self.sync_animation();
+        changed
+    }
+
+    fn controller_status(&mut self, error: Option<&str>) {
+        if self.app.status.controller_error.as_deref() != error {
+            self.app.status.controller_error = error.map(str::to_owned);
+            self.app.changed(None, false);
+        }
+    }
+
+    fn poll_gamepads(&mut self) -> bool {
+        let mut pads = match self.gamepads.take() {
+            Some(pads) => pads,
+            None => match input::gamepad::Gamepads::new() {
+                Ok(pads) => pads,
+                Err(_) => {
+                    self.controller_status(Some("Controller input could not start. Retrying."));
+                    self.next_gamepad_poll = Some(Instant::now() + Duration::from_secs(5));
+                    return false;
+                }
+            },
+        };
+        let mut changed = false;
+        // A profile change, capture or visibility reset can precede SDL's next sample.
+        let reset = self.gamepad_epoch != self.app.playback_epoch;
+        pads.poll(|change| match change {
+            input::gamepad::Change::Edge(event) if reset => self.app.input.observe_suspended(event),
+            input::gamepad::Change::Edge(event) => changed |= self.input_event(event),
+            input::gamepad::Change::AlreadyHeld(event) => self.app.input.observe_suspended(event),
+            input::gamepad::Change::Removed(device) => {
+                changed |= self
+                    .app
+                    .remove_input_device(InputSource::Controller, device);
+                self.sync_animation();
+            }
+        });
+        self.controller_status(
+            pads.has_open_error()
+                .then_some("Could not open a controller. Retrying."),
+        );
+        self.next_gamepad_poll = Some(Instant::now() + pads.interval());
+        self.gamepads = Some(pads);
+        self.gamepad_epoch = self.app.playback_epoch;
+        changed
+    }
+
     fn widget_unavailable(&self) -> &str {
         self.widget_start_error
             .as_deref()
@@ -612,6 +686,25 @@ impl Runtime {
             && let Err(error) = input.update(mouse)
         {
             self.app.status.render_error = Some(error.to_string());
+        }
+        if self.input.is_some()
+            && !self.suspended
+            && !self.frozen
+            && input::gamepad::needed(&self.app.state, self.app.input.capture_source())
+        {
+            self.next_gamepad_poll.get_or_insert_with(Instant::now);
+            if self.gamepads.is_some() && self.gamepad_epoch != self.app.playback_epoch {
+                self.poll_gamepads();
+            }
+        } else if self.next_gamepad_poll.take().is_some() {
+            if let Some(pads) = self.gamepads.take() {
+                for device in pads.device_ids() {
+                    self.app
+                        .remove_input_device(InputSource::Controller, device);
+                }
+                self.sync_animation();
+            }
+            self.controller_status(None);
         }
         self.refresh_presentation();
         self.advance_change();

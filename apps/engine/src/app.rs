@@ -161,6 +161,18 @@ impl App {
             || mouse_held != self.input.mouse_buttons_held()
     }
 
+    pub fn remove_input_device(&mut self, source: InputSource, device: u64) -> bool {
+        let before = self.resolved_presentation(&self.state);
+        let releases = self.input.remove_device(source, device);
+        let animated = !releases.is_empty();
+        self.animation_events.extend(releases);
+        let changed = before != self.resolved_presentation(&self.state);
+        if changed {
+            self.changed(None, false);
+        }
+        changed || animated
+    }
+
     pub fn captured(&mut self, outcome: CaptureOutcome) {
         let (chord, cancelled) = match outcome {
             CaptureOutcome::Captured(chord) => (Some(chord), false),
@@ -279,6 +291,7 @@ impl App {
 pub fn input_configuration_changed(before: &AppState, after: &AppState) -> bool {
     before.active_profile != after.active_profile
         || before.settings.global_toggle != after.settings.global_toggle
+        || before.settings.controller_toggle != after.settings.controller_toggle
         || before.settings.output_mode != after.settings.output_mode
         || before.settings.monitor != after.settings.monitor
         || before.active_profile().map(|p| (p.scale, p.offset))

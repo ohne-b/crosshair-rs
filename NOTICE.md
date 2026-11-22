@@ -47,6 +47,10 @@ copyright statements rather than inventing generic authorship. Source packages
 are linked by exact version. Packaging fails when required material is missing;
 reviewed overrides must identify an exact crate version and original source.
 
+The engine uses SDL 3 through the Rust `sdl3` crate for gamepad input. The
+bundled notices include SDL's zlib license and the license files for its
+embedded HIDAPI and yuv2rgb code. [SDL source](https://github.com/libsdl-org/SDL).
+
 ## Microsoft components
 
 The Game Bar host uses **Microsoft.Gaming.XboxGameBar 7.3.2607010**. The package

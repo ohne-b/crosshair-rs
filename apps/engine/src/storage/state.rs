@@ -429,7 +429,7 @@ mod tests {
     #[test]
     fn migrating_old_versions_does_not_write_until_save_and_backup_preserves_original_bytes()
     -> Result<()> {
-        for version in [1, 2, 3] {
+        for version in [1, 2, 3, 4] {
             let directory = tempfile::tempdir()?;
             let store = Store::open(directory.path())?;
             let mut value = serde_json::to_value(AppState::default())?;

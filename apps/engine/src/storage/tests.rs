@@ -77,6 +77,7 @@ fn portable_reads_old_versions_and_preserves_movement_and_aim_targets() -> Resul
         preset: state.presets[1].id,
     };
     state.profiles[0].actions.movement[0] = Some(InputChord::key(0x10));
+    state.profiles[0].actions.controller.aim = Some(crosshair_core::GamepadControl::LeftTrigger);
     state.presets[1].layers[0].animations = vec![Animation {
         trigger: crosshair_core::AnimationTrigger::Movement,
         target: AnimationTarget {
@@ -105,6 +106,10 @@ fn portable_reads_old_versions_and_preserves_movement_and_aim_targets() -> Resul
     )?;
     let profile = imported.profiles.last().unwrap();
     assert_eq!(profile.actions.movement, state.profiles[0].actions.movement);
+    assert_eq!(
+        profile.actions.controller,
+        state.profiles[0].actions.controller
+    );
     let target = profile.actions.aim_action.target().unwrap();
     assert_ne!(target, state.presets[1].id);
     assert_eq!(
@@ -115,6 +120,10 @@ fn portable_reads_old_versions_and_preserves_movement_and_aim_targets() -> Resul
     v2["version"] = 2.into();
     v2["state"]["schema_version"] = 2.into();
     for profile in v2["state"]["profiles"].as_array_mut().unwrap() {
+        profile["actions"]
+            .as_object_mut()
+            .unwrap()
+            .remove("controller");
         profile["actions"]
             .as_object_mut()
             .unwrap()

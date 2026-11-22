@@ -257,7 +257,10 @@ impl App {
             match self
                 .state
                 .active_profile()
-                .filter(|profile| profile.actions.hold_to_hide.is_none())
+                .filter(|profile| {
+                    profile.actions.hold_to_hide.is_none()
+                        && profile.actions.controller.hold_to_hide.is_none()
+                })
                 .map(|profile| profile.actions.aim_action)
             {
                 Some(AimAction::ShowWhileHeld) => "Hidden until Aim is held",
@@ -268,15 +271,22 @@ impl App {
         } else {
             SharedString::default()
         });
-        store.set_visibility_shortcut(
-            self.state
-                .settings
-                .global_toggle
-                .as_ref()
-                .map(keybinds::chord_label)
-                .unwrap_or_else(|| "Unbound".into())
+        store.set_controller_error(
+            self.status
+                .controller_error
+                .as_deref()
+                .unwrap_or_default()
                 .into(),
         );
+        let settings = &self.state.settings;
+        let key = settings.global_toggle.as_ref().map(keybinds::chord_label);
+        let controller = settings.controller_toggle.map(keybinds::controller_label);
+        store.set_visibility_shortcut(match (key, controller) {
+            (Some(key), Some(control)) => format!("{key} / {control}").into(),
+            (Some(key), None) => key.into(),
+            (None, Some(control)) => control.into(),
+            (None, None) => "Unbound".into(),
+        });
         let local_history = store.get_page() == 1 && self.document.draft.is_some();
         store.set_can_undo(if local_history {
             self.document.can_undo()
@@ -625,29 +635,38 @@ impl App {
         let Some(ui) = self.ui.upgrade() else {
             return;
         };
+        let store = ui.global::<Store>();
+        let settings = &self.state.settings;
+        let mouse = |chord: &Option<InputChord>| {
+            chord.as_ref().is_some_and(|c| {
+                matches!(c.trigger, InputKey::Mouse { .. } | InputKey::Wheel { .. })
+            })
+        };
         let mut movement = Vec::new();
         let mut rows = vec![BindingRow {
             id: "global".into(),
             direction: Default::default(),
             name: SharedString::default(),
             action: "Global toggle".into(),
+            mouse: mouse(&settings.global_toggle),
             target: SharedString::default(),
             target_index: -1,
-            chord: self
-                .state
-                .settings
+            enabled: true,
+            chord: settings
                 .global_toggle
                 .as_ref()
                 .map(keybinds::chord_label)
-                .unwrap_or_else(|| "Set shortcut".into())
+                .unwrap_or_default()
                 .into(),
-            enabled: self.state.settings.global_toggle.is_some(),
+            controller: settings
+                .controller_toggle
+                .map(keybinds::controller_label)
+                .unwrap_or_default()
+                .into(),
             shortcut: false,
             global: true,
         }];
         if let Some(profile) = self.state.active_profile() {
-            let store = ui.global::<Store>();
-            store.set_action_profile(profile.name.clone().into());
             store.set_aim_action(match profile.actions.aim_action {
                 AimAction::None => 0,
                 AimAction::ToggleVisibility => 1,
@@ -670,20 +689,41 @@ impl App {
                     .and_then(|id| self.state.presets.iter().position(|p| p.id == id))
                     .map_or(-1, |i| i as i32),
             );
-            for (id, label, direction, chord) in [
-                ("aim", "Aim", "", &profile.actions.aim),
-                ("fire", "Fire", "", &profile.actions.fire),
-                ("reload", "Reload", "", &profile.actions.reload),
-                ("hide", "Hold to hide", "", &profile.actions.hold_to_hide),
-                ("forward", "Move forward", "↑", &profile.actions.movement[0]),
-                ("left", "Move left", "←", &profile.actions.movement[1]),
+            let keys = &profile.actions;
+            let pad = &keys.controller;
+            for (id, action, key, control, direction) in [
+                ("aim", "Aim", &keys.aim, pad.aim, ""),
+                ("fire", "Fire", &keys.fire, pad.fire, ""),
+                ("reload", "Reload", &keys.reload, pad.reload, ""),
+                (
+                    "hide",
+                    "Hold to hide",
+                    &keys.hold_to_hide,
+                    pad.hold_to_hide,
+                    "",
+                ),
+                (
+                    "forward",
+                    "Move forward",
+                    &keys.movement[0],
+                    pad.movement[0],
+                    "↑",
+                ),
+                ("left", "Move left", &keys.movement[1], pad.movement[1], "←"),
                 (
                     "backward",
                     "Move backward",
+                    &keys.movement[2],
+                    pad.movement[2],
                     "↓",
-                    &profile.actions.movement[2],
                 ),
-                ("right", "Move right", "→", &profile.actions.movement[3]),
+                (
+                    "right",
+                    "Move right",
+                    &keys.movement[3],
+                    pad.movement[3],
+                    "→",
+                ),
             ] {
                 let group = if direction.is_empty() {
                     &mut rows
@@ -692,15 +732,20 @@ impl App {
                 };
                 group.push(BindingRow {
                     id: id.into(),
-                    action: label.into(),
+                    action: action.into(),
+                    mouse: mouse(key),
                     direction: direction.into(),
-                    chord: chord
+                    enabled: true,
+                    chord: key
                         .as_ref()
                         .map(keybinds::chord_label)
-                        .unwrap_or_else(|| "Unbound".into())
+                        .unwrap_or_default()
+                        .into(),
+                    controller: control
+                        .map(keybinds::controller_label)
+                        .unwrap_or_default()
                         .into(),
                     global: true,
-                    enabled: chord.is_some(),
                     ..Default::default()
                 });
             }
@@ -708,6 +753,7 @@ impl App {
                 BindingRow {
                     id: binding.id.to_string().into(),
                     action: keybinds::action_name(&binding.action).into(),
+                    mouse: mouse(&binding.chord),
                     name: if binding.name.is_empty() {
                         binding
                             .action
@@ -725,7 +771,17 @@ impl App {
                         .map(|id| id.to_string())
                         .unwrap_or_default()
                         .into(),
-                    chord: keybinds::chord_label(&binding.chord).into(),
+                    chord: binding
+                        .chord
+                        .as_ref()
+                        .map(keybinds::chord_label)
+                        .unwrap_or_default()
+                        .into(),
+                    controller: binding
+                        .controller
+                        .map(keybinds::controller_label)
+                        .unwrap_or_default()
+                        .into(),
                     enabled: binding.enabled,
                     target_index: binding
                         .action
@@ -739,7 +795,16 @@ impl App {
                 }
             }));
         }
-        let store = ui.global::<Store>();
+        if !store.get_pending_shortcut().is_empty()
+            && let Ok(preset) = store.get_pending_preset().parse::<Id>()
+        {
+            if let Some(index) = self.state.presets.iter().position(|p| p.id == preset) {
+                store.set_target_index(index as i32);
+            } else {
+                store.set_request_shortcut(false);
+                store.set_pending_shortcut("".into());
+            }
+        }
         let pending_saved = rows
             .iter()
             .any(|row| row.id == store.get_pending_shortcut());

@@ -40,7 +40,7 @@ function contained(base, path) {
   return part !== '..' && !part.startsWith(`..${process.platform === 'win32' ? '\\' : '/'}`) && !isAbsolute(part);
 }
 
-export function licenseFiles(packageRoot, declared) {
+export function licenseFiles(packageRoot, declared, bundled = []) {
   packageRoot = realpathSync(packageRoot);
   const files = new Set();
   function add(path, depth = 0) {
@@ -58,6 +58,7 @@ export function licenseFiles(packageRoot, declared) {
     if (/^(?:licen[cs]e|copying|copyright|unlicense|notice)(?:$|[._-]|s$)/i.test(name)) add(join(packageRoot, name));
   }
   if (declared) add(resolve(packageRoot, declared));
+  for (const path of bundled) add(resolve(packageRoot, path));
   return [...files].sort((a, b) => order(normalized(relative(packageRoot, a)), normalized(relative(packageRoot, b))));
 }
 
@@ -101,7 +102,13 @@ export function renderNotices(packages, overrides = {}, overrideRoot = root) {
           return { name: normalized(value), text: licenseText(path) };
         });
       } else {
-        material = licenseFiles(packageRoot, pkg.license_file).map(path => ({ name: normalized(relative(packageRoot, path)), text: licenseText(path) }));
+        // The source crate's root license covers the Rust wrapper. SDL ships its own notices.
+        const bundled = pkg.name === 'sdl3-src' ? [
+          'SDL/LICENSE.txt', 'SDL/src/video/yuv2rgb/LICENSE', 'SDL/src/hidapi/LICENSE.txt',
+          'SDL/src/hidapi/LICENSE-orig.txt', 'SDL/src/hidapi/LICENSE-bsd.txt', 'SDL/src/hidapi/LICENSE-gpl3.txt',
+        ] : [];
+        material = licenseFiles(packageRoot, pkg.license_file, bundled)
+          .map(path => ({ name: normalized(relative(packageRoot, path)), text: licenseText(path) }));
       }
       if (!material.length) throw new Error('No upstream license file was supplied.');
       const repository = sourceLink(pkg.repository);

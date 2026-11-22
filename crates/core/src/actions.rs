@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::{AppState, Id, InputChord, InputKey, Profile, ValidationError};
+use crate::{AppState, GamepadControl, Id, InputChord, InputKey, Profile, ValidationError};
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
@@ -45,14 +45,40 @@ pub struct ActionBindings {
     pub aim_action: AimAction,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub hold_to_hide: Option<InputChord>,
+    #[serde(default, skip_serializing_if = "ControllerBindings::is_empty")]
+    pub controller: ControllerBindings,
     /// Forward, left, backward and right keyboard chords.
     #[serde(default)]
     pub movement: [Option<InputChord>; 4],
 }
 
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct ControllerBindings {
+    pub aim: Option<GamepadControl>,
+    pub fire: Option<GamepadControl>,
+    pub reload: Option<GamepadControl>,
+    pub hold_to_hide: Option<GamepadControl>,
+    pub movement: [Option<GamepadControl>; 4],
+}
+
+impl ControllerBindings {
+    pub fn controls(&self) -> impl Iterator<Item = GamepadControl> {
+        [self.aim, self.fire, self.reload, self.hold_to_hide]
+            .into_iter()
+            .chain(self.movement)
+            .flatten()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.controls().next().is_none()
+    }
+}
+
 impl ActionBindings {
     pub fn unbound() -> Self {
         Self {
+            controller: ControllerBindings::default(),
             aim: None,
             fire: None,
             reload: None,
@@ -79,6 +105,7 @@ impl Default for ActionBindings {
             })
         };
         Self {
+            controller: ControllerBindings::default(),
             aim: mouse(2),
             fire: mouse(1),
             reload: Some(InputChord::key(0x13)),
@@ -166,7 +193,7 @@ pub fn migrate_state(mut state: AppState) -> Result<AppState, ValidationError> {
             }
             state.schema_version = crate::SCHEMA_VERSION;
         }
-        3 => state.schema_version = crate::SCHEMA_VERSION,
+        3 | 4 => state.schema_version = crate::SCHEMA_VERSION,
         crate::SCHEMA_VERSION => {}
         _ => {
             return Err(ValidationError::new(

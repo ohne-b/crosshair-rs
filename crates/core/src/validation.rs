@@ -290,6 +290,11 @@ pub fn validate_chord(chord: &InputChord) -> Result {
             "chord.mouse",
             "mouse button must be from 1 to 5",
         )?,
+        InputKey::Gamepad { .. } => require(
+            chord.modifiers.is_empty(),
+            "chord.modifiers",
+            "Controller shortcuts use a single control",
+        )?,
         InputKey::Wheel { .. } | InputKey::Pause => {}
     }
     require(
@@ -335,6 +340,15 @@ pub fn validate_chord(chord: &InputChord) -> Result {
         )?;
     }
     Ok(())
+}
+
+fn validate_keyboard_mouse(chord: &InputChord) -> Result {
+    require(
+        chord.trigger.source() == InputSource::KeyboardMouse,
+        "chord.key",
+        "Use the controller slot for a gamepad control",
+    )?;
+    validate_chord(chord)
 }
 
 pub fn validate_state(state: &AppState) -> Result {
@@ -423,7 +437,16 @@ pub fn validate_state(state: &AppState) -> Result {
         )?;
         for binding in &profile.bindings {
             unique_id(&mut ids, binding.id, "binding.id")?;
-            validate_chord(&binding.chord)?;
+            require(
+                binding.action.target().is_some()
+                    || binding.chord.is_some()
+                    || binding.controller.is_some(),
+                "binding",
+                "A shortcut needs a keyboard, mouse or controller assignment",
+            )?;
+            if let Some(chord) = &binding.chord {
+                validate_keyboard_mouse(chord)?;
+            }
             if !binding.name.is_empty() {
                 name(&binding.name, "binding.name")?;
             }
@@ -447,6 +470,26 @@ pub fn validate_state(state: &AppState) -> Result {
             &profile.actions,
             state.settings.global_toggle.as_ref(),
         )?;
+        let controls = profile
+            .actions
+            .controller
+            .controls()
+            .chain(
+                profile
+                    .bindings
+                    .iter()
+                    .filter(|b| b.enabled)
+                    .filter_map(|b| b.controller),
+            )
+            .chain(state.settings.controller_toggle);
+        let mut assigned = BTreeSet::new();
+        for control in controls {
+            require(
+                assigned.insert(control),
+                "bindings",
+                "Controller control is already assigned",
+            )?;
+        }
     }
     require(
         state.active_profile().is_some(),
@@ -454,7 +497,7 @@ pub fn validate_state(state: &AppState) -> Result {
         "referenced profile is missing",
     )?;
     if let Some(chord) = &state.settings.global_toggle {
-        validate_chord(chord)?;
+        validate_keyboard_mouse(chord)?;
     }
     if let Some(monitor) = &state.settings.monitor {
         require(
@@ -525,7 +568,7 @@ pub fn validate_action_conflicts(
     global: Option<&InputChord>,
 ) -> Result {
     for chord in actions.chords() {
-        validate_chord(chord)?;
+        validate_keyboard_mouse(chord)?;
     }
     for chord in [&actions.aim, &actions.fire, &actions.hold_to_hide]
         .into_iter()
@@ -547,38 +590,17 @@ pub fn validate_action_conflicts(
     let mut chords: Vec<_> = bindings
         .iter()
         .filter(|b| b.enabled)
-        .map(|b| &b.chord)
+        .filter_map(|b| b.chord.as_ref())
         .collect();
     chords.extend(actions.chords());
     chords.extend(global);
     validate_chord_conflicts(&chords)
 }
 
-/// Tests all physical modifier combinations so sided and generic chords cannot race.
-pub fn validate_binding_conflicts(bindings: &[Binding], global: Option<&InputChord>) -> Result {
-    let mut chords: Vec<&InputChord> = bindings
-        .iter()
-        .filter(|b| b.enabled)
-        .map(|b| &b.chord)
-        .collect();
-    if let Some(global) = global {
-        chords.push(global);
-    }
-    validate_chord_conflicts(&chords)
-}
-
 fn validate_chord_conflicts(chords: &[&InputChord]) -> Result {
     for (index, chord) in chords.iter().enumerate() {
         for other in chords.iter().skip(index + 1) {
-            if chord.trigger != other.trigger {
-                continue;
-            }
-            if chord_specificity(chord) != chord_specificity(other) {
-                continue;
-            }
-            if (0..=u8::MAX).any(|bits| {
-                modifiers_match(&chord.modifiers, bits) && modifiers_match(&other.modifiers, bits)
-            }) {
+            if chords_conflict(chord, other) {
                 return Err(ValidationError::new(
                     "bindings",
                     "equally specific chords overlap",
@@ -587,6 +609,13 @@ fn validate_chord_conflicts(chords: &[&InputChord]) -> Result {
         }
     }
     Ok(())
+}
+
+pub fn chords_conflict(a: &InputChord, b: &InputChord) -> bool {
+    a.trigger == b.trigger
+        && chord_specificity(a) == chord_specificity(b)
+        && (0..=u8::MAX)
+            .any(|bits| modifiers_match(&a.modifiers, bits) && modifiers_match(&b.modifiers, bits))
 }
 
 pub fn chord_specificity(chord: &InputChord) -> usize {
@@ -674,24 +703,50 @@ mod tests {
     }
 
     #[test]
+    fn controller_conflicts_include_global_inactive_profiles_and_both_shortcut_slots() {
+        let mut state = AppState::default();
+        let preset = state.profiles[0].selected_preset;
+        state.profiles.push(Profile::new("Other", preset));
+        let mut binding = Binding::new(
+            InputChord::key(0x12),
+            BindingAction::SelectPreset { preset },
+        );
+        binding.controller = Some(GamepadControl::East);
+        state.profiles[1].bindings.push(binding);
+        state.settings.controller_toggle = Some(GamepadControl::East);
+        assert!(validate_state(&state).is_err());
+        state.profiles[1].bindings[0].enabled = false;
+        validate_state(&state).unwrap();
+        state.profiles[0].actions.controller.aim = Some(GamepadControl::East);
+        assert!(validate_state(&state).is_err());
+        state.settings.controller_toggle = None;
+        state.profiles[1].bindings[0].enabled = true;
+        validate_state(&state).unwrap();
+        state.profiles[1].actions.controller.movement[0] = Some(GamepadControl::East);
+        assert!(validate_state(&state).is_err());
+        state.profiles[1].bindings[0].controller = None;
+        state.profiles[1].bindings[0].chord = None;
+        validate_state(&state).unwrap();
+        state.profiles[1].bindings[0].action = BindingAction::ToggleVisibility;
+        assert!(validate_state(&state).is_err());
+        let chord = InputChord::gamepad(GamepadControl::South);
+        state.profiles[1].bindings[0].chord = Some(chord);
+        assert!(validate_state(&state).is_err());
+    }
+
+    #[test]
     fn modifier_overlap_is_checked_beyond_exact_equality() {
-        let a = Binding::new(
-            InputChord {
-                trigger: InputChord::key(0x12).trigger,
-                modifiers: vec![Modifier::Shift],
-            },
-            BindingAction::ToggleVisibility,
-        );
-        let b = Binding::new(
-            InputChord {
-                trigger: a.chord.trigger,
-                modifiers: vec![Modifier::Control],
-            },
-            BindingAction::ToggleVisibility,
-        );
-        assert!(validate_binding_conflicts(&[a.clone(), b], None).is_err());
-        let c = Binding::new(InputChord::key(0x12), BindingAction::ToggleVisibility);
-        assert!(validate_binding_conflicts(&[a, c], None).is_ok());
+        let plain = InputChord::key(0x12);
+        let shift = InputChord {
+            modifiers: vec![Modifier::Shift],
+            ..plain.clone()
+        };
+        let ctrl = InputChord {
+            modifiers: vec![Modifier::Control],
+            ..plain.clone()
+        };
+        assert!(chords_conflict(&shift, &ctrl));
+        assert!(!chords_conflict(&shift, &plain));
     }
 
     #[test]

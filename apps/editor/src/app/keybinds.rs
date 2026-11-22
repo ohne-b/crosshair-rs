@@ -1,43 +1,26 @@
 use super::*;
-use crate::features::keybinds;
+use crate::features::keybinds::{self, Target};
 
 impl App {
-    pub(super) fn set_global_toggle(&self, global_toggle: Option<InputChord>) -> Result<()> {
-        self.send(
-            "bindings",
-            Command::SetBindings {
-                profiles: self
-                    .state
-                    .profiles
-                    .iter()
-                    .map(|profile| BindingSet {
-                        profile: profile.id,
-                        bindings: profile.bindings.clone(),
-                        actions: profile.actions.clone(),
-                    })
-                    .collect(),
-                global_toggle,
-                expected_revision: self.state.revision,
-            },
-        )
-    }
-    pub(super) fn begin_capture(&mut self, target: Capture) -> Result<()> {
+    pub(super) fn begin_capture(&mut self, target: Capture, source: InputSource) -> Result<()> {
         self.cancel_capture()?;
         let label = match &target {
-            Capture::Global => "global".into(),
-            Capture::Role(role) => format!("{role:?}").to_lowercase(),
-            Capture::Existing(id) => id.to_string(),
-            Capture::New(BindingAction::SelectPreset { .. }) => "new-shortcut".into(),
-            Capture::New(_) => "new-action".into(),
+            Capture::Existing(Target::Binding(id)) => id.to_string(),
+            Capture::Existing(role) => format!("{role:?}").to_lowercase(),
+            Capture::New(_) => "new-shortcut".into(),
         };
         let token = Id::new_v4();
-        self.send(&format!("capture:{token}"), Command::BeginCapture { token })?;
+        self.send(
+            &format!("capture:{token}"),
+            Command::BeginCapture { token, source },
+        )?;
         self.capture_token = Some(token);
-        self.capture = Some(target);
+        self.capture = Some((target, source));
         self.capture_profile = Some(self.state.active_profile);
-        self.window()?
-            .global::<Store>()
-            .set_capture_id(label.into());
+        let ui = self.window()?;
+        let store = ui.global::<Store>();
+        store.set_capture_controller(source == InputSource::Controller);
+        store.set_capture_id(label.into());
         Ok(())
     }
     pub(super) fn cancel_capture(&mut self) -> Result<()> {
@@ -57,26 +40,29 @@ impl App {
             .set_capture_id(SharedString::default());
         Ok(())
     }
+    fn pointer_outside_capture(&self) -> Result<bool> {
+        let pointer = frame::pointer_position(self.hwnd()?)?;
+        let scale = self.window()?.window().scale_factor();
+        Ok(self.capture_region.is_none_or(|[x, y, width, height]| {
+            pointer[0] / scale < x
+                || pointer[1] / scale < y
+                || pointer[0] / scale >= x + width
+                || pointer[1] / scale >= y + height
+        }))
+    }
+
     pub(super) fn complete_capture(&mut self, chord: Option<InputChord>) -> Result<()> {
         if chord.as_ref().is_some_and(|chord| {
             matches!(
                 chord.trigger,
                 InputKey::Mouse { .. } | InputKey::Wheel { .. }
             )
-        }) {
-            let pointer = frame::pointer_position(self.hwnd()?)?;
-            let scale = self.window()?.window().scale_factor();
-            if self.capture_region.is_none_or(|[x, y, width, height]| {
-                pointer[0] / scale < x
-                    || pointer[1] / scale < y
-                    || pointer[0] / scale >= x + width
-                    || pointer[1] / scale >= y + height
-            }) {
-                return self.clear_capture();
-            }
+        }) && self.pointer_outside_capture()?
+        {
+            return self.clear_capture();
         }
         self.capture_token = None;
-        let Some(target) = self.capture.take() else {
+        let Some((target, source)) = self.capture.take() else {
             return Ok(());
         };
         self.window()?
@@ -91,61 +77,59 @@ impl App {
         };
         if let Some(chord) = &chord {
             anyhow::ensure!(
-                !matches!(
-                    target,
-                    Capture::Role(
-                        keybinds::Target::Aim | keybinds::Target::Fire | keybinds::Target::Hide
-                    )
-                ) || !chord.trigger.is_pulse(),
-                "Aim, Fire and Hold to hide require a keyboard key or mouse button with a release"
+                chord.trigger.source() == source,
+                "Input source changed while recording"
             );
             anyhow::ensure!(
                 !matches!(
                     target,
-                    Capture::Role(
-                        keybinds::Target::Forward
-                            | keybinds::Target::Left
-                            | keybinds::Target::Backward
-                            | keybinds::Target::Right
+                    Capture::Existing(Target::Aim | Target::Fire | Target::Hide)
+                ) || !chord.trigger.is_pulse(),
+                "Aim, Fire and Hold to hide require a control with a release"
+            );
+            anyhow::ensure!(
+                !matches!(
+                    target,
+                    Capture::Existing(
+                        Target::Forward | Target::Left | Target::Backward | Target::Right
                     )
-                ) || matches!(chord.trigger, InputKey::Keyboard { .. }),
-                "Movement requires keyboard keys"
+                ) || matches!(
+                    chord.trigger,
+                    InputKey::Keyboard { .. } | InputKey::Gamepad { .. }
+                ),
+                "Movement requires a keyboard key or controller input"
             );
             let own = capture_target(&target);
             let conflict = self
                 .state
                 .profiles
                 .iter()
-                .filter(|profile| matches!(target, Capture::Global) || profile.id == profile_id)
+                .filter(|profile| {
+                    matches!(target, Capture::Existing(Target::Global)) || profile.id == profile_id
+                })
                 .any(|profile| {
-                    !keybinds::role_conflicts(
-                        &profile.bindings,
-                        &profile.actions,
-                        self.state.settings.global_toggle.as_ref(),
-                        own,
-                        chord,
-                    )
-                    .is_empty()
+                    !keybinds::role_conflicts(profile, &self.state.settings, own, chord).is_empty()
                 });
             if conflict {
+                let reactivating = matches!(own, Some(Target::Binding(id)) if self.state.active_profile()
+                    .is_some_and(|profile| profile.bindings.iter().any(|b| b.id == id && !b.enabled)));
+                let message = if reactivating {
+                    "Recording enables this shortcut on both inputs. Replace its overlapping assignments?"
+                } else {
+                    "Replace the overlapping assignments with this action?"
+                };
                 self.modal = Modal::Conflict(target, chord.clone(), profile_id);
-                self.show_modal(
-                    1,
-                    "Shortcut already assigned",
-                    "Replace the overlapping assignments with this action?",
-                    "Replace",
-                    "",
-                    "",
-                );
+                self.show_modal(1, "Shortcut already assigned", message, "Replace", "", "");
                 return Ok(());
             }
         }
-        self.apply_capture(target, chord, None)
+        self.apply_capture(target, source, chord, None)
     }
 
     pub(super) fn apply_capture(
         &mut self,
         target: Capture,
+        source: InputSource,
         chord: Option<InputChord>,
         replace: Option<Id>,
     ) -> Result<()> {
@@ -159,24 +143,13 @@ impl App {
         if replace.is_some()
             && let Some(chord) = &chord
         {
-            for profile in profiles
-                .iter_mut()
-                .filter(|profile| matches!(target, Capture::Global) || profile.id == profile_id)
-            {
-                for conflict in keybinds::role_conflicts(
-                    &profile.bindings,
-                    &profile.actions,
-                    settings.global_toggle.as_ref(),
-                    capture_target(&target),
-                    chord,
-                ) {
-                    match conflict {
-                        keybinds::Target::Global => settings.global_toggle = None,
-                        keybinds::Target::Binding(id) => {
-                            profile.bindings.retain(|binding| binding.id != id)
-                        }
-                        role => *role.chord_mut(&mut profile.actions).unwrap() = None,
-                    }
+            for profile in profiles.iter_mut().filter(|profile| {
+                matches!(target, Capture::Existing(Target::Global)) || profile.id == profile_id
+            }) {
+                for (conflict, conflicting_source) in
+                    keybinds::role_conflicts(profile, &settings, capture_target(&target), chord)
+                {
+                    conflict.assign(profile, &mut settings, conflicting_source, None)?;
                 }
             }
         }
@@ -185,28 +158,16 @@ impl App {
             .find(|profile| profile.id == profile_id)
             .context("This profile was deleted")?;
         match target {
-            Capture::Global => settings.global_toggle = chord,
-            Capture::Role(role) => {
-                *role
-                    .chord_mut(&mut profile.actions)
-                    .context("Invalid action role")? = chord
+            Capture::Existing(existing) => {
+                existing.assign(profile, &mut settings, source, chord)?
             }
-            Capture::Existing(id) => {
+            Capture::New(preset) => {
                 if let Some(chord) = chord {
-                    let binding = profile
-                        .bindings
-                        .iter_mut()
-                        .find(|binding| binding.id == id)
-                        .context("This shortcut was deleted")?;
-                    binding.chord = chord;
-                    binding.enabled = true;
-                } else {
-                    profile.bindings.retain(|binding| binding.id != id);
-                }
-            }
-            Capture::New(action) => {
-                if let Some(chord) = chord {
-                    let binding = Binding::new(chord, action);
+                    anyhow::ensure!(
+                        self.state.preset(preset).is_some(),
+                        "This crosshair was deleted"
+                    );
+                    let binding = Binding::new(chord, BindingAction::SelectPreset { preset });
                     created = Some(binding.id);
                     profile.bindings.insert(0, binding);
                 }
@@ -224,6 +185,7 @@ impl App {
                     })
                     .collect(),
                 global_toggle: settings.global_toggle,
+                controller_toggle: settings.controller_toggle,
                 expected_revision: self.state.revision,
             },
         )?;
@@ -236,11 +198,9 @@ impl App {
     }
 }
 
-fn capture_target(target: &Capture) -> Option<keybinds::Target> {
+fn capture_target(target: &Capture) -> Option<Target> {
     match target {
-        Capture::Global => Some(keybinds::Target::Global),
-        Capture::Existing(id) => Some(keybinds::Target::Binding(*id)),
-        Capture::Role(role) => Some(*role),
+        Capture::Existing(target) => Some(*target),
         Capture::New(_) => None,
     }
 }

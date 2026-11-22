@@ -22,7 +22,7 @@ its interactions are illustrative, not an implementation of the application.
 | Storage | Engine-owned versioned JSON and managed local image assets. |
 | Installation | One unsigned MSIX containing editor, engine and widget. Administrator approval for installation/updates; no Windows service. |
 | Updates | TDM's Settings interaction and signed latest.json contract, adapted to MSIX. |
-| Input | Global keyboard and mouse shortcuts, Aim actions, Hold to hide, and Fire, Movement and Reload animation triggers. No controllers. |
+| Input | Global keyboard, mouse and controller shortcuts, Aim actions, Hold to hide, and Fire, Movement and Reload animation triggers. |
 | Appearance | Orange placeholder logo, Tabler outline icons, Manrope interface font. |
 | License | GPL-3.0-only with a Game Bar SDK linking exception; third-party components retain their licenses. |
 
@@ -32,7 +32,7 @@ profiles, global visibility, keybindings, tray lifecycle, fullscreen integration
 import/export, updates, recovery, accessibility and packaging. The milestones
 sequence this work; they do not make required features optional.
 
-Exclude animation stages/timelines, autoplay, controllers, game detection, automatic
+Exclude animation stages/timelines, autoplay, game detection, automatic
 profile switching, foreground-process monitoring, cursor replacement, randomizer,
 community feeds, workshop, shop, accounts, cloud sync, telemetry and streaming
 servers. These are exclusions, not empty navigation
@@ -358,13 +358,15 @@ image/video export, custom easing, game detection or recoil/ammunition tracking.
 ### Keybinds
 
 The Action keybinds table contains Global toggle, Aim, Fire, Reload, Hold to hide
-and a Movement row with four editable direction keys. Global toggle records the
+and two Movement rows, one per input source. Each Movement row groups four
+direction chips in forward, left, backward and right order. Global toggle records the
 shortcut for the title/tray master switch. Aim has an action dropdown and a target
 thumbnail when relevant. Fire triggers animation and Reload resets it. Initial
 chords are Shift+Alt+Z, Right mouse, Left mouse and R, respectively. Global toggle
 is application-wide. The other roles and preset shortcuts belong to the active
-profile. Hold to hide starts unbound, including in older profiles. There is no
-controller column.
+profile. Hold to hide starts unbound, including in older profiles. The monitor
+and gamepad columns show independent assignments side by side for the other
+actions and saved shortcuts.
 
 | Aim action | Behavior |
 | --- | --- |
@@ -375,7 +377,7 @@ controller column.
 | Toggle saved crosshair (Press) | Alternate between a chosen saved design and the current base. |
 | Show saved crosshair (Hold) | Use a chosen saved design only while held. |
 
-Movement uses four configurable keyboard chords, initially W/A/S/D physical keys.
+Movement uses four configurable directions, initially W/A/S/D physical keys.
 The first accepted movement key starts the effect; additional held keys and
 keyboard repeat do not restart it. Releasing the last accepted key returns the
 effect according to its release setting. Opposing keys still count as held:
@@ -389,13 +391,14 @@ Only Saved designs are eligible; names never identify targets. Capture uses toke
 both capture and the pending picker action are pinned to their initiating profile
 and cancelled when that profile changes.
 
-A separate full-width shortcut table has Crosshair, Shortcut name and
-Keyboard / mouse columns plus trash.
+A separate full-width shortcut table has the crosshair, shortcut name, keyboard/mouse
+binding, controller binding and one trash button at the far right to remove the row.
+Clearing both assignments preserves the shortcut's name and target for rebinding.
 Headers and body share column borders. The first row always contains only the
 plus button and New; either opens the picker. Choosing a crosshair inserts a
 separate row below New with its thumbnail, name, key recording and cancellation.
 The completed shortcut stays in that row. Stopping recording leaves the pending
-row available to retry; its X discards it. Keep the row until the saved binding
+row available to retry; its trash button discards it. Keep the row until the saved binding
 arrives, so asynchronous capture results cannot move another control under a click.
 The thumbnail opens a reusable picker with search, All/Favorites counts and
 named cards; clicking a card chooses immediately. Escape/outside dismisses and
@@ -406,11 +409,11 @@ variants remain retired; loading old profiles drops them rather than reviving
 them as Aim actions. Presets, profiles and supported shortcuts are retained;
 malformed or unknown actions still fail.
 
-Click a chip to listen: `Press a key`, highlighted background. Escape cancels, Backspace
-clears, outside click cancels. Each capture has a unique token; delayed results
+Click a binding to record from the selected input source. Escape cancels, Backspace
+clears that assignment, outside click cancels. Each capture has a unique token; delayed results
 from a cancelled capture cannot finish a newer one. Wait for already-held keys/buttons to release so
 the click opening capture is not assigned as Mouse 1. Support keyboard chords,
-mouse buttons 1-5 and wheel up/down. Aim, Fire and Hold to hide require inputs with
+mouse buttons 1-5, wheel up/down, and mapped gamepad controls. Aim, Fire and Hold to hide require inputs with
 a release. Reload and ordinary press shortcuts also accept Wheel and Pause.
 Roles participate in conflict checks even when the current design has no animation.
 
@@ -456,7 +459,7 @@ apps/
     commands.rs                 # validated domain mutations
     runtime/                    # native orchestration and worker completions
     work.rs                     # bounded serialized storage/validation worker
-    input/                      # Raw Input, device/key state
+    input/                      # Win32 Raw Input and SDL gamepads
     overlay/                    # native output and widget connection
     ipc/                        # endpoints, framing, authentication
     storage/                    # JSON, assets, migration/recovery
@@ -742,6 +745,15 @@ Discard motion immediately. Wheel is a pulse, never held state. No
 `RIDEV_NOLEGACY`, gameplay `RegisterHotKey`, suppression, injection, foreground
 filtering or `GetAsyncKeyState` polling.
 
+The engine owns SDL gamepad handles on its message-loop thread. Open the
+gamepad subsystem for controller capture or an assigned controller shortcut in
+the current profile or global settings. Observe mapped controls in the background.
+Bindings store control names, and runtime holds track each device separately.
+Stick directions and triggers have separate press and release thresholds. A
+control already down when a device opens must return to neutral before it fires.
+See [SDL gamepad input](https://wiki.libsdl.org/SDL3/CategoryGamepad) for the
+mapping and background-event contracts.
+
 Represent physical scan codes, extended keys, optional sided modifiers and
 exceptional keys explicitly; translate display labels without rewriting bindings
 on layout change. Test AltGr, Shift sides, numpad, Pause/PrintScreen and multiple
@@ -765,9 +777,11 @@ keyboards. Track pressed state by device so one device cannot release another.
 - Aim action and Aim animation share one resolved event. Other roles, saved
   shortcuts, movement keys and Global toggle cannot also win that input. Required-modifier
   release ends a hold; another device holding the trigger prevents early release.
-- Profile/binding changes, capture entry, device loss, lock/suspend, output
+- Profile/binding changes, capture entry, lock/suspend, output
   reconfiguration, imports/reset and shutdown clear runtime state and block held
   triggers until release. Capture/frozen operations still consume releases.
+  Disconnecting an input device or remapping a controller releases only that
+  device's holds. Other devices and the current preset latch keep their state.
   Ordinary dashboard closure does not clear gameplay holds or stop playback.
 - Bindings work globally in the editor and every other foreground application.
   Only explicit capture suspends dispatch. Never log keys or foreground apps.
@@ -792,9 +806,9 @@ newest results to its event loop.
 Desktop pipe: current-user logon-session ACL, remote rejection, authenticated
 peer identity. Names include user/session but are not the security boundary.
 Prevent first-instance squatting; verify expected packaged executable identity.
-Handshake verifies build/protocol before accepting commands. Control protocol v9
-includes an on-demand startup-state read, profile action configuration in atomic
-SetBindings commands, capture tokens and independently ordered engine status.
+Handshake verifies build/protocol before accepting commands. Control protocol v10
+includes an on-demand startup-state read, both input assignments in atomic
+SetBindings commands, source-specific capture tokens and independently ordered engine status.
 Connection epochs are checked when queued events reach the editor, so a retired connection cannot change
 the current UI. Both executables must be rebuilt together.
 
@@ -842,8 +856,9 @@ preserve the last durable snapshot/backup and report recovery on next launch.
 Atomic rename alone is not a proven
 power-loss guarantee: exercise interruption boundaries.
 
-State schema 4, portable format 4 and layer clipboard format 4 retain action and
-per-trigger animation definitions. Loaders accept versions 1/2/3 explicitly and writers emit 4;
+State schema 5 and portable format 5 store controller assignments. Earlier
+profiles start with empty controller slots. The layer clipboard uses format 4.
+State and portable loaders accept versions 1 through 4 and writers emit 5;
 unknown newer versions fail rather than discard data. The v1 migration adds
 default action chords only when they do not conflict, leaving conflicting roles
 Unbound and Aim at No action. Version 2 upgrades retain existing actions and add
@@ -1171,6 +1186,9 @@ Manual release acceptance:
   outcome. An unsupported path is documented, not passed by calling it borderless.
 - Real key/mouse delivery, modifiers/repeats/release, removal/lock, multiple
   keyboards, capture loss, global switches while typing, rapid profile changes.
+- With a mapped controller, record and exercise buttons, both triggers and stick
+  directions with the game in focus and the editor closed. Unplug while held,
+  reconnect, and check the same binding with two controllers.
 - Every static control, circular text/import/drawing/erasing/effects, exact edits,
   undo after deletion/import, keyboard access/screen reader/high contrast/text scale.
 - Aim/Fire together, picker/capture cancellation, held Browse restoration,

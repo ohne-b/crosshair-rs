@@ -787,6 +787,98 @@ fn dropped_files_follow_the_active_import_target() -> Result<()> {
 }
 
 #[test]
+fn action_shortcut_fields_and_clear_buttons_follow_hover_and_focus() -> Result<()> {
+    let (ui, _window) = timed_test_window(Rc::new(Cell::default()))?;
+    let store = ui.global::<Store>();
+    store.set_connected(true);
+    store.set_page(2);
+    let mut app = super::gesture_tests::app(&ui);
+    app.state.profiles[0].actions.controller.fire = Some(GamepadControl::RightTrigger);
+    app.refresh_bindings();
+    let events = Rc::new(RefCell::new(Vec::new()));
+    let recorded = events.clone();
+    store.on_action(move |action, value| {
+        recorded
+            .borrow_mut()
+            .push((action.to_string(), value.to_string()));
+    });
+    ui.show()?;
+
+    for width in [1280.0, 960.0] {
+        ui.window().set_size(slint::LogicalSize::new(width, 800.0));
+        let right = width - 24.0;
+        let column_width = (width - 106.0) * 0.26;
+        let move_to = |x, y| {
+            ui.window().dispatch_event(WindowEvent::PointerMoved {
+                position: slint::LogicalPosition::new(x, y),
+            });
+        };
+        // Sample the field and clear button backgrounds, away from the text and icon.
+        let backgrounds = |edge: f32, y: usize| -> Result<_> {
+            let frame = ui.window().take_snapshot()?;
+            Ok([edge - 60.0, edge - 24.0]
+                .map(|x| frame.as_slice()[(y + 10) * frame.width() as usize + x as usize]))
+        };
+        let keyboard = right - column_width;
+        move_to(1.0, 1.0);
+        let idle = backgrounds(keyboard, 341)?;
+        assert_eq!(idle[0], idle[1]);
+        move_to(keyboard - 70.0, 341.0);
+        let hovered = backgrounds(keyboard, 341)?;
+        assert_ne!(hovered[0], idle[0]);
+        assert_eq!(hovered[0], hovered[1]);
+        assert_eq!(backgrounds(right, 341)?, idle);
+        move_to(keyboard - 24.0, 341.0);
+        assert_ne!(backgrounds(keyboard, 341)?[0], idle[0]);
+        events.borrow_mut().clear();
+        click(&ui, keyboard - 24.0, 341.0);
+        assert_eq!(*events.borrow(), [("clear-keyboard".into(), "fire".into())]);
+        move_to(right - 70.0, 341.0);
+        assert_eq!(backgrounds(keyboard, 341)?, idle);
+        assert_eq!(backgrounds(right, 341)?, hovered);
+
+        // Tab from the recording field onto its clear button with the pointer elsewhere.
+        click(&ui, right - 70.0, 341.0);
+        move_to(1.0, 1.0);
+        assert_eq!(backgrounds(right, 341)?, idle);
+        key(&ui, Key::Tab);
+        let focused = backgrounds(right, 341)?;
+        assert_ne!(focused[0], idle[0]);
+        assert_ne!(focused[1], idle[1]);
+        assert_ne!(focused[0], focused[1]);
+        let theme = ui.global::<crate::Theme>();
+        theme.set_high_contrast(true);
+        let focused_clear = backgrounds(right, 341)?[1];
+        let accent = theme.get_orange();
+        assert_eq!(
+            [focused_clear.r, focused_clear.g, focused_clear.b],
+            [accent.red(), accent.green(), accent.blue()]
+        );
+        theme.set_high_contrast(false);
+        events.borrow_mut().clear();
+        key(&ui, Key::Return);
+        assert_eq!(
+            *events.borrow(),
+            [("clear-controller".into(), "fire".into())]
+        );
+
+        // Movement reveals only the hovered direction. An empty action only records.
+        let forward = width - 725.0 + 168.0;
+        move_to(forward - 70.0, 502.0);
+        assert_ne!(backgrounds(forward, 502)?[1], idle[1]);
+        assert_eq!(backgrounds(forward + 174.0, 502)?, idle);
+        events.borrow_mut().clear();
+        click(&ui, right - 24.0, 233.0);
+        assert_eq!(
+            *events.borrow(),
+            [("capture-controller".into(), "global".into())]
+        );
+    }
+    ui.hide()?;
+    Ok(())
+}
+
+#[test]
 fn library_tabs_sort_picker_and_browse_actions_are_independent() -> Result<()> {
     let clock = Rc::new(Cell::default());
     let (ui, window) = timed_test_window(clock.clone())?;
@@ -1060,39 +1152,119 @@ fn library_tabs_sort_picker_and_browse_actions_are_independent() -> Result<()> {
     store.set_preset_thumbnails(
         Rc::new(slint::VecModel::from(vec![rows[0].thumbnail.clone()])).into(),
     );
-    store.set_bindings(
-        Rc::new(slint::VecModel::from(vec![crate::BindingRow {
-            id: "shortcut".into(),
-            shortcut: true,
-            name: "Shotgun".into(),
-            chord: "J".into(),
-            enabled: true,
-            ..Default::default()
-        }]))
-        .into(),
+    let raster = renderer.render(&crate::features::browse::presets()[0], 1.0, &|_| {
+        anyhow::bail!("Unexpected image")
+    })?;
+    store.set_active_thumbnail(preview::image(&raster.thumbnail(24, 1.0)?));
+    store.on_scale_thumbnail(preview::scale_thumbnail);
+    let mut app = super::gesture_tests::app(&ui);
+    let profile = &mut app.state.profiles[0];
+    profile.actions.controller.fire = Some(GamepadControl::RightTrigger);
+    profile.actions.controller.reload = Some(GamepadControl::West);
+    profile.actions.controller.movement = [
+        GamepadControl::LeftStickUp,
+        GamepadControl::LeftStickLeft,
+        GamepadControl::LeftStickDown,
+        GamepadControl::LeftStickRight,
+    ]
+    .map(Some);
+    let mut shortcut = Binding::new(
+        InputChord::key(0x24),
+        BindingAction::SelectPreset {
+            preset: app.state.presets[0].id,
+        },
     );
-    let movement = [
-        ("forward", "W", "\u{2191}"),
-        ("left", "A", "\u{2190}"),
-        ("backward", "S", "\u{2193}"),
-        ("right", "D", "\u{2192}"),
-    ];
-    store.set_movement_bindings(
-        Rc::new(slint::VecModel::from(
-            movement
-                .map(|(id, chord, direction)| crate::BindingRow {
-                    id: id.into(),
-                    action: id.into(),
-                    chord: chord.into(),
-                    direction: direction.into(),
-                    enabled: true,
-                    ..Default::default()
-                })
-                .to_vec(),
-        ))
-        .into(),
-    );
-    snapshot(&window, "shortcuts.png")?;
+    shortcut.name = "Shotgun".into();
+    shortcut.controller = Some(GamepadControl::DPadUp);
+    let shortcut_id = shortcut.id.to_string();
+    profile.bindings.push(shortcut);
+    app.refresh_bindings();
+    store.set_profiles(Rc::new(slint::VecModel::from(vec!["Default".into()])).into());
+    store.set_visible(true);
+    for (width, image) in [(1280.0, "shortcuts.png"), (960.0, "shortcuts-narrow.png")] {
+        ui.window().set_size(slint::LogicalSize::new(width, 800.0));
+        ui.window().dispatch_event(WindowEvent::PointerMoved {
+            position: slint::LogicalPosition::new(1.0, 1.0),
+        });
+        snapshot(&window, image)?;
+        let right = width - 24.0;
+        let column_width = (width - 106.0) * 0.26;
+        let keyboard_edge = right - column_width;
+        let controller_edge = right - 44.0;
+        let move_to = |x, y| {
+            ui.window().dispatch_event(WindowEvent::PointerMoved {
+                position: slint::LogicalPosition::new(x, y),
+            });
+        };
+        let fill_at = |x: f32, y: usize| -> Result<_> {
+            let frame = ui.window().take_snapshot()?;
+            Ok(frame.as_slice()[y * frame.width() as usize + x as usize])
+        };
+        let idle = fill_at(controller_edge - 24.0, 777)?;
+        move_to(keyboard_edge - 70.0, 341.0);
+        let hover = fill_at(keyboard_edge - 60.0, 351)?;
+        assert_ne!(hover, idle);
+        if width == 1280.0 {
+            snapshot(&window, "shortcuts-hover.png")?;
+        }
+        move_to(controller_edge - 70.0, 767.0);
+        assert_eq!(fill_at(controller_edge - 60.0, 777)?, hover);
+        assert_eq!(fill_at(controller_edge - 24.0, 777)?, hover);
+        assert_eq!(fill_at(right - 22.0, 777)?, idle);
+        if width == 1280.0 {
+            snapshot(&window, "shortcuts-crosshair-hover.png")?;
+        }
+        move_to(right - 22.0, 767.0);
+        assert_eq!(fill_at(right - 22.0, 777)?, hover);
+        assert_eq!(fill_at(controller_edge - 24.0, 777)?, idle);
+        if width == 1280.0 {
+            snapshot(&window, "shortcuts-delete-hover.png")?;
+        }
+        events.borrow_mut().clear();
+        for x in [
+            keyboard_edge - 70.0,
+            keyboard_edge - 24.0,
+            controller_edge - 70.0,
+            controller_edge - 24.0,
+            right - 22.0,
+        ] {
+            move_to(x, 767.0);
+            click(&ui, x, 767.0);
+        }
+        assert_eq!(
+            *events.borrow(),
+            [
+                ("capture".into(), shortcut_id.clone()),
+                ("clear-keyboard".into(), shortcut_id.clone()),
+                ("capture-controller".into(), shortcut_id.clone()),
+                ("clear-controller".into(), shortcut_id.clone()),
+                ("binding-remove".into(), shortcut_id.clone()),
+            ]
+        );
+        for (y, record, clear) in [
+            (502.0, "capture", "clear-keyboard"),
+            (556.0, "capture-controller", "clear-controller"),
+        ] {
+            for (i, direction) in ["forward", "left", "backward", "right"]
+                .into_iter()
+                .enumerate()
+            {
+                let chip = width - 725.0 + i as f32 * 174.0;
+                events.borrow_mut().clear();
+                click(&ui, chip + 58.0, y);
+                click(&ui, chip + 152.0, y);
+                assert_eq!(
+                    *events.borrow(),
+                    [
+                        (record.into(), direction.into()),
+                        (clear.into(), direction.into())
+                    ],
+                    "Movement controls at width {width}, direction {direction}, row {y}"
+                );
+            }
+        }
+    }
+    ui.window().set_size(slint::LogicalSize::new(1280.0, 800.0));
     store.set_modal_kind(1);
     store.set_modal_title("Delete crosshair?".into());
     store.set_modal_message("Delete Shotgun from your saved crosshairs?".into());

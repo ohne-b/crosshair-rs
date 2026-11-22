@@ -4,8 +4,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::validation::{chord_specificity, modifiers_match};
 use crate::{
-    AimAction, AnimationEvent, AnimationTrigger, AppState, BindingAction, Id, InputChord, InputKey,
-    Modifier,
+    AimAction, AnimationEvent, AnimationTrigger, AppState, BindingAction, GamepadControl, Id,
+    InputChord, InputKey, InputSource, Modifier,
 };
 
 pub const CAPTURE_LEASE_MS: u64 = 30_000;
@@ -42,6 +42,7 @@ pub struct InputOutcome {
 }
 
 struct Capture {
+    source: InputSource,
     deadline: u64,
     waiting_for_release: bool,
     modifier_candidate: Option<(u64, InputKey)>,
@@ -62,10 +63,10 @@ pub struct InputState {
     pressed: BTreeSet<(u64, InputKey)>,
     blocked: BTreeSet<(u64, InputKey)>,
     capture: Option<Capture>,
-    aim: Option<InputChord>,
-    fire: Option<InputChord>,
-    hold_to_hide: Option<InputChord>,
-    movement: Vec<InputChord>,
+    aim: Vec<(u64, InputChord)>,
+    fire: Vec<(u64, InputChord)>,
+    hold_to_hide: Vec<(u64, InputChord)>,
+    movement: Vec<(u64, InputChord)>,
     latched_preset: Option<Id>,
 }
 
@@ -77,14 +78,14 @@ impl InputState {
     /// `base` may be a saved design or the engine's session-only Browse selection.
     pub fn presentation_for(&self, state: &AppState, base: Id) -> Option<Presentation> {
         let action = state.active_profile()?.actions.aim_action;
-        let held = self.aim.is_some();
+        let held = !self.aim.is_empty();
         let preset = if held && let AimAction::ShowPresetWhileHeld { preset } = action {
             preset
         } else {
             self.latched_preset.unwrap_or(base)
         };
         let visible = state.base_visible
-            && self.hold_to_hide.is_none()
+            && self.hold_to_hide.is_empty()
             && match action {
                 AimAction::HideWhileHeld => !held,
                 AimAction::ShowWhileHeld => held,
@@ -95,8 +96,8 @@ impl InputState {
 
     pub fn held(&self, trigger: AnimationTrigger) -> bool {
         match trigger {
-            AnimationTrigger::Aim => self.aim.is_some(),
-            AnimationTrigger::Fire => self.fire.is_some(),
+            AnimationTrigger::Aim => !self.aim.is_empty(),
+            AnimationTrigger::Fire => !self.fire.is_empty(),
             AnimationTrigger::Movement => !self.movement.is_empty(),
         }
     }
@@ -107,6 +108,10 @@ impl InputState {
 
     pub fn capturing(&self) -> bool {
         self.capture.is_some()
+    }
+
+    pub fn capture_source(&self) -> Option<InputSource> {
+        self.capture.as_ref().map(|capture| capture.source)
     }
 
     pub fn mouse_buttons_held(&self) -> bool {
@@ -126,13 +131,17 @@ impl InputState {
             self.blocked.remove(&pair);
         }
         self.reconcile_holds();
+        if let Some(capture) = &mut self.capture {
+            capture.waiting_for_release = source_held(&self.pressed, capture.source);
+        }
     }
 
-    pub fn begin_capture(&mut self, now_ms: u64) {
+    pub fn begin_capture(&mut self, now_ms: u64, source: InputSource) {
         self.reset();
         self.capture = Some(Capture {
+            source,
             deadline: now_ms.saturating_add(CAPTURE_LEASE_MS),
-            waiting_for_release: !self.pressed.is_empty(),
+            waiting_for_release: source_held(&self.pressed, source),
             modifier_candidate: None,
         });
     }
@@ -160,22 +169,24 @@ impl InputState {
     pub fn reset(&mut self) {
         self.capture = None;
         self.blocked.extend(self.pressed.iter().copied());
-        self.aim = None;
-        self.fire = None;
-        self.hold_to_hide = None;
+        self.aim.clear();
+        self.fire.clear();
+        self.hold_to_hide.clear();
         self.movement.clear();
         self.latched_preset = None;
     }
 
-    pub fn remove_device(&mut self, device: u64) {
-        self.pressed.retain(|(id, _)| *id != device);
-        self.blocked.retain(|(id, _)| *id != device);
-        self.reconcile_holds();
-        self.latched_preset = None;
+    pub fn remove_device(&mut self, source: InputSource, device: u64) -> Vec<AnimationEvent> {
+        let surviving = |(id, key): &(u64, InputKey)| *id != device || key.source() != source;
+        self.pressed.retain(surviving);
+        self.blocked.retain(surviving);
         if let Some(capture) = &mut self.capture {
-            capture.modifier_candidate = None;
-            capture.waiting_for_release = !self.pressed.is_empty();
+            capture.modifier_candidate = capture.modifier_candidate.filter(surviving);
+            if capture.waiting_for_release {
+                capture.waiting_for_release = source_held(&self.pressed, capture.source);
+            }
         }
+        self.reconcile_holds()
     }
 
     pub fn toggle_visibility(&mut self, state: &mut AppState) {
@@ -201,58 +212,12 @@ impl InputState {
         };
 
         result.animation_events = self.reconcile_holds();
-        if self.capture.is_some() {
+        if result.capture.is_some() {
+            self.blocked.extend(self.pressed.iter().copied());
+        } else if self.capture.is_some() {
             result.capture = self.capture_event(event, repeated);
         } else if event.down && !repeated && !self.blocked.contains(&pair) {
-            let bits = self.modifier_bits();
-            let matches = |chord: &InputChord| {
-                chord.trigger == event.key && modifiers_match(&chord.modifiers, bits)
-            };
-            let bindings = state
-                .active_profile()
-                .into_iter()
-                .flat_map(|profile| &profile.bindings)
-                .filter(|binding| binding.enabled && matches(&binding.chord))
-                .map(|binding| (&binding.chord, Dispatch::Binding(binding.action.clone())));
-            let global = state
-                .settings
-                .global_toggle
-                .as_ref()
-                .filter(|chord| matches(chord))
-                .map(|chord| (chord, Dispatch::Binding(BindingAction::ToggleVisibility)));
-            let roles = state
-                .active_profile()
-                .into_iter()
-                .flat_map(|profile| {
-                    [
-                        (
-                            &profile.actions.aim,
-                            Dispatch::Aim(profile.actions.aim_action),
-                        ),
-                        (&profile.actions.fire, Dispatch::Fire),
-                        (&profile.actions.reload, Dispatch::Reload),
-                        (&profile.actions.hold_to_hide, Dispatch::HoldToHide),
-                    ]
-                    .into_iter()
-                    .chain(
-                        profile
-                            .actions
-                            .movement
-                            .iter()
-                            .map(|chord| (chord, Dispatch::Movement)),
-                    )
-                })
-                .filter_map(|(chord, role)| {
-                    chord
-                        .as_ref()
-                        .filter(|chord| matches(chord))
-                        .map(|chord| (chord, role))
-                });
-            let best = bindings
-                .chain(global)
-                .chain(roles)
-                .max_by_key(|(chord, _)| chord_specificity(chord))
-                .map(|(chord, role)| (chord.clone(), role));
+            let best = resolve_action(state, event.key, self.modifier_bits());
             if let Some((chord, action)) = best {
                 match action {
                     Dispatch::Binding(action) => {
@@ -271,8 +236,8 @@ impl InputState {
                         result.animation_events.push(AnimationEvent::Reload);
                     }
                     Dispatch::Aim(action) if state.base_visible => {
-                        let fresh = self.aim.is_none();
-                        self.aim = Some(chord);
+                        let fresh = self.aim.is_empty();
+                        self.aim.push((event.device, chord));
                         if fresh {
                             if let AimAction::TogglePreset { preset } = action {
                                 self.latched_preset = if self.latched_preset == Some(preset) {
@@ -288,16 +253,16 @@ impl InputState {
                         }
                     }
                     Dispatch::Fire if state.base_visible => {
-                        if self.fire.is_none() {
+                        if self.fire.is_empty() {
                             result.animation_events.push(AnimationEvent::Trigger {
                                 trigger: AnimationTrigger::Fire,
                                 down: true,
                             });
                         }
-                        self.fire = Some(chord);
+                        self.fire.push((event.device, chord));
                     }
                     Dispatch::HoldToHide if state.base_visible => {
-                        self.hold_to_hide = Some(chord);
+                        self.hold_to_hide.push((event.device, chord));
                     }
                     Dispatch::Movement if state.base_visible => {
                         if self.movement.is_empty() {
@@ -306,9 +271,7 @@ impl InputState {
                                 down: true,
                             });
                         }
-                        if !self.movement.contains(&chord) {
-                            self.movement.push(chord);
-                        }
+                        self.movement.push((event.device, chord));
                     }
                     Dispatch::Reload if state.base_visible => {
                         // Keep visibility/selection overrides; only animation triggers are rearmed.
@@ -325,39 +288,26 @@ impl InputState {
     fn reconcile_holds(&mut self) -> Vec<AnimationEvent> {
         let mut events = Vec::new();
         let bits = self.modifier_bits();
-        let still_held = |chord: &InputChord| {
+        let still_held = |(device, chord): &(u64, InputChord)| {
+            let pair = (*device, chord.trigger);
             modifiers_match(&chord.modifiers, bits)
-                && self
-                    .pressed
-                    .iter()
-                    .any(|pair| pair.1 == chord.trigger && !self.blocked.contains(pair))
+                && self.pressed.contains(&pair)
+                && !self.blocked.contains(&pair)
         };
-        if self
-            .hold_to_hide
-            .as_ref()
-            .is_some_and(|chord| !still_held(chord))
-        {
-            self.hold_to_hide = None;
-        }
+        self.hold_to_hide.retain(still_held);
         for (held, trigger) in [
             (&mut self.aim, AnimationTrigger::Aim),
             (&mut self.fire, AnimationTrigger::Fire),
+            (&mut self.movement, AnimationTrigger::Movement),
         ] {
-            if held.as_ref().is_some_and(|chord| !still_held(chord)) {
-                *held = None;
+            let was_held = !held.is_empty();
+            held.retain(still_held);
+            if was_held && held.is_empty() {
                 events.push(AnimationEvent::Trigger {
                     trigger,
                     down: false,
                 });
             }
-        }
-        let moving = !self.movement.is_empty();
-        self.movement.retain(still_held);
-        if moving && self.movement.is_empty() {
-            events.push(AnimationEvent::Trigger {
-                trigger: AnimationTrigger::Movement,
-                down: false,
-            });
         }
         events
     }
@@ -392,36 +342,46 @@ impl InputState {
 
     fn capture_event(&mut self, event: InputEvent, repeated: bool) -> Option<CaptureOutcome> {
         let capture = self.capture.as_mut()?;
-        if capture.waiting_for_release {
-            capture.waiting_for_release = !self.pressed.is_empty();
-            return None;
-        }
         if repeated {
             return None;
         }
-        let modifier = modifier_bit(event.key).is_some();
-        if event.down && modifier {
-            capture.modifier_candidate = Some((event.device, event.key));
-            return None;
-        }
-        if !event.down
-            && (!modifier || capture.modifier_candidate != Some((event.device, event.key)))
-        {
-            return None;
-        }
-        let outcome = match event.key {
-            InputKey::Keyboard {
-                scan_code: 0x01,
-                extended: false,
-            } => CaptureOutcome::Cancelled,
-            InputKey::Keyboard {
-                scan_code: 0x0e,
-                extended: false,
-            } => CaptureOutcome::Cleared,
-            _ => CaptureOutcome::Captured(InputChord {
-                trigger: event.key,
-                modifiers: captured_modifiers(event.key, self.modifier_bits()),
-            }),
+        let outcome = match (event.key, event.down) {
+            (
+                InputKey::Keyboard {
+                    scan_code: 0x01,
+                    extended: false,
+                },
+                true,
+            ) => CaptureOutcome::Cancelled,
+            (
+                InputKey::Keyboard {
+                    scan_code: 0x0e,
+                    extended: false,
+                },
+                true,
+            ) => CaptureOutcome::Cleared,
+            (InputKey::Mouse { .. }, true) if capture.source == InputSource::Controller => {
+                CaptureOutcome::Cancelled
+            }
+            _ if event.key.source() != capture.source => return None,
+            _ if capture.waiting_for_release => {
+                capture.waiting_for_release = source_held(&self.pressed, capture.source);
+                return None;
+            }
+            (InputKey::Gamepad { control }, true) => {
+                CaptureOutcome::Captured(InputChord::gamepad(control))
+            }
+            _ if event.down && modifier_bit(event.key).is_some() => {
+                capture.modifier_candidate = Some((event.device, event.key));
+                return None;
+            }
+            _ if event.down || capture.modifier_candidate == Some((event.device, event.key)) => {
+                CaptureOutcome::Captured(InputChord {
+                    trigger: event.key,
+                    modifiers: captured_modifiers(event.key, self.modifier_bits()),
+                })
+            }
+            _ => return None,
         };
         self.capture = None;
         self.blocked.extend(self.pressed.iter().copied());
@@ -434,6 +394,57 @@ impl InputState {
             .filter_map(|(_, key)| modifier_bit(*key))
             .fold(0, |all, bit| all | bit)
     }
+}
+
+fn source_held(pressed: &BTreeSet<(u64, InputKey)>, source: InputSource) -> bool {
+    pressed.iter().any(|(_, key)| key.source() == source)
+}
+
+fn resolve_action(state: &AppState, key: InputKey, bits: u8) -> Option<(InputChord, Dispatch)> {
+    let matching = |chord: &Option<InputChord>, controller: Option<GamepadControl>| match key {
+        InputKey::Gamepad { control } => {
+            (controller == Some(control)).then(|| InputChord::gamepad(control))
+        }
+        _ => chord
+            .as_ref()
+            .filter(|chord| chord.trigger == key && modifiers_match(&chord.modifiers, bits))
+            .cloned(),
+    };
+    let profile = state.active_profile()?;
+    let bindings = profile
+        .bindings
+        .iter()
+        .filter(|binding| binding.enabled)
+        .filter_map(|b| {
+            matching(&b.chord, b.controller)
+                .map(|chord| (chord, Dispatch::Binding(b.action.clone())))
+        });
+    let global = matching(
+        &state.settings.global_toggle,
+        state.settings.controller_toggle,
+    )
+    .map(|chord| (chord, Dispatch::Binding(BindingAction::ToggleVisibility)));
+    let roles = &profile.actions;
+    let pad = &roles.controller;
+    let actions = [
+        (&roles.aim, pad.aim, Dispatch::Aim(roles.aim_action)),
+        (&roles.fire, pad.fire, Dispatch::Fire),
+        (&roles.reload, pad.reload, Dispatch::Reload),
+        (&roles.hold_to_hide, pad.hold_to_hide, Dispatch::HoldToHide),
+    ]
+    .into_iter()
+    .chain(
+        roles
+            .movement
+            .iter()
+            .zip(pad.movement)
+            .map(|(key, pad)| (key, pad, Dispatch::Movement)),
+    )
+    .filter_map(|(key, pad, action)| matching(key, pad).map(|chord| (chord, action)));
+    bindings
+        .chain(global)
+        .chain(actions)
+        .max_by_key(|(chord, _)| chord_specificity(chord))
 }
 
 pub fn modifier_bit(key: InputKey) -> Option<u8> {
@@ -631,7 +642,7 @@ mod tests {
         input.handle(event(0x2a, false), 3, &mut state);
         input.handle(event(0x11, true), 4, &mut state);
         assert!(input.held(AnimationTrigger::Movement));
-        input.begin_capture(5);
+        input.begin_capture(5, InputSource::KeyboardMouse);
         assert!(!input.held(AnimationTrigger::Movement));
         input.cancel_capture();
         input.handle(event(0x11, true), 6, &mut state);
@@ -639,7 +650,7 @@ mod tests {
         input.handle(event(0x11, false), 7, &mut state);
         input.handle(event(0x11, true), 8, &mut state);
         assert!(input.held(AnimationTrigger::Movement));
-        input.remove_device(event(0x11, true).device);
+        input.remove_device(InputSource::KeyboardMouse, event(0x11, true).device);
         assert!(!input.held(AnimationTrigger::Movement));
         state.profiles[0].actions.movement[0]
             .as_mut()
@@ -843,7 +854,7 @@ mod tests {
         assert!(!input.held(AnimationTrigger::Fire));
         input.handle(mouse(1, 2, false), 6, &mut state);
         input.handle(mouse(1, 2, true), 7, &mut state);
-        input.remove_device(2);
+        input.remove_device(InputSource::KeyboardMouse, 2);
         assert!(!input.held(AnimationTrigger::Fire));
     }
 
@@ -855,7 +866,7 @@ mod tests {
         let mut input = InputState::default();
         input.handle(mouse(2, 1, true), 0, &mut state);
         input.handle(mouse(1, 1, true), 1, &mut state);
-        input.begin_capture(2);
+        input.begin_capture(2, InputSource::KeyboardMouse);
         assert!(!input.held(AnimationTrigger::Fire));
         assert_eq!(
             input.presentation(&state).unwrap().preset,
@@ -899,7 +910,7 @@ mod tests {
     fn mouse_capture_keeps_release_tracking_after_capture_ends() {
         let mut input = InputState::default();
         let mut state = AppState::default();
-        input.begin_capture(0);
+        input.begin_capture(0, InputSource::KeyboardMouse);
         let mouse = InputEvent {
             device: 2,
             key: InputKey::Mouse { button: 1 },
@@ -920,7 +931,7 @@ mod tests {
             &mut state,
         );
         assert!(!input.mouse_buttons_held());
-        input.begin_capture(3);
+        input.begin_capture(3, InputSource::KeyboardMouse);
         assert!(matches!(
             input.handle(event(0x12, true), 4, &mut state).capture,
             Some(CaptureOutcome::Captured(_))
@@ -949,7 +960,7 @@ mod tests {
         );
         assert!(!input.mouse_buttons_held());
         input.handle(mouse, 2, &mut state);
-        input.remove_device(mouse.device);
+        input.remove_device(InputSource::KeyboardMouse, mouse.device);
         assert!(!input.mouse_buttons_held());
     }
 
@@ -969,7 +980,7 @@ mod tests {
             ..mouse
         });
         assert!(!input.mouse_buttons_held());
-        input.begin_capture(1);
+        input.begin_capture(1, InputSource::KeyboardMouse);
         assert!(matches!(
             input.handle(event(0x12, true), 2, &mut state).capture,
             Some(CaptureOutcome::Captured(_))
@@ -997,7 +1008,7 @@ mod tests {
         input.handle(event(0x02, true), 2, &mut state);
         assert_eq!(input.presentation(&state).unwrap().preset, next);
         input.handle(event(0x12, false), 3, &mut state);
-        input.remove_device(1);
+        input.remove_device(InputSource::KeyboardMouse, 1);
         assert_eq!(input.presentation(&state).unwrap().preset, next);
         input.toggle_visibility(&mut state);
         assert!(!input.presentation(&state).unwrap().visible);
@@ -1046,7 +1057,7 @@ mod tests {
             down: true,
         };
         input.handle(mouse, 0, &mut state);
-        input.begin_capture(1);
+        input.begin_capture(1, InputSource::KeyboardMouse);
         assert!(
             input
                 .handle(
@@ -1076,19 +1087,19 @@ mod tests {
     fn capture_cancel_clear_and_expire_do_not_fire_bindings() {
         let mut state = AppState::default();
         let mut input = InputState::default();
-        input.begin_capture(0);
+        input.begin_capture(0, InputSource::KeyboardMouse);
         assert_eq!(
             input.handle(event(1, true), 1, &mut state).capture,
             Some(CaptureOutcome::Cancelled)
         );
         input.handle(event(1, false), 2, &mut state);
-        input.begin_capture(3);
+        input.begin_capture(3, InputSource::KeyboardMouse);
         assert_eq!(
             input.handle(event(14, true), 4, &mut state).capture,
             Some(CaptureOutcome::Cleared)
         );
         input.handle(event(14, false), 5, &mut state);
-        input.begin_capture(6);
+        input.begin_capture(6, InputSource::KeyboardMouse);
         assert_eq!(input.expire_capture(30_006), Some(CaptureOutcome::Expired));
         assert!(!input.capturing());
     }
@@ -1131,14 +1142,14 @@ mod tests {
     fn capture_modifier_alone_and_both_sides_remains_valid() {
         let mut state = AppState::default();
         let mut input = InputState::default();
-        input.begin_capture(0);
+        input.begin_capture(0, InputSource::KeyboardMouse);
         input.handle(event(0x2a, true), 1, &mut state);
         let result = input
             .handle(event(0x2a, false), 2, &mut state)
             .capture
             .unwrap();
         assert_eq!(result, CaptureOutcome::Captured(InputChord::key(0x2a)));
-        input.begin_capture(3);
+        input.begin_capture(3, InputSource::KeyboardMouse);
         input.handle(event(0x2a, true), 4, &mut state);
         input.handle(event(0x36, true), 5, &mut state);
         let Some(CaptureOutcome::Captured(chord)) =
@@ -1150,10 +1161,202 @@ mod tests {
         crate::validation::validate_chord(&chord).unwrap();
     }
 
+    fn pad(device: u64, control: GamepadControl, down: bool) -> InputEvent {
+        InputEvent {
+            device,
+            key: InputKey::Gamepad { control },
+            down,
+        }
+    }
+
+    #[test]
+    fn controller_capture_waits_for_neutral_and_ignores_keyboard_modifiers() {
+        let mut state = AppState::default();
+        let mut input = InputState::default();
+        let trigger = pad(1, GamepadControl::LeftTrigger, true);
+        let button = pad(1, GamepadControl::South, true);
+        state.settings.controller_toggle = Some(GamepadControl::South);
+        input.begin_capture(0, InputSource::Controller);
+        input.observe_suspended(trigger); // Already down when the controller opened.
+        input.handle(event(0x2a, true), 1, &mut state);
+        assert!(input.handle(button, 2, &mut state).capture.is_none());
+        input.handle(
+            InputEvent {
+                down: false,
+                ..trigger
+            },
+            3,
+            &mut state,
+        );
+        input.handle(
+            InputEvent {
+                down: false,
+                ..button
+            },
+            4,
+            &mut state,
+        );
+        assert_eq!(
+            input.handle(button, 5, &mut state).capture,
+            Some(CaptureOutcome::Captured(InputChord::gamepad(
+                GamepadControl::South
+            )))
+        );
+        input.handle(button, 6, &mut state);
+        assert!(state.base_visible);
+        input.handle(
+            InputEvent {
+                down: false,
+                ..button
+            },
+            7,
+            &mut state,
+        );
+        input.handle(button, 8, &mut state);
+        assert!(!state.base_visible);
+
+        input.begin_capture(9, InputSource::KeyboardMouse);
+        input.handle(event(0x2a, false), 10, &mut state);
+        assert!(input.handle(trigger, 11, &mut state).capture.is_none());
+        assert_eq!(
+            input.handle(event(0x12, true), 12, &mut state).capture,
+            Some(CaptureOutcome::Captured(InputChord::key(0x12)))
+        );
+    }
+
+    #[test]
+    fn controller_capture_ignores_the_opening_mouse_release_and_cancels_on_the_next_click() {
+        let mut state = AppState::default();
+        let mut input = InputState::default();
+        state.settings.global_toggle = Some(InputChord {
+            trigger: InputKey::Mouse { button: 1 },
+            modifiers: vec![],
+        });
+        input.observe_suspended(mouse(1, 1, true));
+        input.begin_capture(0, InputSource::Controller);
+        assert!(
+            input
+                .handle(mouse(1, 1, false), 1, &mut state)
+                .capture
+                .is_none()
+        );
+        assert_eq!(
+            input.handle(mouse(1, 1, true), 2, &mut state).capture,
+            Some(CaptureOutcome::Cancelled)
+        );
+        assert!(state.base_visible);
+    }
+
+    #[test]
+    fn controller_capture_can_be_cleared_cancelled_or_expire_over_a_binding() {
+        let mut state = AppState::default();
+        let mut input = InputState::default();
+        let trigger = pad(1, GamepadControl::RightTrigger, true);
+        state.settings.controller_toggle = Some(GamepadControl::RightTrigger);
+        for (scan, expected) in [
+            (1, CaptureOutcome::Cancelled),
+            (14, CaptureOutcome::Cleared),
+        ] {
+            input.begin_capture(0, InputSource::Controller);
+            input.observe_suspended(trigger);
+            assert_eq!(
+                input.handle(event(scan, true), 1, &mut state).capture,
+                Some(expected)
+            );
+            input.handle(event(scan, false), 2, &mut state);
+            input.handle(
+                InputEvent {
+                    down: false,
+                    ..trigger
+                },
+                3,
+                &mut state,
+            );
+        }
+        input.begin_capture(0, InputSource::Controller);
+        assert_eq!(
+            input.handle(trigger, CAPTURE_LEASE_MS, &mut state).capture,
+            Some(CaptureOutcome::Expired)
+        );
+        assert!(state.base_visible);
+    }
+
+    #[test]
+    fn overlapping_mouse_and_gamepad_holds_end_on_the_last_device() {
+        let mut state = AppState::default();
+        state.profiles[0].actions.controller.fire = Some(GamepadControl::RightTrigger);
+        let mut input = InputState::default();
+        let a = pad(1, GamepadControl::RightTrigger, true);
+        let b = pad(2, GamepadControl::RightTrigger, true);
+        let fire = |down| AnimationEvent::Trigger {
+            trigger: AnimationTrigger::Fire,
+            down,
+        };
+        assert_eq!(
+            input
+                .handle(mouse(1, 1, true), 0, &mut state)
+                .animation_events,
+            [fire(true)]
+        );
+        assert!(input.handle(a, 1, &mut state).animation_events.is_empty());
+        assert!(input.handle(b, 2, &mut state).animation_events.is_empty());
+        assert!(input.remove_device(InputSource::Controller, 1).is_empty());
+        assert!(input.remove_device(InputSource::Controller, 2).is_empty());
+        assert_eq!(
+            input
+                .handle(mouse(1, 1, false), 3, &mut state)
+                .animation_events,
+            [fire(false)]
+        );
+        assert_eq!(
+            input.handle(a, 4, &mut state).animation_events,
+            [fire(true)]
+        );
+        assert_eq!(
+            input.remove_device(InputSource::Controller, 1),
+            [fire(false)]
+        );
+    }
+
+    #[test]
+    fn controller_shortcuts_select_presets_and_drive_profile_actions() {
+        let mut state = AppState::default();
+        let preset = state.presets[1].id;
+        let select = pad(4, GamepadControl::DPadUp, true);
+        let chord = InputChord::gamepad(GamepadControl::DPadUp);
+        state.profiles[0]
+            .bindings
+            .push(Binding::new(chord, BindingAction::SelectPreset { preset }));
+        state.profiles[0].actions.controller.movement[0] = Some(GamepadControl::LeftStickUp);
+        state.profiles[0].actions.controller.aim = Some(GamepadControl::LeftTrigger);
+        state.profiles[0].actions.controller.hold_to_hide = Some(GamepadControl::West);
+        state.profiles[0].actions.controller.reload = Some(GamepadControl::East);
+        state.profiles[0].actions.aim_action = AimAction::ShowWhileHeld;
+        let mut input = InputState::default();
+        assert!(input.handle(select, 0, &mut state).preset_selected);
+        assert_eq!(state.profiles[0].selected_preset, preset);
+        assert!(!input.handle(select, 1, &mut state).preset_selected);
+        input.handle(pad(4, GamepadControl::LeftStickUp, true), 2, &mut state);
+        assert!(input.held(AnimationTrigger::Movement));
+        input.handle(pad(4, GamepadControl::LeftTrigger, true), 3, &mut state);
+        assert!(input.presentation(&state).unwrap().visible);
+        input.handle(pad(4, GamepadControl::West, true), 4, &mut state);
+        assert!(!input.presentation(&state).unwrap().visible);
+        assert_eq!(
+            input
+                .handle(pad(4, GamepadControl::East, true), 5, &mut state)
+                .animation_events,
+            [AnimationEvent::Reload]
+        );
+        input.remove_device(InputSource::Controller, 4);
+        assert!(!input.held(AnimationTrigger::Movement));
+        assert!(!input.held(AnimationTrigger::Aim));
+    }
+
     #[test]
     fn session_reset_cancels_capture_and_blocks_held_keys() {
         let mut input = InputState::default();
-        input.begin_capture(0);
+        input.begin_capture(0, InputSource::KeyboardMouse);
         input.reset();
         assert!(!input.capturing());
     }

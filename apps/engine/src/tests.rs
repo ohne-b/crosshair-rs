@@ -13,6 +13,37 @@ fn application() -> Result<(tempfile::TempDir, Store, App)> {
 }
 
 #[test]
+fn keyboard_removal_preserves_a_controller_hold_with_the_same_device_id() -> Result<()> {
+    let (_directory, _store, mut app) = application()?;
+    let control = GamepadControl::South;
+    app.state.profiles[0].actions.controller.hold_to_hide = Some(control);
+    let keyboard = InputEvent {
+        device: 7,
+        key: InputChord::key(0x11).trigger,
+        down: true,
+    };
+    app.input(keyboard);
+    app.input(InputEvent {
+        key: InputKey::Gamepad { control },
+        ..keyboard
+    });
+    app.animation_events.clear();
+
+    assert!(app.remove_input_device(InputSource::KeyboardMouse, 7));
+    assert_eq!(
+        app.animation_events,
+        [AnimationEvent::Trigger {
+            trigger: AnimationTrigger::Movement,
+            down: false
+        }]
+    );
+    assert!(!app.status().visible);
+    assert!(app.remove_input_device(InputSource::Controller, 7));
+    assert!(app.status().visible);
+    Ok(())
+}
+
+#[test]
 fn aim_hold_restores_latest_browse_or_saved_base_without_persisting_override() -> Result<()> {
     let (_directory, _store, mut app) = application()?;
     let target = app.state.presets[1].id;
@@ -66,6 +97,7 @@ fn hold_to_hide_keeps_the_master_on_and_reveals_the_current_browse_selection() -
                 actions: profile.actions,
             }],
             global_toggle: app.state.settings.global_toggle.clone(),
+            controller_toggle: app.state.settings.controller_toggle,
             expected_revision: app.state.revision,
         },
     )?;
@@ -149,6 +181,7 @@ fn action_configuration_is_atomic_undoable_and_unrelated_edits_keep_holds() -> R
             actions,
         }],
         global_toggle: app.state.settings.global_toggle.clone(),
+        controller_toggle: app.state.settings.controller_toggle,
         expected_revision: app.state.revision,
     };
     app.command(Id::nil(), command(&app, actions.clone()))?;
@@ -322,6 +355,7 @@ fn saved_selection_and_hotkeys_replace_browse_even_for_the_same_saved_id() -> Re
     app.command(
         owner,
         Command::BeginCapture {
+            source: InputSource::KeyboardMouse,
             token: Id::new_v4(),
         },
     )?;
@@ -431,7 +465,13 @@ fn status_notifications_advance_independently_of_persistent_state() -> Result<()
 fn capture_cancel_is_idempotent_but_cannot_cancel_another_owner() -> Result<()> {
     let (_directory, _store, mut app) = application()?;
     let owner = Id::new_v4();
-    app.command(owner, Command::BeginCapture { token: Id::nil() })?;
+    app.command(
+        owner,
+        Command::BeginCapture {
+            source: InputSource::KeyboardMouse,
+            token: Id::nil(),
+        },
+    )?;
     assert!(
         app.command(Id::new_v4(), Command::CancelCapture { token: Id::nil() })
             .is_err()
@@ -682,7 +722,13 @@ fn failed_save_retains_memory_and_does_not_create_an_idle_retry_loop() -> Result
 fn selection_cancels_capture_and_allows_a_new_capture() -> Result<()> {
     let (_directory, _store, mut app) = application()?;
     let owner = Id::new_v4();
-    app.command(owner, Command::BeginCapture { token: Id::nil() })?;
+    app.command(
+        owner,
+        Command::BeginCapture {
+            source: InputSource::KeyboardMouse,
+            token: Id::nil(),
+        },
+    )?;
     app.command(
         owner,
         Command::SelectPreset {
@@ -690,7 +736,13 @@ fn selection_cancels_capture_and_allows_a_new_capture() -> Result<()> {
         },
     )?;
     assert!(!app.input.capturing());
-    app.command(owner, Command::BeginCapture { token: Id::nil() })?;
+    app.command(
+        owner,
+        Command::BeginCapture {
+            source: InputSource::KeyboardMouse,
+            token: Id::nil(),
+        },
+    )?;
     assert!(app.input.capturing());
     Ok(())
 }
@@ -701,9 +753,21 @@ fn stale_cancel_does_not_stop_a_replacement_capture() -> Result<()> {
     let owner = Id::new_v4();
     let old = Id::new_v4();
     let current = Id::new_v4();
-    app.command(owner, Command::BeginCapture { token: old })?;
+    app.command(
+        owner,
+        Command::BeginCapture {
+            source: InputSource::KeyboardMouse,
+            token: old,
+        },
+    )?;
     app.command(owner, Command::CancelCapture { token: old })?;
-    app.command(owner, Command::BeginCapture { token: current })?;
+    app.command(
+        owner,
+        Command::BeginCapture {
+            source: InputSource::KeyboardMouse,
+            token: current,
+        },
+    )?;
     app.command(owner, Command::CancelCapture { token: old })?;
     assert!(app.input.capturing());
     assert_eq!(app.capture_owner, Some((owner, current)));
