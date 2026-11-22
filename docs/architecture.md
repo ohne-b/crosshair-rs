@@ -204,12 +204,13 @@ retain the original arc geometry. The tile clip includes the filter support at
 the current zoom independently of the native selection dimensions.
 Drag moves a layer. Corner handles on rectangles, ellipses and triangles edit
 width and height along the layer axes and keep the opposite corner fixed. Shift
-preserves the aspect ratio. Crosshair handles grow a positive gap proportionally,
-keeping both arms on matching pixels around the origin. A drag starting at zero gap
-adjusts the layer scale. A dot-only design resizes its diameter. Groups, images, text and
-drawings scale uniformly about the selection center. Arrow keys move one design
-pixel, Shift+arrow ten. Whole-pixel drag increments preserve fractional starting
-geometry and offsets. Shift snaps rotation to 15 degrees.
+preserves the aspect ratio. Crosshair handles resize an open gap proportionally
+in whole layer-pixel steps. An outward drag reopens a closed gap in the same
+steps. Arm length, thickness and layer scale stay fixed. A dot-only design
+resizes its diameter. Groups, images, text and drawings scale uniformly about
+the selection center. Arrow keys move one design pixel, Shift+arrow ten.
+Whole-pixel drag increments preserve fractional starting geometry and offsets.
+Shift snaps rotation to 15 degrees.
 Effects retain the renderer's discrete padding, so a blurred selection's measured
 bounds can still change by more than one pixel at a padding threshold.
 Exact fields cover every transform.

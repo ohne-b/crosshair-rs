@@ -1192,7 +1192,7 @@ fn canvas_keeps_drag_ownership_and_reads_shift_while_moving() {
 }
 
 #[test]
-fn canvas_crosshair_drag_changes_only_the_gap_until_arms_touch() -> Result<()> {
+fn canvas_crosshair_corner_drags_reopen_a_closed_gap_in_whole_pixels() -> Result<()> {
     let ui = window();
     let mut app = app(&ui);
     let mut preset = app.state.presets[0].clone();
@@ -1204,57 +1204,60 @@ fn canvas_crosshair_drag_changes_only_the_gap_until_arms_touch() -> Result<()> {
         ..Default::default()
     });
     let mut renderer = crosshair_renderer::Renderer::new()?;
-    app.bounds = vec![(layer.id, renderer.canvas_layer_bounds(layer)?)];
     app.document.open(preset)?;
-    let origin = Point { x: 8.25, y: 8.25 };
-    app.canvas_event(0, origin, 1, false)?;
-    for (delta, gap) in [
-        (0.0, 2.0),
-        (2.625, 2.0),
-        (2.75, 3.0),
-        (-0.875, 2.0),
-        (-1.0, 1.0),
-        (-20.0, 0.0),
-        (7.2, 4.0),
-        (0.0, 2.0),
+    for (corner, moves) in [
+        (
+            8.25,
+            &[
+                (0.0, 2.0),
+                (2.625, 2.0),
+                (2.75, 3.0),
+                (-0.875, 2.0),
+                (-1.0, 1.0),
+                (-20.0, 0.0),
+                (7.2, 4.0),
+                (0.0, 2.0),
+                (-20.0, 0.0),
+            ][..],
+        ),
+        // Regrab the closed crosshair, then leave it large for the next drag.
+        (
+            6.0,
+            &[(-2.0, 0.0), (0.25, 0.0), (0.875, 1.0), (300.0, 375.0)][..],
+        ),
+        (-381.0, &[(8.0, 365.0)][..]),
     ] {
-        app.canvas_event(
-            1,
-            Point {
-                x: origin.x + delta,
-                y: origin.y + delta,
-            },
-            1,
-            false,
-        )?;
         let layer = &app.document.draft.as_ref().unwrap().layers[0];
-        let Content::Crosshair(c) = &layer.content else {
-            unreachable!()
+        app.bounds = vec![(layer.id, renderer.canvas_layer_bounds(layer)?)];
+        let mut point = Point {
+            x: corner,
+            y: corner,
         };
-        assert_eq!(
-            (c.length, c.thickness, c.gap, layer.transform.scale),
-            (6.0, 2.0, gap, 1.0)
-        );
-        let actual = renderer.canvas_layer_bounds(layer)?.painted;
-        assert_eq!(
-            (actual.center(), actual.width()),
-            (Point::default(), 2.0 * (6.0 + gap))
-        );
+        app.canvas_event(0, point, 1, false)?;
+        for &(delta, gap) in moves {
+            point = Point {
+                x: corner + delta,
+                y: corner + delta,
+            };
+            app.canvas_event(1, point, 1, false)?;
+            let layer = &app.document.draft.as_ref().unwrap().layers[0];
+            let Content::Crosshair(c) = &layer.content else {
+                unreachable!()
+            };
+            assert_eq!(
+                (c.length, c.thickness, c.gap, layer.transform.scale),
+                (6.0, 2.0, gap, 1.0)
+            );
+            let actual = renderer.canvas_layer_bounds(layer)?.painted;
+            let size = 2.0 * (6.0 + gap);
+            assert_eq!(
+                (actual.center(), actual.width(), actual.height()),
+                (Point::default(), size, size)
+            );
+        }
+        app.canvas_event(2, point, 1, false)?;
+        complete_preview(&mut app, None)?;
     }
-    // The next drag starts with touching arms and scales the complete layer.
-    app.canvas_event(1, Point { x: -12.0, y: -12.0 }, 1, false)?;
-    app.canvas_event(2, origin, 1, false)?;
-    complete_preview(&mut app, None)?;
-    let layer = &app.document.draft.as_ref().unwrap().layers[0];
-    app.bounds = vec![(layer.id, renderer.canvas_layer_bounds(layer)?)];
-    app.canvas_event(0, Point { x: 6.0, y: 6.0 }, 1, false)?;
-    app.canvas_event(1, Point { x: 10.8, y: 10.8 }, 1, false)?;
-    let layer = &app.document.draft.as_ref().unwrap().layers[0];
-    let Content::Crosshair(c) = &layer.content else {
-        unreachable!()
-    };
-    assert_eq!((c.gap, c.length, c.thickness), (0.0, 6.0, 2.0));
-    assert!((layer.transform.scale - 13.0 / 7.0).abs() < 0.0001);
     ui.hide()?;
     Ok(())
 }
