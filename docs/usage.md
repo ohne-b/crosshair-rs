@@ -43,11 +43,18 @@ them under **Settings > Data**.
 
 ## Shortcuts
 
-Open **Keybinds** and choose **New**. Search the crosshair picker or use
-**All**/**Favorites**, then click a card and record a keyboard or mouse shortcut.
-Each row has an editable shortcut name, a thumbnail for changing the target and a
-trash control. Preset shortcuts select on press; keyboard, mouse buttons and
-mouse-wheel input are supported. Escape cancels recording.
+Open **Keybinds**. The monitor column shows keyboard and mouse shortcuts. The
+gamepad column shows controller shortcuts. Click a cell to record that input.
+To switch to a saved crosshair, choose **New**, pick the crosshair, and record
+the shortcut in its row. Each row can keep both assignments. Use the X beside
+a binding to clear just that input. The trash button removes the saved shortcut
+row. While recording, Escape cancels and Backspace clears the selected cell.
+
+Controller bindings start empty. You can record a button, squeeze a trigger or
+push either stick in a direction. For example, bind **Hold to hide** to the
+left trigger to hide the crosshair while you squeeze it. Release the trigger
+to restore it. A binding works on any connected gamepad that SDL recognizes,
+including one connected after the editor closes.
 
 Shortcuts work in every app, including while typing. The same input still reaches
 the foreground app. There is no game detection or automatic profile switching.
@@ -62,8 +69,7 @@ same master switch. Clearing its shortcut does not turn the overlay off.
 In **Keybinds**, click **Unbound** in the **Hold to hide** row above **Movement**
 and press the key you use to open your map, such as **G** in Rust. The crosshair
 hides while you hold that shortcut. Releasing it restores visibility according
-to the master switch and Aim settings. The shortcut belongs to the active profile
-and accepts keyboard chords and mouse buttons.
+to the master switch and Aim settings. The shortcut belongs to the active profile.
 
 **Aim**, **Fire** and **Reload** belong to the active profile. Their initial inputs
 are Right mouse, Left mouse and R; an existing conflicting shortcut is kept and
@@ -100,7 +106,8 @@ above Aim above Movement. New animations start disabled.
 
 For an effect while moving, open the **Movement** tab, enable it and choose Activation **Hold**,
 then increase the Animated gap. **Move forward/left/backward/right** in Keybinds
-use W/A/S/D by default and can be recorded separately. The effect stays active
+use W/A/S/D by default. In the gamepad column, you can record the four directions
+of the left stick alongside those keys. The effect stays active
 until every movement key is released; **Move** previews it in Designer. Opposing
 keys also keep it active. This responds to keys, not the game's actual movement
 speed or weapon accuracy.

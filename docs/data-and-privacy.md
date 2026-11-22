@@ -28,6 +28,7 @@ Sharing settings. It also sends the app logo's asset key and the project's relea
 Crosshair names, designs, profiles and input are never sent. There are no image
 uploads, accounts, tokens or additional network services in this integration.
 
-Keyboard and mouse shortcuts are observed globally without blocking or injecting
-input. The app does not record a history of your keystrokes. Xbox Game Bar is a
+The engine observes keyboard, mouse and configured controller shortcuts globally.
+Controller bindings store the control (such as the left trigger) and apply to
+any mapped gamepad. The engine does not keep input history. Xbox Game Bar is a
 separate Microsoft application with its own privacy settings.
