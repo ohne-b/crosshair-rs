@@ -16,6 +16,9 @@ export component ActionButton inherits Rectangle {
     in property <bool> align-left: false;
     in property <bool> hover-feedback: true;
     in property <color> hover-color: root.primary ? Theme.orange.brighter(0.18) : Theme.hover;
+    in property <length> content-width: root.width;
+    in property <length> background-width: root.width;
+    in property <length> background-height: root.height;
     out property <bool> has-focus: focus.has-focus;
     out property <bool> focus-visible: root.has-focus && Store.keyboard-navigation;
     callback clicked;
@@ -31,10 +34,6 @@ export component ActionButton inherits Rectangle {
     horizontal-stretch: 0;
     vertical-stretch: 0;
     border-radius: Theme.radius;
-    background: !root.enabled ? transparent
-        : root.danger && root.hover-feedback && touch.has-hover ? #B4232A
-        : (root.hover-feedback && touch.has-hover) || root.focus-visible ? root.hover-color
-        : root.primary ? Theme.orange : root.selected || !root.quiet ? Theme.raised : transparent;
     border-width: 0px;
     border-color: Theme.muted;
     opacity: root.enabled ? 1 : 0.4;
@@ -50,7 +49,17 @@ export component ActionButton inherits Rectangle {
             focus.focus(); Store.commit-focused-input(); root.clicked();
         }
     }
+    Rectangle {
+        x: (root.content-width - self.width) / 2; width: root.background-width;
+        y: (root.height - self.height) / 2; height: root.background-height;
+        border-radius: root.border-radius;
+        background: !root.enabled ? transparent
+            : root.danger && root.hover-feedback && touch.has-hover ? #B4232A
+            : (root.hover-feedback && touch.has-hover) || root.focus-visible ? root.hover-color
+            : root.primary ? Theme.orange : root.selected || !root.quiet ? Theme.raised : transparent;
+    }
     content := HorizontalLayout {
+        x: 0px; width: root.content-width;
         padding-left: root.text == "" ? 7px : 10px; padding-right: root.text == "" ? 7px : 10px; spacing: 8px; alignment: root.align-left ? start : center;
         if root.thumbnail.width > 0: Rectangle { min-width: 0px; preferred-width: 26px; max-width: 26px; Image { x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2; source: root.thumbnail; width: min(parent.width, root.thumbnail.width * 1px); height: min(parent.width, root.thumbnail.height * 1px); image-fit: contain; } }
         if root.icon.width > 0: Rectangle { width: 18px; Image { y: (parent.height - 18px) / 2; source: root.icon; width: 18px; height: 18px; colorize: root.icon-color; } }

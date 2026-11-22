@@ -707,22 +707,28 @@ impl App {
                     "Move forward",
                     &keys.movement[0],
                     pad.movement[0],
-                    "↑",
+                    "Forward",
                 ),
-                ("left", "Move left", &keys.movement[1], pad.movement[1], "←"),
+                (
+                    "left",
+                    "Move left",
+                    &keys.movement[1],
+                    pad.movement[1],
+                    "Left",
+                ),
                 (
                     "backward",
                     "Move backward",
                     &keys.movement[2],
                     pad.movement[2],
-                    "↓",
+                    "Back",
                 ),
                 (
                     "right",
                     "Move right",
                     &keys.movement[3],
                     pad.movement[3],
-                    "→",
+                    "Right",
                 ),
             ] {
                 let group = if direction.is_empty() {

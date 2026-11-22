@@ -112,8 +112,8 @@ component LayerList inherits Rectangle {
                             }
                         }
                         Text { text: layer.name; font-size: 12px * Theme.text-scale; color: layer.selected ? Theme.text : Theme.muted; overflow: elide; vertical-alignment: center; horizontal-stretch: 1; }
-                        ActionButton { height: root.row-height; icon: @image-url("../../../../assets/icons/eye.svg"); label: layer.shown ? "Hide layer" : "Show layer"; opacity: layer.shown ? 1 : 0.35; quiet: true; clicked => { Store.action("layer-visible", layer.id); } }
-                        ActionButton { height: root.row-height; icon: @image-url("../../../../assets/icons/trash.svg"); label: "Delete " + layer.name; quiet: true; clicked => { layer-keys.focus(); Store.action("delete-layer", layer.id); } }
+                        ActionButton { height: root.row-height; background-height: self.width; icon: @image-url("../../../../assets/icons/eye.svg"); label: layer.shown ? "Hide layer" : "Show layer"; opacity: layer.shown ? 1 : 0.35; quiet: true; clicked => { Store.action("layer-visible", layer.id); } }
+                        ActionButton { height: root.row-height; background-height: self.width; icon: @image-url("../../../../assets/icons/trash.svg"); label: "Delete " + layer.name; quiet: true; clicked => { layer-keys.focus(); Store.action("delete-layer", layer.id); } }
                     }
                     TouchArea { x: 0px; width: parent.width - 68px;
                         enabled: Store.interactive;

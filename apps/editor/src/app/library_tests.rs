@@ -23,6 +23,48 @@ fn key(ui: &AppWindow, text: impl Into<SharedString>) {
         .dispatch_event(WindowEvent::KeyReleased { text });
 }
 
+fn movement_binding_x(width: f32, column: usize) -> f32 {
+    let (first, pitch) = if width == 1280.0 {
+        (438.0, 226.0)
+    } else {
+        (336.0, 164.0)
+    };
+    first + column as f32 * pitch
+}
+
+// Find the clear button beside the hovered label and check both painted bounds.
+fn movement_clear_x(ui: &AppWindow, binding_x: f32, y: usize, size: usize) -> Result<f32> {
+    let frame = ui.window().take_snapshot()?;
+    let stride = frame.width() as usize;
+    let row = &frame.as_slice()[y * stride..(y + 1) * stride];
+    let panel = row[84];
+    let binding_x = binding_x as usize;
+    let binding_end = binding_x + row[binding_x..].iter().take_while(|&&p| p != panel).count();
+    let gap = row[binding_end..]
+        .iter()
+        .take_while(|&&p| p == panel)
+        .count();
+    assert_eq!(gap, 4, "gap after the movement binding");
+    let clear_left = binding_end + gap;
+    assert_eq!(
+        row[clear_left..]
+            .iter()
+            .take_while(|&&p| p != panel)
+            .count(),
+        size
+    );
+    let clear_x = clear_left + size / 2;
+    let top = y - size / 2;
+    for x in [binding_x, clear_x] {
+        let painted = |y: usize| frame.as_slice()[y * stride + x] != panel;
+        assert_eq!(
+            [top - 1, top, top + size - 1, top + size].map(painted),
+            [false, true, true, false]
+        );
+    }
+    Ok(clear_x as f32)
+}
+
 fn snapshot(window: &MinimalSoftwareWindow, name: &str) -> Result<()> {
     if let Some(directory) = std::env::var_os("CROSSHAIR_UI_SNAPSHOT") {
         let size = window.window().size();
@@ -172,16 +214,8 @@ fn sidebar_update_link_opens_updates_and_shows_the_offered_version() -> Result<(
 }
 
 #[test]
-fn layer_eye_click_dispatches_visibility_toggle() -> Result<()> {
-    struct Headless(Rc<MinimalSoftwareWindow>);
-    impl Platform for Headless {
-        fn create_window_adapter(&self) -> Result<Rc<dyn WindowAdapter>, slint::PlatformError> {
-            Ok(self.0.clone())
-        }
-    }
-    let window = MinimalSoftwareWindow::new(RepaintBufferType::NewBuffer);
-    slint::platform::set_platform(Box::new(Headless(window.clone())))?;
-    let ui = AppWindow::new()?;
+fn layer_actions_center_their_highlight_and_keep_full_height_hit_targets() -> Result<()> {
+    let (ui, window) = pixel_test_window()?;
     ui.window().set_size(slint::LogicalSize::new(1280.0, 800.0));
     let store = ui.global::<Store>();
     store.set_connected(true);
@@ -204,17 +238,27 @@ fn layer_eye_click_dispatches_visibility_toggle() -> Result<()> {
     store.on_action(move |a, v| recorded.borrow_mut().push((a.to_string(), v.to_string())));
     ui.show()?;
     snapshot(&window, "layer-eye.png")?;
-    ui.window().dispatch_event(WindowEvent::PointerMoved {
-        position: slint::LogicalPosition::new(221.0, 176.0),
-    });
-    click(&ui, 221.0, 176.0);
-    assert!(
-        events
-            .borrow()
-            .contains(&("layer-visible".into(), "test".into())),
-        "{:?}",
-        events.borrow()
-    );
+    for (x, hit_y, action) in [(221, 158, "layer-visible"), (255, 193, "delete-layer")] {
+        ui.window().dispatch_event(WindowEvent::PointerMoved {
+            position: slint::LogicalPosition::new(x as f32, hit_y as f32),
+        });
+        let frame = ui.window().take_snapshot()?;
+        let pixel = |y| frame.as_slice()[y * frame.width() as usize + x];
+        // The 38 px selected row has 3 px of padding above and below the highlight.
+        assert_eq!(pixel(159), pixel(192), "{action} vertical padding");
+        assert_eq!(
+            pixel(159),
+            frame.as_slice()[159 * frame.width() as usize + 175]
+        );
+        assert_ne!(pixel(160), pixel(159), "{action} highlight top");
+        assert_eq!(pixel(191), pixel(160), "{action} highlight bottom");
+        if action == "delete-layer" {
+            snapshot(&window, "layer-action-hover.png")?;
+        }
+        events.borrow_mut().clear();
+        click(&ui, x as f32, hit_y as f32);
+        assert_eq!(*events.borrow(), [(action.into(), "test".into())]);
+    }
     ui.hide()?;
     Ok(())
 }
@@ -788,7 +832,7 @@ fn dropped_files_follow_the_active_import_target() -> Result<()> {
 
 #[test]
 fn action_shortcut_fields_and_clear_buttons_follow_hover_and_focus() -> Result<()> {
-    let (ui, _window) = timed_test_window(Rc::new(Cell::default()))?;
+    let (ui, window) = timed_test_window(Rc::new(Cell::default()))?;
     let store = ui.global::<Store>();
     store.set_connected(true);
     store.set_page(2);
@@ -802,6 +846,9 @@ fn action_shortcut_fields_and_clear_buttons_follow_hover_and_focus() -> Result<(
             .borrow_mut()
             .push((action.to_string(), value.to_string()));
     });
+    let capture_right = Rc::new(Cell::new(0.0));
+    let right_edge = capture_right.clone();
+    store.on_capture_region(move |x, _, width, _| right_edge.set(x + width));
     ui.show()?;
 
     for width in [1280.0, 960.0] {
@@ -863,17 +910,150 @@ fn action_shortcut_fields_and_clear_buttons_follow_hover_and_focus() -> Result<(
         );
 
         // Movement reveals only the hovered direction. An empty action only records.
-        let forward = width - 725.0 + 168.0;
-        move_to(forward - 70.0, 502.0);
-        assert_ne!(backgrounds(forward, 502)?[1], idle[1]);
-        assert_eq!(backgrounds(forward + 174.0, 502)?, idle);
+        let center = movement_binding_x(width, 0);
+        let next = movement_binding_x(width, 1);
+        move_to(center, 527.0);
+        let frame = ui.window().take_snapshot()?;
+        let fill = |x: f32| frame.as_slice()[537 * frame.width() as usize + x as usize];
+        assert_eq!(fill(center), hovered[0]);
+        assert_eq!(fill(next), idle[0]);
+        click(&ui, center, 527.0);
+        store.set_capture_id("forward".into());
+        let clear_x = movement_clear_x(&ui, center, 527, 26)?;
+        assert!(clear_x - 16.0 >= capture_right.get());
+        store.set_capture_id("".into());
+        move_to(1.0, 1.0);
+        if width == 1280.0 {
+            snapshot(&window, "movement-grid.png")?;
+        }
         events.borrow_mut().clear();
+        // Both sides of an empty controller cell record, including its unused clear slot.
+        for x in [center - 40.0, (center + next) / 2.0 + 8.0] {
+            click(&ui, x, 565.0);
+            assert_eq!(
+                *events.borrow(),
+                [("capture-controller".into(), "forward".into())]
+            );
+            events.borrow_mut().clear();
+        }
         click(&ui, right - 24.0, 233.0);
         assert_eq!(
             *events.borrow(),
             [("capture-controller".into(), "global".into())]
         );
     }
+    ui.hide()?;
+    Ok(())
+}
+
+#[test]
+fn saved_card_actions_hide_after_favorite_clicks_and_show_for_keyboard_focus() -> Result<()> {
+    use slint::Model;
+
+    let (ui, _window) = timed_test_window(Rc::new(Cell::default()))?;
+    let store = ui.global::<Store>();
+    store.set_connected(true);
+    let rows = Rc::new(slint::VecModel::from(vec![PresetRow {
+        id: "saved".into(),
+        name: "Saved crosshair".into(),
+        ..Default::default()
+    }]));
+    store.set_presets(rows.clone().into());
+    store.set_preset_groups(
+        Rc::new(slint::VecModel::from(vec![PresetGroup {
+            items: rows.clone().into(),
+        }]))
+        .into(),
+    );
+    let saved = rows.clone();
+    store.on_action(move |action, id| {
+        if action == "favorite" && id == "saved" {
+            let mut row = saved.row_data(0).unwrap();
+            row.favorite = !row.favorite;
+            saved.set_row_data(0, row);
+        }
+    });
+    ui.show()?;
+
+    let move_to = |x, y| {
+        ui.window().dispatch_event(WindowEvent::PointerMoved {
+            position: slint::LogicalPosition::new(x, y),
+        })
+    };
+    let icons = || -> Result<[bool; 2]> {
+        let frame = ui.window().take_snapshot()?;
+        let stride = frame.width() as usize;
+        // Check the star and trash glyphs, independently of the card's background.
+        Ok([279, 471].map(|x| {
+            (204..222).any(|y| {
+                frame.as_slice()[y * stride + x - 9..y * stride + x + 9]
+                    .iter()
+                    .any(|p| p.r > 110)
+            })
+        }))
+    };
+    for favorite in [true, false] {
+        move_to(279.0, 213.0);
+        assert_eq!(icons()?, [true, true]);
+        click(&ui, 279.0, 213.0);
+        assert_eq!(rows.row_data(0).unwrap().favorite, favorite);
+        move_to(700.0, 450.0);
+        assert_eq!(icons()?, [false, false]);
+    }
+    key(&ui, Key::Tab);
+    assert_eq!(icons()?, [true, true]);
+    click(&ui, 350.0, 250.0);
+    move_to(700.0, 450.0);
+    assert_eq!(icons()?, [false, false]);
+    ui.hide()?;
+    Ok(())
+}
+
+#[test]
+fn profile_picker_leaves_a_gap_between_selectable_rows() -> Result<()> {
+    let (ui, window) = timed_test_window(Rc::new(Cell::default()))?;
+    let store = ui.global::<Store>();
+    store.set_connected(true);
+    store.set_profiles(
+        Rc::new(slint::VecModel::from(vec![
+            "Default".into(),
+            "Practice".into(),
+        ]))
+        .into(),
+    );
+    let selected = Rc::new(Cell::new(None));
+    let result = selected.clone();
+    store.on_action(move |action, value| {
+        if action == "select-profile" {
+            result.set(value.parse::<usize>().ok());
+        }
+    });
+    ui.show()?;
+    click(&ui, 910.0, 24.0);
+    ui.window().dispatch_event(WindowEvent::PointerMoved {
+        position: slint::LogicalPosition::new(950.0, 133.0),
+    });
+    snapshot(&window, "profile-picker-spacing.png")?;
+    let frame = ui.window().take_snapshot()?;
+    let pixel = |y: usize| frame.as_slice()[y * frame.width() as usize + 950];
+    assert_ne!(pixel(113), pixel(114));
+    assert!((115..118).all(|y| pixel(y) == pixel(114)));
+    assert_ne!(pixel(118), pixel(117));
+    click(&ui, 950.0, 116.0);
+    assert_eq!(selected.get(), None);
+    click(&ui, 950.0, 133.0);
+    assert_eq!(selected.get(), Some(1));
+
+    // Keyboard navigation scrolls the last eight profiles into view.
+    let profiles = (1..=10)
+        .map(|n| format!("Profile {n}").into())
+        .collect::<Vec<_>>();
+    store.set_profiles(Rc::new(slint::VecModel::from(profiles)).into());
+    click(&ui, 910.0, 24.0);
+    key(&ui, Key::End);
+    key(&ui, Key::UpArrow);
+    click(&ui, 950.0, 336.0);
+    assert_eq!(selected.get(), Some(9));
     ui.hide()?;
     Ok(())
 }
@@ -921,6 +1101,20 @@ fn library_tabs_sort_picker_and_browse_actions_are_independent() -> Result<()> {
     ]));
     events.borrow_mut().clear();
     click(&ui, 1180.0, 130.0);
+    ui.window().dispatch_event(WindowEvent::PointerMoved {
+        position: slint::LogicalPosition::new(1210.0, 207.0),
+    });
+    snapshot(&window, "sort-picker-spacing.png")?;
+    let frame = ui.window().take_snapshot()?;
+    let pixel = |y: usize| frame.as_slice()[y * frame.width() as usize + 1210];
+    assert_ne!(pixel(188), pixel(189));
+    assert!((190..193).all(|y| pixel(y) == pixel(189)));
+    assert_ne!(pixel(193), pixel(192));
+    click(&ui, 1210.0, 190.0);
+    assert!(
+        events.borrow().is_empty(),
+        "The row gap must not select a sort order"
+    );
     key(&ui, Key::DownArrow);
     key(&ui, Key::Return);
     assert_eq!(store.get_sort(), 1, "events: {:?}", events.borrow());
@@ -1242,17 +1436,28 @@ fn library_tabs_sort_picker_and_browse_actions_are_independent() -> Result<()> {
             ]
         );
         for (y, record, clear) in [
-            (502.0, "capture", "clear-keyboard"),
-            (556.0, "capture-controller", "clear-controller"),
+            (527.0, "capture", "clear-keyboard"),
+            (565.0, "capture-controller", "clear-controller"),
         ] {
+            let center = movement_binding_x(width, 3);
+            let binding_fill = || fill_at(center, y as usize + 10);
+            move_to(center, y);
+            assert_eq!(binding_fill()?, hover);
+            if width == 1280.0 && record == "capture-controller" {
+                snapshot(&window, "movement-grid-hover.png")?;
+            }
+            move_to(1.0, 1.0);
+            assert_eq!(binding_fill()?, idle);
             for (i, direction) in ["forward", "left", "backward", "right"]
                 .into_iter()
                 .enumerate()
             {
-                let chip = width - 725.0 + i as f32 * 174.0;
+                let center = movement_binding_x(width, i);
+                move_to(center, y);
+                let clear_x = movement_clear_x(&ui, center, y as usize, 26)?;
                 events.borrow_mut().clear();
-                click(&ui, chip + 58.0, y);
-                click(&ui, chip + 152.0, y);
+                click(&ui, center, y);
+                click(&ui, clear_x, y);
                 assert_eq!(
                     *events.borrow(),
                     [
@@ -1264,6 +1469,24 @@ fn library_tabs_sort_picker_and_browse_actions_are_independent() -> Result<()> {
             }
         }
     }
+    ui.global::<crate::Theme>().set_text_scale(2.0);
+    let center = movement_binding_x(960.0, 3);
+    ui.window().dispatch_event(WindowEvent::PointerMoved {
+        position: slint::LogicalPosition::new(center, 597.0),
+    });
+    snapshot(&window, "movement-grid-large-text.png")?;
+    let clear_x = movement_clear_x(&ui, center, 597, 34)?;
+    events.borrow_mut().clear();
+    click(&ui, center, 597.0);
+    click(&ui, clear_x, 597.0);
+    assert_eq!(
+        *events.borrow(),
+        [
+            ("capture-controller".into(), "right".into()),
+            ("clear-controller".into(), "right".into()),
+        ]
+    );
+    ui.global::<crate::Theme>().set_text_scale(1.0);
     ui.window().set_size(slint::LogicalSize::new(1280.0, 800.0));
     store.set_modal_kind(1);
     store.set_modal_title("Delete crosshair?".into());
