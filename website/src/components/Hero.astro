@@ -49,7 +49,7 @@ import CrosshairGallery from './CrosshairGallery.astro';
   .hero {
     display: grid;
     align-content: center;
-    min-height: 100svh;
+    min-height: 100dvh;
     padding: clamp(128px, 15svh, 176px) 0 56px;
   }
   .hero-text {
@@ -172,6 +172,23 @@ import CrosshairGallery from './CrosshairGallery.astro';
   @media (max-width: 1023px) {
     .hero h1 {
       font-size: 64px;
+    }
+  }
+  @media (width >= 640px) and (height < 850px) {
+    .hero {
+      padding-block: calc(var(--header-clearance) + 16px) 24px;
+    }
+    .hero h1 {
+      font-size: clamp(40px, 7.7dvh, 64px);
+    }
+    .hero__lead {
+      margin-top: 16px;
+    }
+    .hero .btn-row {
+      margin-top: 20px;
+    }
+    .scroll-link {
+      margin-top: 12px;
     }
   }
   @media (max-width: 639px) {

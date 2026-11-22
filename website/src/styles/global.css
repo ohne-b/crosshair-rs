@@ -12,6 +12,8 @@
   --p-accent: #f97316;
   --container: 1080px;
   --gut: 48px;
+  --header-clearance: 96px;
+  --section-height: calc(100dvh - var(--header-clearance));
 }
 *,
 *::before,
@@ -19,7 +21,7 @@
   box-sizing: border-box;
 }
 html {
-  scroll-padding-top: 96px;
+  scroll-padding-top: var(--header-clearance);
 }
 body {
   margin: 0;
@@ -67,11 +69,22 @@ svg {
 @media (max-width: 639px) {
   :root {
     --gut: 24px;
+    --header-clearance: 84px;
   }
 }
 @media (prefers-reduced-motion: no-preference) {
   html {
     scroll-behavior: smooth;
+    scroll-snap-type: y mandatory;
+  }
+  main > section {
+    scroll-snap-align: start;
+    scroll-snap-stop: always;
+    /* Section padding clears the header; align the section itself with the viewport. */
+    scroll-margin-top: calc(-1 * var(--header-clearance));
+  }
+  .site-footer {
+    scroll-snap-align: end;
   }
 }
 @media (prefers-reduced-motion: reduce) {
