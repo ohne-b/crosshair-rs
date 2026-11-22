@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+## [v0.3.0-rc.1](https://github.com/ohne-b/crosshair-rs/releases/tag/v0.3.0-rc.1) 2026-11-22
+
+- fix: Reopen a closed crosshair gap in whole pixels when dragging a resize handle. ([#43](https://github.com/ohne-b/crosshair-rs/pull/43))
+- fix: Click through gaps in a layer to select the shape underneath. ([#43](https://github.com/ohne-b/crosshair-rs/pull/43))
+- feat: Drop preset files onto the library import panel or browse for a file. ([#43](https://github.com/ohne-b/crosshair-rs/pull/43))
+- feat: Drop images onto the Designer’s Image panel. Both panels highlight their icon when you drag a supported file over them. ([#43](https://github.com/ohne-b/crosshair-rs/pull/43))
+- fix: Skip wheel scrolling animations when Windows animation effects are off. ([#42](https://github.com/ohne-b/crosshair-rs/pull/42))
+- fix: Use the Windows Start entry and retire the installer’s legacy `/STARTMENU` switch. ([#41](https://github.com/ohne-b/crosshair-rs/pull/41))
+- fix: Compare stable release notes with the previous stable tag. ([#41](https://github.com/ohne-b/crosshair-rs/pull/41))
+- docs: Download the stable Windows installer directly from the README. ([#38](https://github.com/ohne-b/crosshair-rs/pull/38))
+
 ## [v0.2.0](https://github.com/ohne-b/crosshair-rs/releases/tag/v0.2.0) 2026-11-21
 
 - feat: Resize shapes, gaps and dots with corner handles. Rotated handles show the matching cursor, and sliders give finer control over small values. ([#32](https://github.com/ohne-b/crosshair-rs/pull/32))
