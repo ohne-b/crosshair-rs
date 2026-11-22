@@ -82,7 +82,7 @@ component ShortcutCell inherits Rectangle {
         width: parent.width - 16px - (root.value != "" ? 32px : 0px); align-left: true;
         enabled: Store.connected && Store.interactive && !root.saving;
         text: root.saving ? "Saving…" : root.recording ? (root.controller ? "Press or move a control" : "Press a key") : root.value == "" ? "Unbound" : root.binding.enabled ? root.value : "Disabled: " + root.value;
-        icon: root.controller ? @image-url("../../../../assets/icons/device-gamepad-2.svg") : @image-url("../../../../assets/icons/keyboard.svg");
+        icon: root.controller ? @image-url("../../../../assets/icons/device-gamepad-2.svg") : root.binding.mouse ? @image-url("../../../../assets/icons/mouse.svg") : @image-url("../../../../assets/icons/keyboard.svg");
         label: root.target-name + ", " + root.device-name + ": " + self.text; selected: root.recording;
         clicked => {
             if !root.recording {

@@ -637,11 +637,17 @@ impl App {
         };
         let store = ui.global::<Store>();
         let settings = &self.state.settings;
+        let mouse = |chord: &Option<InputChord>| {
+            chord.as_ref().is_some_and(|c| {
+                matches!(c.trigger, InputKey::Mouse { .. } | InputKey::Wheel { .. })
+            })
+        };
         let mut rows = vec![BindingRow {
             id: "global".into(),
             movement: false,
             name: SharedString::default(),
             action: "Global toggle".into(),
+            mouse: mouse(&settings.global_toggle),
             target: SharedString::default(),
             target_index: -1,
             enabled: true,
@@ -728,6 +734,7 @@ impl App {
                 rows.push(BindingRow {
                     id: id.into(),
                     action: action.into(),
+                    mouse: mouse(key),
                     movement,
                     enabled: true,
                     chord: key
@@ -747,6 +754,7 @@ impl App {
                 BindingRow {
                     id: binding.id.to_string().into(),
                     action: keybinds::action_name(&binding.action).into(),
+                    mouse: mouse(&binding.chord),
                     name: if binding.name.is_empty() {
                         binding
                             .action

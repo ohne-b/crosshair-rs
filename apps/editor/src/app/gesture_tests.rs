@@ -790,6 +790,36 @@ fn captures_pin_profiles_reject_pulses_and_replace_roles_atomically() -> Result<
 }
 
 #[test]
+fn mouse_icon_follows_the_trigger_in_each_keyboard_mouse_cell() -> Result<()> {
+    let ui = window();
+    let mut app = app(&ui);
+    let wheel = InputChord {
+        trigger: InputKey::Wheel { up: true },
+        modifiers: vec![Modifier::Control],
+    };
+    app.state.settings.global_toggle = Some(InputChord {
+        trigger: InputKey::Mouse { button: 4 },
+        modifiers: vec![],
+    });
+    let profile = &mut app.state.profiles[0];
+    let shortcut = Binding::new(
+        wheel,
+        BindingAction::SelectPreset {
+            preset: profile.selected_preset,
+        },
+    );
+    let id = shortcut.id.to_string();
+    profile.bindings.push(shortcut);
+    app.refresh_bindings();
+    let rows = ui.global::<Store>().get_bindings();
+    let mouse = |id: &str| rows.iter().find(|row| row.id == id).unwrap().mouse;
+    assert!(mouse("global") && mouse("aim") && mouse("fire") && mouse(&id));
+    assert!(!mouse("reload") && !mouse("hide") && !mouse("forward"));
+    ui.hide()?;
+    Ok(())
+}
+
+#[test]
 fn recording_the_other_column_cancels_capture_and_rejects_its_late_result() -> Result<()> {
     let ui = window();
     let mut app = app(&ui);
