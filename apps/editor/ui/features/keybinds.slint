@@ -129,19 +129,22 @@ component ShortcutControls inherits TouchArea {
     property <bool> movement: root.binding.direction != "";
     property <bool> clearable: record.value != "";
     property <bool> highlighted: root.has-hover || record.focus-visible || clear.focus-visible;
-    out property <length> record-width: root.width - 2 * root.inset - (root.clearable || root.movement ? clear.width + 4px : 0px);
+    property <length> available-width: root.width - 2 * root.inset;
+    out property <length> label-width: root.available-width - (root.clearable || root.movement ? clear.width + 4px : 0px);
     forward-focus: record;
     record := RecordShortcut {
-        x: root.inset; y: (parent.height - self.height) / 2; width: root.record-width;
+        x: root.inset; y: (parent.height - self.height) / 2;
+        width: root.clearable ? root.label-width : root.available-width;
+        content-width: root.label-width;
         // During capture the clear button stays outside the recording hit target.
-        background-width: root.movement && !self.selected ? min(self.width, max(32px, self.preferred-width)) : self.width;
+        background-width: root.movement && !self.selected ? min(self.content-width, max(32px, self.preferred-width)) : self.content-width;
         background-height: root.movement ? self.height - 6px : self.height;
         binding: root.binding; controller: root.controller; saving: root.saving;
         icon: root.device-icon; align-left: !root.movement;
         quiet: !root.highlighted;
     }
     clear := ClearShortcut {
-        property <length> binding-right: record.x + (record.width + record.background-width) / 2;
+        property <length> binding-right: record.x + (record.content-width + record.background-width) / 2;
         x: self.binding-right + 4px - (self.width - self.background-width) / 2;
         y: (parent.height - self.height) / 2;
         height: root.movement ? record.height : 32px; width: self.height;
@@ -177,7 +180,7 @@ component MovementGrid inherits Rectangle {
         }
         for binding in Store.movement-bindings: VerticalLayout {
             min-width: 0px; preferred-width: 0px; horizontal-stretch: 1;
-            Rectangle { height: root.header-height; Text { x: 0px; width: keyboard.record-width; text: binding.direction; color: Theme.muted; font-size: 11px * Theme.text-scale; horizontal-alignment: center; vertical-alignment: center; } }
+            Rectangle { height: root.header-height; Text { x: 0px; width: keyboard.label-width; text: binding.direction; color: Theme.muted; font-size: 11px * Theme.text-scale; horizontal-alignment: center; vertical-alignment: center; } }
             keyboard := ShortcutControls { height: root.row-height; binding: binding; }
             ShortcutControls { height: root.row-height; binding: binding; controller: true; }
         }

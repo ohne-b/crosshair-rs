@@ -927,13 +927,15 @@ fn action_shortcut_fields_and_clear_buttons_follow_hover_and_focus() -> Result<(
             snapshot(&window, "movement-grid.png")?;
         }
         events.borrow_mut().clear();
-        // The empty controller cell records even when the click misses the small plus.
-        click(&ui, center - 40.0, 565.0);
-        assert_eq!(
-            *events.borrow(),
-            [("capture-controller".into(), "forward".into())]
-        );
-        events.borrow_mut().clear();
+        // Both sides of an empty controller cell record, including its unused clear slot.
+        for x in [center - 40.0, (center + next) / 2.0 + 8.0] {
+            click(&ui, x, 565.0);
+            assert_eq!(
+                *events.borrow(),
+                [("capture-controller".into(), "forward".into())]
+            );
+            events.borrow_mut().clear();
+        }
         click(&ui, right - 24.0, 233.0);
         assert_eq!(
             *events.borrow(),
