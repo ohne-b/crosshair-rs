@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+## [v0.3.0](https://github.com/ohne-b/crosshair-rs/releases/tag/v0.3.0) 2026-11-22
+
+- fix: Drag a closed crosshair gap open again in whole pixels. ([#43](https://github.com/ohne-b/crosshair-rs/pull/43))
+- fix: Click through gaps in a layer to select the shape underneath. ([#43](https://github.com/ohne-b/crosshair-rs/pull/43))
+- feat: Drop a preset onto the library import panel or browse for a file. ([#43](https://github.com/ohne-b/crosshair-rs/pull/43))
+- feat: Drop images onto the Designer’s Image panel. Both import icons light up when you drag a supported file over them. ([#43](https://github.com/ohne-b/crosshair-rs/pull/43))
+- fix: Skip wheel scrolling animations when Windows animation effects are off. ([#42](https://github.com/ohne-b/crosshair-rs/pull/42))
+- fix: Use the Windows Start entry and retire the installer’s `/STARTMENU` switch. ([#41](https://github.com/ohne-b/crosshair-rs/pull/41))
+- fix: Compare stable release notes with the previous stable tag. ([#41](https://github.com/ohne-b/crosshair-rs/pull/41))
+- docs: Download the Windows installer directly from the README. ([#38](https://github.com/ohne-b/crosshair-rs/pull/38))
+- feat: See how Crosshair V2 and OpenCrosshair compare in the website and README RAM charts. ([#44](https://github.com/ohne-b/crosshair-rs/pull/44))
+- fix: Keep website sections below the fixed header and scroll back from Credits to the RAM chart. ([#44](https://github.com/ohne-b/crosshair-rs/pull/44))
+
 ## [v0.3.0-rc.1](https://github.com/ohne-b/crosshair-rs/releases/tag/v0.3.0-rc.1) 2026-11-22
 
 - fix: Reopen a closed crosshair gap in whole pixels when dragging a resize handle. ([#43](https://github.com/ohne-b/crosshair-rs/pull/43))
