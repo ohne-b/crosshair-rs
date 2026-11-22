@@ -81,17 +81,19 @@ export component Library inherits Rectangle {
                 property <bool> saved: Store.browsing && Store.browse-saved == preset.id;
                 x: column-index * self.stride;
                 width: (parent.width - 12px) / root.columns - 12px; height: 170px;
-                background: card-focus.has-focus || card-touch.has-hover ? Theme.raised : Theme.field; border-radius: 12px; border-width: (preset.selected || (!Store.browsing && Store.preset-drop-index == self.index)) ? 1px : 0px; border-color: Theme.orange;
+                background: card-touch.has-hover || (Store.keyboard-navigation && card-focus.has-focus) ? Theme.raised : Theme.field; border-radius: 12px; border-width: (preset.selected || (!Store.browsing && Store.preset-drop-index == self.index)) ? 1px : 0px; border-color: Theme.orange;
                 accessible-role: button; accessible-label: Store.browsing ? "Equip " + preset.name : preset.name;
                 accessible-action-default => { if Store.interactive && (!Store.browsing || (!Store.browse-saving && Store.connected)) { Store.action(Store.browsing ? "equip-browse" : "select-preset", preset.id); } }
                 card-touch := TouchArea {
                         enabled: Store.interactive;
-                        property <bool> show-actions: self.has-hover || card-focus.has-focus || name.has-focus || favorite.has-focus || card-action.has-focus;
+                        property <bool> show-actions: self.has-hover || (Store.keyboard-navigation
+                            && (card-focus.has-focus || name.has-focus || favorite.has-focus || card-action.has-focus));
                         property <bool> dragging: false;
                         property <length> start-x;
                         property <length> start-y;
                         double-clicked => { if !Store.browsing { Store.action("edit-preset", preset.id); } }
                         pointer-event(event) => {
+                            if event.kind == PointerEventKind.down { Store.keyboard-navigation = false; }
                             if event.kind == PointerEventKind.cancel { self.dragging = false; Store.dragged-preset = ""; Store.preset-drop-index = -1; }
                             if event.kind == PointerEventKind.down && event.button == PointerEventButton.left { self.start-x = self.mouse-x; self.start-y = self.mouse-y; self.dragging = false; card-focus.focus(); }
                             if event.kind == PointerEventKind.up && event.button == PointerEventButton.left {
@@ -145,6 +147,7 @@ export component Library inherits Rectangle {
                     card-focus := FocusScope {
                         enabled: Store.interactive; focus-on-click: false;
                         key-pressed(event) => {
+                            Store.keyboard-navigation = true;
                             if Store.browsing {
                                 if event.text == Key.Return || event.text == Key.Space {
                                     if !Store.browse-saving && Store.connected { Store.action("equip-browse", preset.id); }

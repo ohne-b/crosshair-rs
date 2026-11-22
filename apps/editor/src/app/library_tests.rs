@@ -879,6 +879,69 @@ fn action_shortcut_fields_and_clear_buttons_follow_hover_and_focus() -> Result<(
 }
 
 #[test]
+fn saved_card_actions_hide_after_favorite_clicks_and_show_for_keyboard_focus() -> Result<()> {
+    use slint::Model;
+
+    let (ui, _window) = timed_test_window(Rc::new(Cell::default()))?;
+    let store = ui.global::<Store>();
+    store.set_connected(true);
+    let rows = Rc::new(slint::VecModel::from(vec![PresetRow {
+        id: "saved".into(),
+        name: "Saved crosshair".into(),
+        ..Default::default()
+    }]));
+    store.set_presets(rows.clone().into());
+    store.set_preset_groups(
+        Rc::new(slint::VecModel::from(vec![PresetGroup {
+            items: rows.clone().into(),
+        }]))
+        .into(),
+    );
+    let saved = rows.clone();
+    store.on_action(move |action, id| {
+        if action == "favorite" && id == "saved" {
+            let mut row = saved.row_data(0).unwrap();
+            row.favorite = !row.favorite;
+            saved.set_row_data(0, row);
+        }
+    });
+    ui.show()?;
+
+    let move_to = |x, y| {
+        ui.window().dispatch_event(WindowEvent::PointerMoved {
+            position: slint::LogicalPosition::new(x, y),
+        })
+    };
+    let icons = || -> Result<[bool; 2]> {
+        let frame = ui.window().take_snapshot()?;
+        let stride = frame.width() as usize;
+        // Check the star and trash glyphs, independently of the card's background.
+        Ok([279, 471].map(|x| {
+            (204..222).any(|y| {
+                frame.as_slice()[y * stride + x - 9..y * stride + x + 9]
+                    .iter()
+                    .any(|p| p.r > 110)
+            })
+        }))
+    };
+    for favorite in [true, false] {
+        move_to(279.0, 213.0);
+        assert_eq!(icons()?, [true, true]);
+        click(&ui, 279.0, 213.0);
+        assert_eq!(rows.row_data(0).unwrap().favorite, favorite);
+        move_to(700.0, 450.0);
+        assert_eq!(icons()?, [false, false]);
+    }
+    key(&ui, Key::Tab);
+    assert_eq!(icons()?, [true, true]);
+    click(&ui, 350.0, 250.0);
+    move_to(700.0, 450.0);
+    assert_eq!(icons()?, [false, false]);
+    ui.hide()?;
+    Ok(())
+}
+
+#[test]
 fn library_tabs_sort_picker_and_browse_actions_are_independent() -> Result<()> {
     let clock = Rc::new(Cell::default());
     let (ui, window) = timed_test_window(clock.clone())?;
