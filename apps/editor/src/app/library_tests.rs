@@ -1411,6 +1411,23 @@ fn library_tabs_sort_picker_and_browse_actions_are_independent() -> Result<()> {
             }
         }
     }
+    ui.global::<crate::Theme>().set_text_scale(2.0);
+    let (center, edge) = movement_cell(960.0, 3);
+    ui.window().dispatch_event(WindowEvent::PointerMoved {
+        position: slint::LogicalPosition::new(center, 597.0),
+    });
+    snapshot(&window, "movement-grid-large-text.png")?;
+    events.borrow_mut().clear();
+    click(&ui, center, 597.0);
+    click(&ui, edge - 16.0, 597.0);
+    assert_eq!(
+        *events.borrow(),
+        [
+            ("capture-controller".into(), "right".into()),
+            ("clear-controller".into(), "right".into()),
+        ]
+    );
+    ui.global::<crate::Theme>().set_text_scale(1.0);
     ui.window().set_size(slint::LogicalSize::new(1280.0, 800.0));
     store.set_modal_kind(1);
     store.set_modal_title("Delete crosshair?".into());
