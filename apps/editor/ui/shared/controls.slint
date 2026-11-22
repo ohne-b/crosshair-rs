@@ -98,13 +98,6 @@ export component ImportPanel inherits Rectangle {
     callback browse;
     forward-focus: browse-button;
     background: Theme.panel; border-radius: 10px; border-width: 1px; border-color: Theme.border;
-    if root.drop-target: Path {
-        x: 5px; y: 5px; width: parent.width - 10px; height: parent.height - 10px;
-        viewbox-width: 270; viewbox-height: 166; fit: fill;
-        commands: "M 9 1 H 261 Q 269 1 269 9 V 157 Q 269 165 261 165 H 9 Q 1 165 1 157 V 9 Q 1 1 9 1 Z";
-        stroke: root.highlighted ? Theme.orange : Theme.high-contrast ? Theme.muted : Theme.muted.with-alpha(0.56);
-        stroke-width: 1.5px; stroke-line-cap: round; stroke-dash-array: [0.5px, 4px];
-    }
     VerticalLayout { padding: 16px; spacing: 12px;
         HorizontalLayout { alignment: root.drop-target ? center : start;
             Image { source: root.icon; colorize: root.highlighted ? Theme.orange : Theme.muted; width: 24px; height: 24px; }

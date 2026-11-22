@@ -938,28 +938,37 @@ fn library_tabs_sort_picker_and_browse_actions_are_independent() -> Result<()> {
     ui.invoke_file_dropped("closed.json".into());
     assert!(events.borrow().is_empty());
     click(&ui, 1135.0, 72.0);
-    let orange_border_pixels = || -> Result<usize> {
-        let image = ui.window().take_snapshot()?;
-        let top = store.get_menu_y() as usize;
-        let right = store.get_menu_x() as usize;
-        Ok((top..top + 10)
-            .flat_map(|y| {
-                let row = y * image.width() as usize;
-                &image.as_slice()[row + right - 260..row + right - 20]
-            })
-            .filter(|p| p.r > p.g.saturating_add(45) && p.r > 115)
-            .count())
-    };
-    assert_eq!(orange_border_pixels()?, 0);
+    let idle = ui.window().take_snapshot()?;
+    let top = store.get_menu_y() as usize;
+    let left = store.get_menu_x() as usize - 280;
     ui.set_dragging_preset_file(true);
     clock.set(clock.get() + Duration::from_millis(50));
     slint::platform::update_timers_and_animations();
-    assert!(orange_border_pixels()? > 15);
+    let hover = ui.window().take_snapshot()?;
+    let mut orange_pixels = 0;
+    for y in 0..176 {
+        for x in 0..280 {
+            let index = (top + y) * hover.width() as usize + left + x;
+            let pixel = hover.as_slice()[index];
+            if (128..152).contains(&x) && (16..40).contains(&y) {
+                if pixel.r > pixel.g.saturating_add(45) && pixel.r > 115 {
+                    orange_pixels += 1;
+                }
+            } else {
+                assert_eq!(
+                    pixel,
+                    idle.as_slice()[index],
+                    "Only the folder changes on hover"
+                );
+            }
+        }
+    }
+    assert!(orange_pixels > 15);
     snapshot(&window, "library-import-hover.png")?;
     file_pointer.set((650.0, 450.0));
     clock.set(clock.get() + Duration::from_millis(50));
     slint::platform::update_timers_and_animations();
-    assert_eq!(orange_border_pixels()?, 0);
+    assert_eq!(ui.window().take_snapshot()?.as_slice(), idle.as_slice());
     ui.invoke_file_dropped("outside.json".into());
     assert!(events.borrow().is_empty());
     file_pointer.set((1100.0, 145.0));

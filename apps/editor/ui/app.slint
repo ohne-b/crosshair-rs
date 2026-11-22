@@ -68,7 +68,7 @@ export component AppWindow inherits Window {
         preset-panel := ImportPanel {
             icon: @image-url("../../../assets/icons/folder.svg");
             drop-target: true; highlighted: root.drop-hover;
-            instruction: root.drop-hover ? "Release to import" : "Drop a crosshair file here"; formats: ".json or .crosshair";
+            instruction: "Drop a crosshair file here"; formats: ".json or .crosshair";
             browse => { preset-import.close(); Store.action("import", ""); }
         }
     }
