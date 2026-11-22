@@ -27,7 +27,10 @@ Fullscreen compatibility depends on Xbox Game Bar and the game.
 
 ## RAM usage
 
-<img src=".github/assets/ram-comparison.png" width="720" alt="Approximate RAM usage with the menu open and closed. crosshair-rs uses under 50 MiB open and under 5 MiB closed. CrossOver uses about 250 MiB open and 220 MiB closed. Crosshair X uses about 400 MiB in both states.">
+<img src=".github/assets/ram-comparison.png" width="720" alt="Approximate RAM usage with the menu open and closed. crosshair-rs uses under 50 MiB open and under 5 MiB closed. Crosshair V2 uses about 120 MiB with the overlay only. OpenCrosshair uses about 160 MiB open and under 5 MiB closed. CrossOver uses about 250 MiB open and 220 MiB closed. Crosshair X uses about 400 MiB in both states.">
+
+Crosshair V2 and OpenCrosshair use Windows private working set samples. The
+earlier readings use an unrecorded method.
 
 ## Contributing
 
