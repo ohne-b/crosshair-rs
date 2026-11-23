@@ -108,7 +108,7 @@ above Aim above Movement. New animations start disabled.
 For an effect while moving, open the **Movement** tab, enable it and choose Activation **Hold**,
 then increase the Animated gap. In **Keybinds**, the **Movement** grid starts with
 W/A/S/D under **Forward**, **Left**, **Back** and **Right**. To bind a stick
-direction, click **+** in the Controller row under that heading and move the
+direction, click **Unbound** in the Controller row under that heading and move the
 stick. Click an existing binding to replace it. The effect stays active until
 you release all bound movement inputs, even if you hold opposing directions.
 In-game speed and weapon accuracy have no effect on the animation. Use

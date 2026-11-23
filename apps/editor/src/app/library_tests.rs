@@ -942,6 +942,23 @@ fn action_shortcut_fields_and_clear_buttons_follow_hover_and_focus() -> Result<(
             [("capture-controller".into(), "global".into())]
         );
     }
+    ui.global::<crate::Theme>().set_text_scale(2.0);
+    snapshot(&window, "movement-grid-unbound-large-text.png")?;
+    // At minimum width, each empty cell must fit the same "Unbound" label as Aim.
+    let frame = ui.window().take_snapshot()?;
+    let stride = frame.width() as usize;
+    let text_width = |x: usize, y: usize| {
+        let rows = &frame.as_slice()[y * stride..(y + 29) * stride];
+        let mut ink =
+            (x..x + 120).filter(|&col| rows.chunks_exact(stride).any(|row| row[col] != row[x]));
+        let first = ink.next().expect("visible binding text");
+        ink.next_back().unwrap_or(first) - first + 1
+    };
+    let aim_width = text_width(752, 286);
+    for column in 0..4 {
+        let x = movement_binding_x(960.0, column) as usize - 64;
+        assert!(text_width(x, 583).abs_diff(aim_width) <= 1);
+    }
     ui.hide()?;
     Ok(())
 }
