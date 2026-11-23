@@ -1,5 +1,10 @@
 # Changelog
 
+## [v0.4.0-rc.3](https://github.com/ohne-b/crosshair-rs/releases/tag/v0.4.0-rc.3) 2026-11-23
+
+- feat: Add square direction arrows to the darker Movement header and a divider between the keyboard and controller rows. ([#51](https://github.com/ohne-b/crosshair-rs/pull/51))
+- feat: Show empty keybinds with a muted **Unbound** label. All four Movement labels fit at 200% text size. ([#51](https://github.com/ohne-b/crosshair-rs/pull/51))
+
 ## [v0.4.0-rc.2](https://github.com/ohne-b/crosshair-rs/releases/tag/v0.4.0-rc.2) 2026-11-22
 
 - feat: Edit keyboard and controller Movement bindings in a shared direction grid. Click any empty cell to bind it. ([#49](https://github.com/ohne-b/crosshair-rs/pull/49))
