@@ -180,7 +180,23 @@ component MovementGrid inherits Rectangle {
         }
         for binding in Store.movement-bindings: VerticalLayout {
             min-width: 0px; preferred-width: 0px; horizontal-stretch: 1;
-            Rectangle { height: root.header-height; Text { x: 0px; width: keyboard.label-width; text: binding.direction; color: Theme.muted; font-size: 11px * Theme.text-scale; horizontal-alignment: center; vertical-alignment: center; } }
+            Rectangle {
+                height: root.header-height;
+                HorizontalLayout {
+                    x: 0px; width: keyboard.label-width; alignment: center; spacing: 4px;
+                    Rectangle { width: 16px * Theme.text-scale;
+                        Image {
+                            width: parent.width; height: self.width; y: (parent.height - self.height) / 2;
+                            colorize: Theme.muted;
+                            source: binding.id == "forward" ? @image-url("../../../../assets/icons/square-arrow-up.svg")
+                                : binding.id == "left" ? @image-url("../../../../assets/icons/square-arrow-left.svg")
+                                : binding.id == "backward" ? @image-url("../../../../assets/icons/square-arrow-down.svg")
+                                : @image-url("../../../../assets/icons/square-arrow-right.svg");
+                        }
+                    }
+                    Text { text: binding.direction; color: Theme.muted; font-size: 11px * Theme.text-scale; vertical-alignment: center; }
+                }
+            }
             keyboard := ShortcutControls { height: root.row-height; binding: binding; }
             ShortcutControls { height: root.row-height; binding: binding; controller: true; }
         }
