@@ -916,7 +916,7 @@ checksum = "a31eee39dddec8330830986fcd7625edb5a24ec90ea038215273bbc3adb08ac6"
 
 [[package]]
 name = "crosshair-core"
-version = "0.4.0-rc.2"
+version = "0.4.0-rc.3"
 dependencies = [
  "serde",
  "serde_json",
@@ -926,7 +926,7 @@ dependencies = [
 
 [[package]]
 name = "crosshair-editor"
-version = "0.4.0-rc.2"
+version = "0.4.0-rc.3"
 dependencies = [
  "anyhow",
  "crosshair-core",
@@ -943,7 +943,7 @@ dependencies = [
 
 [[package]]
 name = "crosshair-engine"
-version = "0.4.0-rc.2"
+version = "0.4.0-rc.3"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -963,7 +963,7 @@ dependencies = [
 
 [[package]]
 name = "crosshair-platform"
-version = "0.4.0-rc.2"
+version = "0.4.0-rc.3"
 dependencies = [
  "anyhow",
  "crosshair-core",
@@ -974,7 +974,7 @@ dependencies = [
 
 [[package]]
 name = "crosshair-renderer"
-version = "0.4.0-rc.2"
+version = "0.4.0-rc.3"
 dependencies = [
  "anyhow",
  "crosshair-core",
