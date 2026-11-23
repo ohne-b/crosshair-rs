@@ -101,8 +101,10 @@ component RecordShortcut inherits ShortcutButton {
     property <string> display-value: root.value == "" ? "Unbound" : root.binding.enabled ? root.value : "Disabled: " + root.value;
     enabled: Store.connected && Store.interactive && !root.saving;
     selected: Store.capture-id == root.binding.id && Store.capture-controller == root.controller;
-    text: root.saving ? "Saving…" : root.selected ? root.prompt : root.value == "" && root.binding.direction != "" ? "+" : root.display-value;
-    label: root.target-name + ", " + root.device-name + ": " + (root.saving || root.selected ? root.text : root.display-value);
+    text: root.saving ? "Saving…" : root.selected ? root.prompt : root.display-value;
+    horizontal-padding: root.binding.direction != "" && root.value == "" ? 4px : 10px;
+    text-color: root.value == "" && !root.selected && !root.saving ? Theme.muted : Theme.text;
+    label: root.target-name + ", " + root.device-name + ": " + root.text;
     clicked => {
         if !root.selected {
             Store.capture-region(self.absolute-position.x / 1px, self.absolute-position.y / 1px, self.width / 1px, self.height / 1px);
@@ -165,6 +167,7 @@ component MovementGrid inherits Rectangle {
     property <length> header-height: max(32px, 12px * Theme.text-scale + 12px);
     property <length> row-height: max(38px, 12px * Theme.text-scale + 20px);
     height: root.header-height + 2 * root.row-height; vertical-stretch: 0;
+    Rectangle { y: 0px; height: root.header-height; background: Theme.preview; }
     HorizontalLayout { padding-left: 12px; padding-right: 12px; spacing: 8px;
         VerticalLayout {
             width: 22%;
@@ -180,13 +183,30 @@ component MovementGrid inherits Rectangle {
         }
         for binding in Store.movement-bindings: VerticalLayout {
             min-width: 0px; preferred-width: 0px; horizontal-stretch: 1;
-            Rectangle { height: root.header-height; Text { x: 0px; width: keyboard.label-width; text: binding.direction; color: Theme.muted; font-size: 11px * Theme.text-scale; horizontal-alignment: center; vertical-alignment: center; } }
+            Rectangle {
+                height: root.header-height;
+                HorizontalLayout {
+                    x: 0px; width: keyboard.label-width; alignment: center; spacing: 4px;
+                    Rectangle { width: 16px * Theme.text-scale;
+                        Image {
+                            width: parent.width; height: self.width; y: (parent.height - self.height) / 2;
+                            colorize: Theme.muted;
+                            source: binding.id == "forward" ? @image-url("../../../../assets/icons/square-arrow-up.svg")
+                                : binding.id == "left" ? @image-url("../../../../assets/icons/square-arrow-left.svg")
+                                : binding.id == "backward" ? @image-url("../../../../assets/icons/square-arrow-down.svg")
+                                : @image-url("../../../../assets/icons/square-arrow-right.svg");
+                        }
+                    }
+                    Text { text: binding.direction; color: Theme.muted; font-size: 11px * Theme.text-scale; vertical-alignment: center; }
+                }
+            }
             keyboard := ShortcutControls { height: root.row-height; binding: binding; }
             ShortcutControls { height: root.row-height; binding: binding; controller: true; }
         }
     }
     Rectangle { y: 0px; height: 1px; width: parent.width; background: Theme.border; }
     Rectangle { y: root.header-height; height: 1px; width: parent.width; background: Theme.border; }
+    Rectangle { y: root.header-height + root.row-height; height: 1px; width: parent.width; background: Theme.border; }
 }
 
 component BindingItem inherits TableRow {
