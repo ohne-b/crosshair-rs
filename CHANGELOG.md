@@ -1,5 +1,18 @@
 # Changelog
 
+## [v0.4.0](https://github.com/ohne-b/crosshair-rs/releases/tag/v0.4.0) 2026-11-24
+
+- feat: Bind a controller button, trigger or stick direction alongside a keyboard or mouse shortcut for any action or saved crosshair. ([#47](https://github.com/ohne-b/crosshair-rs/pull/47))
+- feat: See mouse bindings with a mouse icon. Clear either binding independently, or use the trash button to remove a saved shortcut. ([#47](https://github.com/ohne-b/crosshair-rs/pull/47))
+- feat: Edit keyboard and controller Movement bindings in a shared four-direction grid. ([#49](https://github.com/ohne-b/crosshair-rs/pull/49))
+- fix: Keep the clear button beside its Movement binding on hover or keyboard focus, with matching highlight heights. ([#49](https://github.com/ohne-b/crosshair-rs/pull/49))
+- fix: Hide the star and trash buttons when the pointer leaves a saved crosshair after its favorite status changes. ([#49](https://github.com/ohne-b/crosshair-rs/pull/49))
+- fix: Add spacing between entries in the profile picker and library sort menu. ([#49](https://github.com/ohne-b/crosshair-rs/pull/49))
+- fix: Center the visibility and delete highlights in Designer layer rows while keeping the full row height clickable. ([#49](https://github.com/ohne-b/crosshair-rs/pull/49))
+- feat: Add square arrows to the Movement headers and a divider between the keyboard and controller rows. ([#51](https://github.com/ohne-b/crosshair-rs/pull/51))
+- feat: Show empty keybinds as **Unbound**, with room for the full Movement label at 200% text size. ([#51](https://github.com/ohne-b/crosshair-rs/pull/51))
+- feat: Label the first Discord Rich Presence button **Free Download**. **Join Discord** opens the community invite. ([#53](https://github.com/ohne-b/crosshair-rs/pull/53))
+
 ## [v0.4.0-rc.3](https://github.com/ohne-b/crosshair-rs/releases/tag/v0.4.0-rc.3) 2026-11-23
 
 - feat: Add square direction arrows to the darker Movement header and a divider between the keyboard and controller rows. ([#51](https://github.com/ohne-b/crosshair-rs/pull/51))
