@@ -101,12 +101,13 @@ fn payloads_are_fixed_and_do_not_share_names_or_join_data() {
     assert_eq!(
         active["buttons"],
         json!([
-            {"label": "Download", "url": "https://github.com/ohne-b/crosshair-rs/releases"},
+            {"label": "Free Download", "url": "https://github.com/ohne-b/crosshair-rs/releases"},
             {"label": "Join Discord", "url": "https://discord.gg/fX5yC8CduV"}
         ])
     );
     assert_eq!(active.as_object().unwrap().len(), 3);
     let quote = Activity::Quote.payload();
+    assert_eq!(quote["buttons"], active["buttons"]);
     assert_eq!(quote["details"], "I've got you in my sights.");
     assert_eq!(quote["state"], "— Soldier: 76");
     assert_eq!(quote.as_object().unwrap().len(), 4);
