@@ -141,7 +141,8 @@ until you add an effect.
 **Settings > General > Show activity on Discord** is on by default and can be
 turned off anytime. **Simple** shows "Overlay active" or "Overlay hidden".
 **Quote** shows "I've got you in my sights." and "— Soldier: 76". Both show the
-app logo and a **Download** button; crosshair names are not shared.
+app logo. **Free Download** opens GitHub Releases and **Join Discord** opens the
+community invite. Crosshair names stay private.
 
 Discord desktop must be running with Activity Sharing enabled. The connection
 continues with the editor closed and reconnects if Discord restarts. Turn the

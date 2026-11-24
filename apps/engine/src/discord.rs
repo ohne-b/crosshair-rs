@@ -42,7 +42,7 @@ impl Activity {
             "details": details,
             "assets": { "large_image": ASSET_KEY, "large_text": "Crosshair-RS" },
             "buttons": [
-                { "label": "Download", "url": "https://github.com/ohne-b/crosshair-rs/releases" },
+                { "label": "Free Download", "url": "https://github.com/ohne-b/crosshair-rs/releases" },
                 { "label": "Join Discord", "url": DISCORD_INVITE_URL }
             ]
         });
