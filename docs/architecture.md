@@ -429,7 +429,7 @@ Use one quiet surface, headings and separators rather than card stacks.
 
 | Group | Controls |
 | --- | --- |
-| Display | Desktop/Game Bar output, monitor, scale, X/Y, reset position, named saved positions; help behind i. |
+| Display | Desktop/Game Bar output, monitor, scale, X/Y, center crosshair (zero X/Y), named saved positions; help behind i. |
 | Game Bar | Installed/connected/pinned state, Open Game Bar, setup help and repin recovery. Only show relevant controls in that mode. |
 | Startup | Launch at sign-in; Show crosshair on launch. Startup runs only the engine. |
 | Interface | Windows text scaling/reduced motion respected; reset editor layout. Fixed dark design, no exposed rendering backend toggle. |

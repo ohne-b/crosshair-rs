@@ -158,7 +158,8 @@ editor. This requires the installed app; open it from Start. The switch reflects
 Windows' startup setting. If Windows has disabled it, enable crosshair-rs in
 **Windows Settings > Apps > Startup**. **Unavailable** means Windows' setting
 could not be read. Adjust the monitor, position and output scale in
-**Settings > Display**.
+**Settings > Display**. **Center crosshair** resets X and Y to zero and keeps
+the current scale.
 
 Windows adds crosshair-rs to Start. Setup offers a desktop shortcut, launch at
 Windows sign-in, and launch after installation. Sign-in starts off on a new

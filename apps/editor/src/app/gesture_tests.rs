@@ -122,6 +122,23 @@ fn app_data_reset_warns_before_sending_the_reset_command() -> Result<()> {
 }
 
 #[test]
+fn center_crosshair_clears_both_offsets_and_preserves_scale() -> Result<()> {
+    let ui = window();
+    let mut app = app(&ui);
+    let (client, commands) = Client::recording_for_test();
+    app.client = client;
+    app.state.profiles[0].offset = Point { x: 20.0, y: -12.0 };
+    app.state.profiles[0].scale = 1.5;
+
+    app.action("reset-position", "")?;
+    assert!(
+        matches!(&commands()[..], [Command::UpsertProfile { profile, .. }]
+        if profile.offset == Point::default() && profile.scale == 1.5)
+    );
+    Ok(())
+}
+
+#[test]
 fn launch_at_sign_in_is_read_only_when_general_settings_are_visible() -> Result<()> {
     let ui = window();
     let store = ui.global::<Store>();

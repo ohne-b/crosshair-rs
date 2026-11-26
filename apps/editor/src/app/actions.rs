@@ -700,7 +700,6 @@ impl App {
                 let mut profile = self.active_profile()?;
                 if action == "reset-position" {
                     profile.offset = Point::default();
-                    profile.scale = 1.0;
                 } else {
                     let number: f32 = value.parse()?;
                     ensure!(number.is_finite(), "Enter a finite number");
