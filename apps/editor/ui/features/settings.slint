@@ -74,7 +74,7 @@ export component Settings inherits Rectangle {
                                 EditField { width: 72px; text: Store.output-x; numeric: true; label: "Horizontal offset"; committed(value) => { Store.action("output-x", value); } }
                                 Text { text: "Y"; color: Theme.muted; vertical-alignment: center; }
                                 EditField { width: 72px; text: Store.output-y; numeric: true; label: "Vertical offset"; committed(value) => { Store.action("output-y", value); } }
-                                ActionButton { icon: @image-url("../../../../assets/icons/refresh.svg"); label: "Reset position"; quiet: true; clicked => { Store.action("reset-position", ""); } }
+                                ActionButton { icon: @image-url("../../../../assets/icons/crosshair.svg"); label: "Center crosshair"; quiet: true; clicked => { Store.action("reset-position", ""); } }
                             }
                             Setting { label: "Saved positions"; last: true;
                                 DropDown { width: 152px; model: Store.positions; placeholder: "No positions"; current-index: Store.position-index; accessible-label: "Saved position"; selected(index) => { Store.position-index = index; } }
@@ -134,7 +134,7 @@ export component Settings inherits Rectangle {
                         SectionTitle { text: "RESTORE & RESET"; }
                         Group {
                             Setting { label: "Restore an all-data export"; ActionButton { text: "Replace all…"; clicked => { Store.action("replace-data", ""); } } }
-                            Setting { label: "Reset settings"; last: true; ActionButton { text: "Reset…"; danger: true; clicked => { Store.action("reset-settings", ""); } } }
+                            Setting { label: "Restore defaults"; last: true; ActionButton { text: "Reset all app data…"; danger: true; clicked => { Store.action("reset-settings", ""); } } }
                         }
                     }
                     if root.category == 3: VerticalLayout { spacing: 12px; alignment: start;

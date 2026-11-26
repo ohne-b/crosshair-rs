@@ -621,7 +621,7 @@ fn worker(options: Options, jobs: Receiver<Job>, client: Client, events: Events)
             Job::StageFile { .. } => Some("Importing…"),
             Job::ExportDraft { .. } | Job::Command(_, Command::Export { .. }) => Some("Exporting…"),
             Job::Command(_, Command::RecoverBackup) => Some("Restoring backup…"),
-            Job::Command(_, Command::ResetSettings) => Some("Resetting settings…"),
+            Job::Command(_, Command::ResetSettings) => Some("Resetting app data…"),
             _ => None,
         };
         if activity.is_some() {

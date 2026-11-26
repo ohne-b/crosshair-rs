@@ -700,7 +700,6 @@ impl App {
                 let mut profile = self.active_profile()?;
                 if action == "reset-position" {
                     profile.offset = Point::default();
-                    profile.scale = 1.0;
                 } else {
                     let number: f32 = value.parse()?;
                     ensure!(number.is_finite(), "Enter a finite number");
@@ -738,9 +737,9 @@ impl App {
                 self.modal = Modal::Reset;
                 self.show_modal(
                     1,
-                    "Reset settings",
-                    "A recovery copy will be created before settings are reset.",
-                    "Reset",
+                    "Reset all app data?",
+                    "This replaces your saved crosshairs, profiles, shortcuts and settings with the defaults. A recovery copy is saved first.",
+                    "Reset all app data",
                     "",
                     "",
                 );
