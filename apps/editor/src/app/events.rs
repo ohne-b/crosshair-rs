@@ -205,7 +205,14 @@ impl App {
                     if self.status.recovery_required && !self.recovery_shown {
                         self.recovery_shown = true;
                         self.modal = Modal::Recovery;
-                        self.show_modal(1, "Settings need recovery", "The engine could not read the saved configuration. Restore the last valid backup, or reset after preserving the unreadable data.", "Restore backup", "Reset with backup", "");
+                        self.show_modal(
+                            1,
+                            "Settings need recovery",
+                            "The app could not read your saved data. Restore the last valid backup, or reset your crosshairs, profiles, shortcuts and settings to their defaults. Reset saves a recovery copy first.",
+                            "Restore backup",
+                            "Reset all app data",
+                            "",
+                        );
                     }
                 }
                 ServerMessage::Captured {

@@ -434,7 +434,7 @@ Use one quiet surface, headings and separators rather than card stacks.
 | Startup | Launch at sign-in; Show crosshair on launch. Startup runs only the engine. |
 | Interface | Windows text scaling/reduced motion respected; reset editor layout. Fixed dark design, no exposed rendering backend toggle. |
 | Discord | On by default; General has an enable switch and Simple/Quote selector. Simple shares only overlay visibility; Quote uses only the Soldier: 76 quote. |
-| Data | Import/export profiles/all data, open data folder, confirmed settings reset with backup. |
+| Data | Import/export profiles/all data, open data folder, confirmed reset of crosshairs, profiles, shortcuts and settings with a recovery copy. |
 | Maintenance | Version, update check preference, manual check, inline status/progress, release notes, download/cancel/install. |
 | About | Version, source license and third-party notices/attribution. |
 

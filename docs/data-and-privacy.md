@@ -10,6 +10,9 @@ Use **Settings > Data > Export all** to save a backup outside the app's data fol
 Use **Import** to add crosshairs or profiles; **Replace all** restores an all-data
 export over the current collection and settings.
 
+**Reset all app data…** saves a recovery copy, then replaces your crosshairs,
+profiles, shortcuts and settings with the defaults.
+
 Updates keep your data. Uninstalling removes the installed app's local data, so
 export first. Quit through the tray before copying or editing the data folder.
 Keep backups private: they can contain names and imported images.

@@ -738,9 +738,9 @@ impl App {
                 self.modal = Modal::Reset;
                 self.show_modal(
                     1,
-                    "Reset settings",
-                    "A recovery copy will be created before settings are reset.",
-                    "Reset",
+                    "Reset all app data?",
+                    "This replaces your saved crosshairs, profiles, shortcuts and settings with the defaults. A recovery copy is saved first.",
+                    "Reset all app data",
                     "",
                     "",
                 );

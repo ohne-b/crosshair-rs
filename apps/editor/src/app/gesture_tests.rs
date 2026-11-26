@@ -94,6 +94,34 @@ pub(super) fn app(ui: &AppWindow) -> App {
 }
 
 #[test]
+fn app_data_reset_warns_before_sending_the_reset_command() -> Result<()> {
+    let ui = window();
+    let store = ui.global::<Store>();
+    let mut app = app(&ui);
+    let (client, commands) = Client::recording_for_test();
+    app.client = client;
+
+    app.action("reset-settings", "")?;
+    let warning = store.get_modal_message();
+    for subject in [
+        "crosshairs",
+        "profiles",
+        "shortcuts",
+        "settings",
+        "recovery copy",
+    ] {
+        assert!(warning.contains(subject), "Reset warning omits {subject}");
+    }
+    app.action("modal-cancel", "")?;
+    assert!(commands().is_empty());
+
+    app.action("reset-settings", "")?;
+    app.action("modal-confirm", "")?;
+    assert!(matches!(&commands()[..], [Command::ResetSettings]));
+    Ok(())
+}
+
+#[test]
 fn launch_at_sign_in_is_read_only_when_general_settings_are_visible() -> Result<()> {
     let ui = window();
     let store = ui.global::<Store>();
