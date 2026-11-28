@@ -1,5 +1,10 @@
 # Changelog
 
+## [v0.4.1](https://github.com/ohne-b/crosshair-rs/releases/tag/v0.4.1) 2026-11-28
+
+- fix: Clarify that **Reset all app data** saves a recovery copy before replacing saved crosshairs, profiles, shortcuts and settings. ([#55](https://github.com/ohne-b/crosshair-rs/pull/55))
+- fix: Keep the current scale when using **Center crosshair** to reset the X and Y offsets. ([#55](https://github.com/ohne-b/crosshair-rs/pull/55))
+
 ## [v0.4.0](https://github.com/ohne-b/crosshair-rs/releases/tag/v0.4.0) 2026-11-24
 
 - feat: Bind a controller button, trigger or stick direction alongside a keyboard or mouse shortcut for any action or saved crosshair. ([#47](https://github.com/ohne-b/crosshair-rs/pull/47))
